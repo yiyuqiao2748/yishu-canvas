@@ -369,7 +369,7 @@ class LocalTeamStore:
                 raise HTTPException(status_code=404, detail="画布不存在")
             self._require_member(data, user.id, canvas["team_id"])
             if payload.base_version is not None and payload.base_version != canvas.get("version"):
-                raise HTTPException(status_code=409, detail="画布已被更新，请刷新后再保存")
+                raise HTTPException(status_code=409, detail={"message": "画布已被更新，请刷新后再保存", "canvas": canvas})
             canvas["data"] = payload.data or {}
             if payload.title is not None:
                 canvas["title"] = payload.title.strip() or canvas["title"]
@@ -560,7 +560,7 @@ class SupabaseTeamStore:
     async def save_canvas(self, user: CurrentUser, canvas_id: str, payload: CanvasSaveRequest) -> Dict[str, Any]:
         canvas = await self.get_canvas(user, canvas_id)
         if payload.base_version is not None and payload.base_version != canvas.get("version"):
-            raise HTTPException(status_code=409, detail="画布已被更新，请刷新后再保存")
+            raise HTTPException(status_code=409, detail={"message": "画布已被更新，请刷新后再保存", "canvas": canvas})
         next_version = int(canvas.get("version") or 1) + 1
         patch = {
             "data": payload.data or {},

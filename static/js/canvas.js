@@ -391,6 +391,10 @@ let emojiPickerCanvasId = null;
 let canvasMetaAnchorId = '';
 let canvasSortMode = (() => { try { return localStorage.getItem('canvasSortMode') || 'recent'; } catch(e){ return 'recent'; } })();
 const CANVAS_LIST_PROJECT_KEY = 'canvasListCurrentProjectId';
+const TEAM_CLOUD_MODE_KEY = 'teamCloudMode';
+const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
+const CANVAS_URL_PARAMS = new URLSearchParams(window.location.search);
+const TEAM_CLOUD_CANVAS = CANVAS_URL_PARAMS.get('cloud') === '1';
 const CANVAS_COLOR_OPTIONS = ['red','orange','amber','green','teal','blue','violet','pink','slate'];
 // 先绑定返回，避免编辑器后续初始化较慢时丢失来源项目。
 backToManagerBtn?.addEventListener('click', () => {
@@ -1451,6 +1455,37 @@ async function saveCanvas(){
     savingCanvasNow = true;
     saveCanvasAgain = false;
     try {
+        if(TEAM_CLOUD_CANVAS){
+            const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvas.id)}`, {
+                method:'PATCH',
+                credentials:'include',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(cloudCanvasSaveBody())
+            });
+            if(res.status === 409){
+                const data = await res.json().catch(() => ({}));
+                const remote = data.detail?.canvas || data.canvas;
+                if(remote && !localCanvasDirty && !saveCanvasAgain){
+                    applyRemoteCanvasData(cloudCanvasForEditor(remote));
+                    setStatus('Synced');
+                } else {
+                    if(remote) canvas.cloud_version = remote.version || canvas.cloud_version;
+                    saveCanvasAgain = true;
+                    setStatus('Saving...');
+                }
+                return;
+            }
+            if(!res.ok) throw new Error('save failed');
+            const data = await res.json().catch(() => ({}));
+            if(data.canvas){
+                canvas.updated_at = data.canvas.updated_at || canvas.updated_at;
+                canvas.cloud_version = data.canvas.version || canvas.cloud_version;
+            }
+            localCanvasDirty = Boolean(saveCanvasAgain);
+            if(currentCanvasTime) currentCanvasTime.textContent = formatCanvasTime(canvas.updated_at);
+            setStatus('Saved');
+            return;
+        }
         const res = await fetch(`/api/canvases/${canvas.id}`, {
             method:'PUT',
             headers:{'Content-Type':'application/json'},
@@ -1931,7 +1966,9 @@ async function createSmartCanvas(){
 }
 function openSmartCanvasPage(id){
     if(!id) return;
-    window.location.href = `/static/smart-canvas.html?id=${encodeURIComponent(id)}&v=2026.05.22.1`;
+    const project = canvas?.project || requestedCanvasListProject() || rememberedCanvasListProject();
+    const cloud = TEAM_CLOUD_CANVAS ? '&cloud=1' : '';
+    window.location.href = `/static/smart-canvas.html?id=${encodeURIComponent(id)}&project=${encodeURIComponent(project)}${cloud}&v=2026.05.22.1`;
 }
 function toggleEmojiPicker(id, event){
     event?.preventDefault();
@@ -2042,14 +2079,19 @@ async function setCanvasTitle(id, title){
 async function openCanvas(id){
     setStatus('Opening...');
     try {
-        const res = await fetch(`/api/canvases/${id}`);
+        const res = await fetch(TEAM_CLOUD_CANVAS
+            ? `/api/team-cloud/canvases/${encodeURIComponent(id)}`
+            : `/api/canvases/${id}`,
+            { credentials:'include' });
         if(!res.ok) throw new Error(tr('canvas.openFailed'));
         const data = await res.json();
         resetCascadeRuntimeState();
-        canvas = data.canvas;
-        rememberCanvasListProject(canvas.project || 'default');
-        const touched = await touchCanvasOpened(canvas.id);
-        if(touched?.updated_at) canvas.updated_at = Number(touched.updated_at);
+        canvas = TEAM_CLOUD_CANVAS ? cloudCanvasForEditor(data.canvas) : data.canvas;
+        rememberCanvasListProject(canvas.project || requestedCanvasListProject() || 'default');
+        if(!TEAM_CLOUD_CANVAS){
+            const touched = await touchCanvasOpened(canvas.id);
+            if(touched?.updated_at) canvas.updated_at = Number(touched.updated_at);
+        }
         if((canvas.kind || 'classic') === 'smart'){
             openSmartCanvasPage(canvas.id);
             return;
@@ -2070,7 +2112,7 @@ async function openCanvas(id){
         renderCanvasList();
         render();
         resumeCanvasImageTasks();
-        startCanvasRemotePolling();
+        if(!TEAM_CLOUD_CANVAS) startCanvasRemotePolling();
         setStatus('Ready');
     } catch(e) {
         setStatus(tr('canvas.openFailed'));
@@ -2078,6 +2120,36 @@ async function openCanvas(id){
         // 打开失败（id 无效/已删除）：回到选画布页面，避免停在空白编辑器。
         window.location.replace(canvasListUrlForProject(canvas?.project || requestedCanvasListProject() || rememberedCanvasListProject()));
     }
+}
+
+function cloudCanvasForEditor(raw){
+    const data = raw?.data || {};
+    return {
+        ...data,
+        id: raw.id,
+        title: raw.title || data.title || tr('canvas.untitled'),
+        icon: data.icon || 'layers',
+        kind: data.kind || 'classic',
+        project: raw.project_id || requestedCanvasListProject() || '',
+        updated_at: raw.updated_at,
+        cloud_version: raw.version,
+    };
+}
+
+function cloudCanvasSaveBody(){
+    return {
+        title: canvas.title || tr('canvas.untitled'),
+        data: {
+            ...canvas,
+            icon: canvas.icon || 'layers',
+            kind: canvas.kind || 'classic',
+            nodes: serializableCanvasNodes(),
+            connections,
+            viewport,
+            logs: canvas.logs || [],
+        },
+        base_version: canvas.cloud_version || 1,
+    };
 }
 function applyRemoteCanvasData(remote){
     if(!remote || !canvas || remote.id !== canvas.id) return;
@@ -2461,12 +2533,15 @@ window.addEventListener('resize', () => {
 });
 function rememberCanvasListProject(projectId){
     const pid = projectId || 'default';
-    try { localStorage.setItem(CANVAS_LIST_PROJECT_KEY, pid); } catch(e){}
+    try {
+        localStorage.setItem(TEAM_CLOUD_CANVAS ? TEAM_CLOUD_PROJECT_KEY : CANVAS_LIST_PROJECT_KEY, pid);
+        if(TEAM_CLOUD_CANVAS) localStorage.setItem(TEAM_CLOUD_MODE_KEY, '1');
+    } catch(e){}
     return pid;
 }
 
 function rememberedCanvasListProject(){
-    try { return localStorage.getItem(CANVAS_LIST_PROJECT_KEY) || 'default'; } catch(e){ return 'default'; }
+    try { return localStorage.getItem(TEAM_CLOUD_CANVAS ? TEAM_CLOUD_PROJECT_KEY : CANVAS_LIST_PROJECT_KEY) || 'default'; } catch(e){ return 'default'; }
 }
 
 function requestedCanvasListProject(){
@@ -2475,7 +2550,8 @@ function requestedCanvasListProject(){
 
 function canvasListUrlForProject(projectId){
     const pid = rememberCanvasListProject(projectId);
-    return `/static/canvas-list.html?project=${encodeURIComponent(pid)}`;
+    const cloud = TEAM_CLOUD_CANVAS ? '&cloud=1' : '';
+    return `/static/canvas-list.html?project=${encodeURIComponent(pid)}${cloud}`;
 }
 
 function addNode(node){

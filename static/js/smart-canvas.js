@@ -2,6 +2,9 @@ const params = new URLSearchParams(location.search);
 const canvasId = params.get('id') || '';
 const sourceProjectId = params.get('project') || '';
 const CANVAS_LIST_PROJECT_KEY = 'canvasListCurrentProjectId';
+const TEAM_CLOUD_MODE_KEY = 'teamCloudMode';
+const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
+const TEAM_CLOUD_CANVAS = params.get('cloud') === '1';
 const shell = document.getElementById('shell');
 const world = document.getElementById('world');
 const composer = document.getElementById('composer');
@@ -1157,12 +1160,16 @@ function persistActiveSmartSettings(){
 }
 function rememberCanvasListProject(projectId){
     const pid = projectId || 'default';
-    try { localStorage.setItem(CANVAS_LIST_PROJECT_KEY, pid); } catch(e){}
+    try {
+        localStorage.setItem(TEAM_CLOUD_CANVAS ? TEAM_CLOUD_PROJECT_KEY : CANVAS_LIST_PROJECT_KEY, pid);
+        if(TEAM_CLOUD_CANVAS) localStorage.setItem(TEAM_CLOUD_MODE_KEY, '1');
+    } catch(e){}
     return pid;
 }
 function canvasListUrlForProject(projectId){
     const pid = rememberCanvasListProject(projectId);
-    return `/static/canvas-list.html?project=${encodeURIComponent(pid)}`;
+    const cloud = TEAM_CLOUD_CANVAS ? '&cloud=1' : '';
+    return `/static/canvas-list.html?project=${encodeURIComponent(pid)}${cloud}`;
 }
 function backToCanvasList(){
     savePromptDraftForCurrent();
@@ -5903,11 +5910,14 @@ function migrateSmartGroupImageMembers(){
 async function loadCanvas(){
     if(!canvasId) return;
     try {
-        const res = await fetch(`/api/canvases/${encodeURIComponent(canvasId)}`);
+        const res = await fetch(TEAM_CLOUD_CANVAS
+            ? `/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`
+            : `/api/canvases/${encodeURIComponent(canvasId)}`,
+            { credentials: 'include' });
         if(!res.ok) return;
         const data = await res.json();
-        canvas = data.canvas;
-        rememberCanvasListProject(canvas.project || 'default');
+        canvas = TEAM_CLOUD_CANVAS ? cloudCanvasForEditor(data.canvas) : data.canvas;
+        rememberCanvasListProject(canvas.project || sourceProjectId || 'default');
         canvasUsesConnections = Object.prototype.hasOwnProperty.call(canvas || {}, 'connections');
         document.title = canvas.title || tr('canvas.smartCanvas');
         document.getElementById('smartTitle').textContent = canvas.title || tr('canvas.smartCanvas');
@@ -5949,6 +5959,32 @@ async function loadCanvas(){
         startCanvasMetaPoll();
     } catch(e) { toast(tr('smart.toastCanvasFail')); }
 }
+
+function cloudCanvasForEditor(raw){
+    const data = raw?.data || {};
+    return {
+        ...data,
+        id: raw.id,
+        title: raw.title || data.title || tr('canvas.smartCanvas'),
+        icon: data.icon || 'sparkles',
+        kind: data.kind || 'smart',
+        project: raw.project_id || sourceProjectId || '',
+        updated_at: raw.updated_at,
+        cloud_version: raw.version,
+    };
+}
+
+function cloudCanvasSaveBody(storageCanvas){
+    return {
+        title: storageCanvas.title || tr('smart.title'),
+        data: {
+            ...storageCanvas,
+            kind: storageCanvas.kind || 'smart',
+            icon: storageCanvas.icon || 'sparkles',
+        },
+        base_version: canvas.cloud_version || 1,
+    };
+}
 function scheduleSave(){
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveCanvas, 450);
@@ -5966,6 +6002,30 @@ async function saveCanvas(){
     const storageCanvas = canvasForStorage();
     canvasSyncInFlight = true;
     try {
+        if(TEAM_CLOUD_CANVAS){
+            const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`, {
+                method:'PATCH',
+                credentials:'include',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(cloudCanvasSaveBody(storageCanvas))
+            });
+            if(res.ok){
+                const data = await res.json();
+                if(data.canvas){
+                    canvas.updated_at = data.canvas.updated_at || canvas.updated_at;
+                    canvas.cloud_version = data.canvas.version || canvas.cloud_version;
+                }
+            } else if(res.status === 409) {
+                const data = await res.json().catch(() => ({}));
+                const serverCanvas = data.detail?.canvas || data.canvas;
+                if(serverCanvas){
+                    applyMergedServerCanvas(cloudCanvasForEditor(serverCanvas));
+                }
+                clearTimeout(saveTimer);
+                saveTimer = setTimeout(saveCanvas, 300);
+            }
+            return;
+        }
         const res = await fetch(`/api/canvases/${encodeURIComponent(canvasId)}`, {
             method:'PUT',
             headers:{'Content-Type':'application/json'},

@@ -601,16 +601,13 @@ function attachCardDrag(card, c){
 }
 
 function openCanvas(c){
-    if(teamCloud.enabled || c.is_cloud){
-        setStatus(L('云端画布编辑接入中','Cloud canvas editing is being connected'));
-        return;
-    }
     const enc = encodeURIComponent(c.id);
     const project = encodeURIComponent(c.project || currentProjectId || 'default');
     rememberProjectId(c.project || currentProjectId || 'default');
+    const cloud = (teamCloud.enabled || c.is_cloud) ? '&cloud=1' : '';
     window.location.href = (c.kind === 'smart')
-        ? `/static/smart-canvas.html?id=${enc}&project=${project}&v=2026.07.03.4`
-        : `/static/canvas.html?id=${enc}&project=${project}&v=2026.07.03.4`;
+        ? `/static/smart-canvas.html?id=${enc}&project=${project}${cloud}&v=2026.07.03.4`
+        : `/static/canvas.html?id=${enc}&project=${project}${cloud}&v=2026.07.03.4`;
 }
 
 /* ===== Card create flow ===== */
