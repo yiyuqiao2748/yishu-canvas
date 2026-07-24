@@ -1,0 +1,11 @@
+# Optional file-based Cloudflare Tunnel config.
+# The recommended beginner flow is the dashboard token used by docker-compose.yml.
+# Keep this file as a reference if you later switch to a named tunnel with credentials.
+
+tunnel: yishu-canvas
+credentials-file: /etc/cloudflared/yishu-canvas.json
+
+ingress:
+  - hostname: canvas.yiyuqiaoai.uk
+    service: http://127.0.0.1:3000
+  - service: http_status:404

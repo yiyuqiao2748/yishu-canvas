@@ -15,7 +15,7 @@ from team_storage import save_team_asset, safe_filename
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = os.getenv("YISHU_DATA_DIR", os.path.join(BASE_DIR, "data"))
 LOCAL_TEAM_STORE = os.path.join(DATA_DIR, "team_cloud.json")
 
 TEAM_ROLES = {"owner", "admin", "member"}

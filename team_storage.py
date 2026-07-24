@@ -6,7 +6,7 @@ from typing import Dict
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+ASSETS_DIR = os.getenv("YISHU_ASSETS_DIR", os.path.join(BASE_DIR, "assets"))
 TEAM_ASSET_DIR = os.path.join(ASSETS_DIR, "team-assets")
 
 
