@@ -4,3 +4,4 @@ server.log
 server.err.log
 data/team_cloud.json
 data/team_cloud.json.tmp
+assets/team-assets/

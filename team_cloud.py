@@ -8,8 +8,10 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 import jwt
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
+
+from team_storage import save_team_asset, safe_filename
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +19,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 LOCAL_TEAM_STORE = os.path.join(DATA_DIR, "team_cloud.json")
 
 TEAM_ROLES = {"owner", "admin", "member"}
+TEAM_ASSET_MAX_BYTES = int(os.getenv("TEAM_ASSET_MAX_BYTES", str(50 * 1024 * 1024)))
 
 
 @dataclass
@@ -207,7 +210,7 @@ class LocalTeamStore:
 
     def _read(self) -> Dict[str, Any]:
         if not os.path.exists(self.path):
-            return {"teams": [], "members": [], "invitations": [], "projects": [], "canvases": [], "canvas_versions": []}
+            return {"teams": [], "members": [], "invitations": [], "projects": [], "canvases": [], "canvas_versions": [], "assets": []}
         try:
             with open(self.path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
@@ -220,6 +223,7 @@ class LocalTeamStore:
             "projects": data.get("projects") or [],
             "canvases": data.get("canvases") or [],
             "canvas_versions": data.get("canvas_versions") or [],
+            "assets": data.get("assets") or [],
         }
 
     def _write(self, data: Dict[str, Any]) -> None:
@@ -379,6 +383,36 @@ class LocalTeamStore:
             data["canvas_versions"].append(self._canvas_version_row(canvas))
             self._write(data)
             return canvas
+
+    def list_assets(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            return [asset for asset in data["assets"] if asset.get("team_id") == team_id]
+
+    def create_asset(self, user: CurrentUser, team_id: str, asset: Dict[str, Any]) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            record = {
+                "id": asset.get("id") or str(uuid.uuid4()),
+                "team_id": team_id,
+                "project_id": asset.get("project_id"),
+                "canvas_id": asset.get("canvas_id"),
+                "kind": asset.get("kind") or "file",
+                "name": asset.get("name") or "asset",
+                "storage_provider": asset.get("storage_provider") or "r2",
+                "storage_key": asset.get("storage_key") or "",
+                "public_url": asset.get("public_url") or "",
+                "mime_type": asset.get("mime_type") or "",
+                "byte_size": int(asset.get("byte_size") or 0),
+                "storage_provider": asset.get("storage_provider") or "local",
+                "created_by": user.id,
+                "created_at": now_ms(),
+            }
+            data["assets"].append(record)
+            self._write(data)
+            return record
 
     def _require_member(self, data: Dict[str, Any], user_id: str, team_id: str) -> Dict[str, Any]:
         for member in data["members"]:
@@ -588,6 +622,34 @@ class SupabaseTeamStore:
         )
         return updated
 
+    async def list_assets(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
+        await self._require_member(user.id, team_id)
+        return await self._request(
+            "GET",
+            f"/assets?team_id=eq.{team_id}&order=created_at.desc&select=*",
+        )
+
+    async def create_asset(self, user: CurrentUser, team_id: str, asset: Dict[str, Any]) -> Dict[str, Any]:
+        await self._require_member(user.id, team_id)
+        rows = await self._request(
+            "POST",
+            "/assets",
+            json_body=[{
+                "id": asset.get("id"),
+                "team_id": team_id,
+                "project_id": asset.get("project_id"),
+                "canvas_id": asset.get("canvas_id"),
+                "kind": asset.get("kind") or "file",
+                "name": asset.get("name") or "asset",
+                "storage_key": asset.get("storage_key") or "",
+                "public_url": asset.get("public_url") or "",
+                "mime_type": asset.get("mime_type") or "",
+                "byte_size": int(asset.get("byte_size") or 0),
+                "created_by": user.id,
+            }],
+        )
+        return rows[0]
+
     async def _require_member(self, user_id: str, team_id: str) -> Dict[str, Any]:
         rows = await self._request(
             "GET",
@@ -731,6 +793,41 @@ async def save_team_canvas(
 ) -> Dict[str, Any]:
     canvas = await maybe_await(active_store().save_canvas(user, canvas_id, payload))
     return {"canvas": canvas}
+
+
+@router.get("/teams/{team_id}/assets")
+async def list_team_assets(team_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    assets = await maybe_await(active_store().list_assets(user, team_id))
+    return {"assets": assets}
+
+
+@router.post("/teams/{team_id}/assets")
+async def upload_team_asset(
+    team_id: str,
+    file: UploadFile = File(...),
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    content = await file.read()
+    if len(content) > TEAM_ASSET_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="素材文件过大")
+    asset_id = str(uuid.uuid4())
+    filename = safe_filename(file.filename or asset_id)
+    stored = save_team_asset(
+        content,
+        team_id=team_id,
+        filename=filename,
+        content_type=file.content_type or "",
+        asset_id=asset_id,
+    )
+    asset = await maybe_await(active_store().create_asset(user, team_id, {
+        "id": asset_id,
+        "kind": "image" if (file.content_type or "").startswith("image/") else "file",
+        "name": filename,
+        "mime_type": file.content_type or "",
+        "byte_size": len(content),
+        **stored,
+    }))
+    return {"asset": asset}
 
 
 async def maybe_await(value):

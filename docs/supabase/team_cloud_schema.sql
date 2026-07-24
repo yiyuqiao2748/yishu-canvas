@@ -74,6 +74,7 @@ create table if not exists public.assets (
   canvas_id uuid references public.canvases(id) on delete set null,
   kind text not null default 'image',
   name text not null,
+  storage_provider text not null default 'r2',
   storage_key text not null,
   public_url text not null,
   mime_type text not null default '',

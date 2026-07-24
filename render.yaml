@@ -22,3 +22,15 @@ services:
         value: team_cloud_access_token
       - key: TEAM_AUTH_DEV_BYPASS
         value: "0"
+      - key: TEAM_ASSET_MAX_BYTES
+        value: "52428800"
+      - key: R2_ENDPOINT_URL
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
+        sync: false

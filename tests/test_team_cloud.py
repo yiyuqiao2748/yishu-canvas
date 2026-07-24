@@ -114,6 +114,25 @@ class TeamCloudStoreTests(unittest.TestCase):
             self.store.list_canvases(self.outsider, project["id"])
         self.assertEqual(project_error.exception.status_code, 403)
 
+    def test_team_assets_are_member_scoped(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        asset = self.store.create_asset(self.owner, team["id"], {
+            "name": "sample.png",
+            "kind": "image",
+            "storage_key": "team-assets/team/sample.png",
+            "public_url": "/assets/team-assets/team/sample.png",
+            "mime_type": "image/png",
+            "byte_size": 12,
+            "storage_provider": "local",
+        })
+
+        self.assertEqual(asset["team_id"], team["id"])
+        self.assertEqual(self.store.list_assets(self.owner, team["id"])[0]["name"], "sample.png")
+
+        with self.assertRaises(HTTPException) as asset_error:
+            self.store.list_assets(self.outsider, team["id"])
+        self.assertEqual(asset_error.exception.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()
