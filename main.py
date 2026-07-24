@@ -38,6 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response, StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
+from team_cloud import router as team_cloud_router
 
 QUIET_ACCESS_PATHS = {
     "/api/queue_status",
@@ -74,6 +75,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(team_cloud_router)
 
 # --- WebSocket 状态管理器 ---
 class ConnectionManager:
