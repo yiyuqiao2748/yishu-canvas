@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 
 
@@ -27,6 +27,8 @@ class TeamCloudSettings:
     supabase_jwt_secret: str = os.getenv("SUPABASE_JWT_SECRET", "")
     supabase_jwt_audience: str = os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated")
     dev_bypass: bool = os.getenv("TEAM_AUTH_DEV_BYPASS", "").lower() in {"1", "true", "yes", "on"}
+    cookie_secure: bool = os.getenv("TEAM_AUTH_COOKIE_SECURE", "").lower() in {"1", "true", "yes", "on"}
+    cookie_name: str = os.getenv("TEAM_AUTH_COOKIE_NAME", "team_cloud_access_token")
 
     @property
     def supabase_ready(self) -> bool:
@@ -49,6 +51,11 @@ class CurrentUser(BaseModel):
 
 class TeamCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
+
+
+class AuthEmailPasswordRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=254)
+    password: str = Field(..., min_length=6, max_length=128)
 
 
 class MemberInviteRequest(BaseModel):
@@ -76,6 +83,7 @@ def public_config() -> Dict[str, Any]:
         "auth_ready": settings.auth_ready,
         "supabase_ready": settings.supabase_ready,
         "dev_bypass": settings.dev_bypass,
+        "cookie_auth": True,
     }
 
 
@@ -106,9 +114,14 @@ def decode_supabase_token(token: str) -> CurrentUser:
     )
 
 
-async def require_user(authorization: Optional[str] = Header(default=None)) -> CurrentUser:
+async def require_user(
+    authorization: Optional[str] = Header(default=None),
+    team_cloud_access_token: Optional[str] = Cookie(default=None, alias=settings.cookie_name),
+) -> CurrentUser:
     if authorization and authorization.lower().startswith("bearer "):
         return decode_supabase_token(authorization[7:].strip())
+    if team_cloud_access_token:
+        return decode_supabase_token(team_cloud_access_token)
     if settings.dev_bypass:
         return CurrentUser(
             id=os.getenv("TEAM_AUTH_DEV_USER_ID", "local-dev-user"),
@@ -116,6 +129,59 @@ async def require_user(authorization: Optional[str] = Header(default=None)) -> C
             provider="dev-bypass",
         )
     raise HTTPException(status_code=401, detail="请先登录")
+
+
+def set_auth_cookie(response: Response, access_token: str) -> None:
+    response.set_cookie(
+        settings.cookie_name,
+        access_token,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=60 * 60,
+        path="/",
+    )
+
+
+def clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(settings.cookie_name, path="/")
+
+
+async def supabase_auth_request(path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not settings.supabase_url or not settings.supabase_anon_key:
+        raise HTTPException(status_code=503, detail="Supabase Auth 未配置")
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            f"{settings.supabase_url}/auth/v1/{path}",
+            headers={
+                "apikey": settings.supabase_anon_key,
+                "Authorization": f"Bearer {settings.supabase_anon_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    if response.status_code >= 400:
+        detail = "登录服务请求失败"
+        try:
+            body = response.json()
+            detail = body.get("msg") or body.get("message") or body.get("error_description") or detail
+        except ValueError:
+            detail = response.text[:200] or detail
+        raise HTTPException(status_code=response.status_code, detail=detail)
+    return response.json()
+
+
+def sanitize_auth_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    user = data.get("user") or {}
+    session_ready = bool(data.get("access_token"))
+    return {
+        "session_ready": session_ready,
+        "user": {
+            "id": user.get("id"),
+            "email": user.get("email"),
+            "created_at": user.get("created_at"),
+        },
+    }
 
 
 class LocalTeamStore:
@@ -306,6 +372,35 @@ def active_store():
 @router.get("/config")
 async def team_cloud_config() -> Dict[str, Any]:
     return public_config()
+
+
+@router.post("/auth/signup")
+async def signup(payload: AuthEmailPasswordRequest, response: Response) -> Dict[str, Any]:
+    data = await supabase_auth_request("signup", {
+        "email": normalize_email(payload.email),
+        "password": payload.password,
+    })
+    if data.get("access_token"):
+        set_auth_cookie(response, data["access_token"])
+    return sanitize_auth_payload(data)
+
+
+@router.post("/auth/login")
+async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[str, Any]:
+    data = await supabase_auth_request("token?grant_type=password", {
+        "email": normalize_email(payload.email),
+        "password": payload.password,
+    })
+    if not data.get("access_token"):
+        raise HTTPException(status_code=401, detail="登录失败")
+    set_auth_cookie(response, data["access_token"])
+    return sanitize_auth_payload(data)
+
+
+@router.post("/auth/logout")
+async def logout(response: Response) -> Dict[str, Any]:
+    clear_auth_cookie(response)
+    return {"ok": True}
 
 
 @router.get("/me")

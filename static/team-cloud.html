@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>团队</title>
+    <script src="/static/vendor/js/lucide.js?v=2026.07.23.1784872856"></script>
+    <style>
+        @import url('/static/vendor/css/fonts.css?v=2026.07.23.1784872856');
+
+        :root {
+            --bg: #f7f8fa;
+            --surface: #ffffff;
+            --surface-2: #f1f5f4;
+            --line: #dfe5e2;
+            --text: #151817;
+            --muted: #68736f;
+            --accent: #157a6e;
+            --accent-strong: #0d5f56;
+            --danger: #b42318;
+            --warning: #996f00;
+            --shadow: 0 18px 48px rgba(15, 23, 42, .08);
+        }
+
+        html,
+        body {
+            min-height: 100%;
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            letter-spacing: 0;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        .page {
+            width: min(1180px, calc(100vw - 40px));
+            margin: 0 auto;
+            padding: 28px 0 40px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .title-wrap {
+            min-width: 0;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 24px;
+            line-height: 1.2;
+            font-weight: 760;
+        }
+
+        .sub {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 36px;
+            padding: 0 12px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface);
+            color: var(--muted);
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .status.ok {
+            color: var(--accent-strong);
+            border-color: rgba(21, 122, 110, .28);
+        }
+
+        .status.warn {
+            color: var(--warning);
+            border-color: rgba(153, 111, 0, .24);
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(300px, 380px) 1fr;
+            gap: 18px;
+            align-items: start;
+        }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 16px 18px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .panel-title {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            font-size: 15px;
+            font-weight: 720;
+        }
+
+        .panel-body {
+            padding: 18px;
+        }
+
+        .tabs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            padding: 4px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface-2);
+            margin-bottom: 16px;
+        }
+
+        .tab {
+            height: 34px;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .tab.active {
+            background: var(--surface);
+            color: var(--text);
+            box-shadow: 0 1px 4px rgba(15, 23, 42, .08);
+        }
+
+        .field {
+            display: grid;
+            gap: 7px;
+            margin-bottom: 12px;
+        }
+
+        label {
+            font-size: 12px;
+            color: var(--muted);
+            font-weight: 650;
+        }
+
+        input,
+        select {
+            width: 100%;
+            min-height: 40px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--text);
+            padding: 0 11px;
+            outline: none;
+        }
+
+        input:focus,
+        select:focus {
+            border-color: rgba(21, 122, 110, .58);
+            box-shadow: 0 0 0 3px rgba(21, 122, 110, .12);
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .row > * {
+            min-width: 0;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 40px;
+            padding: 0 13px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .btn.primary {
+            border-color: var(--accent);
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn.primary:hover {
+            background: var(--accent-strong);
+        }
+
+        .btn.ghost:hover {
+            background: var(--surface-2);
+        }
+
+        .btn:disabled {
+            cursor: not-allowed;
+            opacity: .55;
+        }
+
+        .message {
+            min-height: 20px;
+            margin-top: 12px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .message.error {
+            color: var(--danger);
+        }
+
+        .message.ok {
+            color: var(--accent-strong);
+        }
+
+        .empty {
+            padding: 28px 18px;
+            color: var(--muted);
+            text-align: center;
+            border: 1px dashed var(--line);
+            border-radius: 8px;
+            background: var(--surface-2);
+        }
+
+        .team-list,
+        .member-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .team-item,
+        .member-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-height: 52px;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        .team-item {
+            cursor: pointer;
+        }
+
+        .team-item.active {
+            border-color: rgba(21, 122, 110, .42);
+            background: #edf7f5;
+        }
+
+        .name {
+            font-size: 14px;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+
+        .meta {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 12px;
+            overflow-wrap: anywhere;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            padding: 0 8px;
+            border-radius: 999px;
+            background: var(--surface-2);
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 650;
+            white-space: nowrap;
+        }
+
+        .split {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+        }
+
+        @media (max-width: 860px) {
+            .page {
+                width: min(100vw - 24px, 680px);
+                padding-top: 18px;
+            }
+
+            .topbar,
+            .layout,
+            .split {
+                grid-template-columns: 1fr;
+            }
+
+            .topbar {
+                display: grid;
+            }
+
+            .status {
+                justify-content: center;
+                white-space: normal;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <header class="topbar">
+            <div class="title-wrap">
+                <h1>团队画布</h1>
+                <div class="sub" id="userLine">未登录</div>
+            </div>
+            <div class="status" id="systemStatus">
+                <i data-lucide="loader-circle" width="16" height="16"></i>
+                <span>连接中</span>
+            </div>
+        </header>
+
+        <div class="layout">
+            <section class="panel" id="authPanel">
+                <div class="panel-head">
+                    <div class="panel-title">
+                        <i data-lucide="shield-check" width="18" height="18"></i>
+                        <span>账户</span>
+                    </div>
+                    <button class="btn ghost" id="logoutBtn" type="button" hidden>
+                        <i data-lucide="log-out" width="16" height="16"></i>
+                        <span>退出</span>
+                    </button>
+                </div>
+                <div class="panel-body">
+                    <div id="signedOut">
+                        <div class="tabs" role="tablist" aria-label="账户操作">
+                            <button class="tab active" id="loginTab" type="button" role="tab" aria-selected="true">登录</button>
+                            <button class="tab" id="signupTab" type="button" role="tab" aria-selected="false">注册</button>
+                        </div>
+                        <form id="authForm">
+                            <div class="field">
+                                <label for="email">邮箱</label>
+                                <input id="email" name="email" type="email" autocomplete="email" required>
+                            </div>
+                            <div class="field">
+                                <label for="password">密码</label>
+                                <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" required>
+                            </div>
+                            <button class="btn primary" id="authSubmit" type="submit">
+                                <i data-lucide="log-in" width="16" height="16"></i>
+                                <span>登录</span>
+                            </button>
+                        </form>
+                    </div>
+                    <div id="signedIn" hidden>
+                        <div class="name" id="signedInName">-</div>
+                        <div class="meta" id="signedInProvider">-</div>
+                    </div>
+                    <div class="message" id="authMessage"></div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-head">
+                    <div class="panel-title">
+                        <i data-lucide="users" width="18" height="18"></i>
+                        <span>团队</span>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="split">
+                        <form id="teamForm">
+                            <div class="field">
+                                <label for="teamName">新团队</label>
+                                <input id="teamName" name="teamName" type="text" maxlength="80" required>
+                            </div>
+                            <button class="btn primary" type="submit">
+                                <i data-lucide="plus" width="16" height="16"></i>
+                                <span>创建团队</span>
+                            </button>
+                        </form>
+
+                        <form id="inviteForm">
+                            <div class="row">
+                                <div class="field" style="flex:1">
+                                    <label for="inviteEmail">邀请邮箱</label>
+                                    <input id="inviteEmail" name="inviteEmail" type="email" required>
+                                </div>
+                                <div class="field" style="width:120px">
+                                    <label for="inviteRole">角色</label>
+                                    <select id="inviteRole" name="inviteRole">
+                                        <option value="member">成员</option>
+                                        <option value="admin">管理员</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button class="btn" type="submit">
+                                <i data-lucide="mail-plus" width="16" height="16"></i>
+                                <span>邀请</span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="message" id="teamMessage"></div>
+                    <div class="split" style="margin-top:16px">
+                        <div>
+                            <div class="panel-title" style="margin-bottom:10px">
+                                <i data-lucide="folder-kanban" width="17" height="17"></i>
+                                <span>我的团队</span>
+                            </div>
+                            <div class="team-list" id="teamList"></div>
+                        </div>
+                        <div>
+                            <div class="panel-title" style="margin-bottom:10px">
+                                <i data-lucide="user-round" width="17" height="17"></i>
+                                <span>成员</span>
+                            </div>
+                            <div class="member-list" id="memberList"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="/static/js/team-cloud.js?v=2026.07.23.1784878198"></script>
+</body>
+</html>

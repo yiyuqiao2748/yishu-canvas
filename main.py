@@ -38,6 +38,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response, StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
+
+BASE_IMPORT_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_IMPORT_DIR not in sys.path:
+    sys.path.insert(0, BASE_IMPORT_DIR)
+
 from team_cloud import router as team_cloud_router
 
 QUIET_ACCESS_PATHS = {
