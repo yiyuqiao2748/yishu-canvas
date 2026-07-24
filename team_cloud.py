@@ -39,7 +39,7 @@ class TeamCloudSettings:
 
     @property
     def auth_ready(self) -> bool:
-        return bool(self.supabase_jwt_secret) or self.dev_bypass
+        return bool(self.supabase_jwt_secret or (self.supabase_url and self.supabase_anon_key)) or self.dev_bypass
 
 
 settings = TeamCloudSettings()
@@ -133,14 +133,49 @@ def decode_supabase_token(token: str) -> CurrentUser:
     )
 
 
+def current_user_from_supabase_payload(payload: Dict[str, Any]) -> CurrentUser:
+    user_id = str(payload.get("id") or payload.get("sub") or "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="登录凭证缺少用户 ID")
+    return CurrentUser(
+        id=user_id,
+        email=str(payload.get("email") or ""),
+        provider="supabase",
+    )
+
+
+async def fetch_supabase_user(token: str) -> CurrentUser:
+    if not settings.supabase_url or not settings.supabase_anon_key:
+        raise HTTPException(status_code=503, detail="Supabase Auth 未配置")
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.get(
+            f"{settings.supabase_url}/auth/v1/user",
+            headers={
+                "apikey": settings.supabase_anon_key,
+                "Authorization": f"Bearer {token}",
+            },
+        )
+    if resp.status_code in {401, 403}:
+        raise HTTPException(status_code=401, detail="登录凭证无效")
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"Supabase Auth 请求失败: {resp.text}")
+    return current_user_from_supabase_payload(resp.json())
+
+
+async def authenticate_supabase_token(token: str) -> CurrentUser:
+    if settings.supabase_jwt_secret:
+        return decode_supabase_token(token)
+    return await fetch_supabase_user(token)
+
+
 async def require_user(
     authorization: Optional[str] = Header(default=None),
     team_cloud_access_token: Optional[str] = Cookie(default=None, alias=settings.cookie_name),
 ) -> CurrentUser:
     if authorization and authorization.lower().startswith("bearer "):
-        return decode_supabase_token(authorization[7:].strip())
+        return await authenticate_supabase_token(authorization[7:].strip())
     if team_cloud_access_token:
-        return decode_supabase_token(team_cloud_access_token)
+        return await authenticate_supabase_token(team_cloud_access_token)
     if settings.dev_bypass:
         return CurrentUser(
             id=os.getenv("TEAM_AUTH_DEV_USER_ID", "local-dev-user"),

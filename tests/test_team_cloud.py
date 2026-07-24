@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from team_cloud import CanvasSaveRequest, CurrentUser, LocalTeamStore
+from team_cloud import CanvasSaveRequest, CurrentUser, LocalTeamStore, current_user_from_supabase_payload
 
 
 class TeamCloudStoreTests(unittest.TestCase):
@@ -132,6 +132,16 @@ class TeamCloudStoreTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as asset_error:
             self.store.list_assets(self.outsider, team["id"])
         self.assertEqual(asset_error.exception.status_code, 403)
+
+    def test_supabase_user_payload_maps_to_current_user(self):
+        user = current_user_from_supabase_payload({
+            "id": "user-123",
+            "email": "person@example.com",
+        })
+
+        self.assertEqual(user.id, "user-123")
+        self.assertEqual(user.email, "person@example.com")
+        self.assertEqual(user.provider, "supabase")
 
 
 if __name__ == "__main__":

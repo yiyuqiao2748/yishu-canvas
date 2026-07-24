@@ -48,7 +48,7 @@ create table if not exists public.canvases (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams(id) on delete cascade,
   project_id uuid not null references public.projects(id) on delete cascade,
-  title text not null default '未命名画布',
+  title text not null default 'Untitled canvas',
   data jsonb not null default '{}'::jsonb,
   version integer not null default 1,
   created_by uuid not null,
