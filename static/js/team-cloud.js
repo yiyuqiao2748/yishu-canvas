@@ -1,5 +1,8 @@
 (function(){
     const $ = (id) => document.getElementById(id);
+    const TEAM_CLOUD_MODE_KEY = "teamCloudMode";
+    const TEAM_CLOUD_TEAM_KEY = "teamCloudCurrentTeamId";
+    const TEAM_CLOUD_PROJECT_KEY = "teamCloudCurrentProjectId";
 
     const state = {
         mode: "login",
@@ -255,6 +258,10 @@
 
     async function selectTeam(teamId, silent){
         state.selectedTeamId = teamId;
+        try {
+            localStorage.setItem(TEAM_CLOUD_MODE_KEY, "1");
+            localStorage.setItem(TEAM_CLOUD_TEAM_KEY, teamId);
+        } catch(e) {}
         renderTeams();
         try {
             const data = await api(`/teams/${encodeURIComponent(teamId)}/members`);
@@ -290,6 +297,10 @@
 
     async function selectProject(projectId, silent){
         state.selectedProjectId = projectId;
+        try {
+            localStorage.setItem(TEAM_CLOUD_MODE_KEY, "1");
+            localStorage.setItem(TEAM_CLOUD_PROJECT_KEY, projectId);
+        } catch(e) {}
         renderProjects();
         try {
             const data = await api(`/projects/${encodeURIComponent(projectId)}/canvases`);
@@ -432,6 +443,11 @@
             state.canvases = [];
             state.selectedTeamId = "";
             state.selectedProjectId = "";
+            try {
+                localStorage.removeItem(TEAM_CLOUD_MODE_KEY);
+                localStorage.removeItem(TEAM_CLOUD_TEAM_KEY);
+                localStorage.removeItem(TEAM_CLOUD_PROJECT_KEY);
+            } catch(e) {}
             setMessage($("authMessage"), "已退出", "ok");
             renderAuth();
             renderTeams();

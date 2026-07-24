@@ -11,10 +11,32 @@ function escapeAttr(str){ return escapeHtml(str); }
 function L(zh, en){ return langIsEn() ? en : zh; }
 function compactLabel(fullZh, compactZh, en){ return window.innerWidth <= 760 ? L(compactZh, en) : L(fullZh, en); }
 const CANVAS_LIST_PROJECT_KEY = 'canvasListCurrentProjectId';
+const TEAM_CLOUD_MODE_KEY = 'teamCloudMode';
+const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
+const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
+
+const teamCloud = {
+    enabled: false,
+    user: null,
+    teamId: '',
+};
+
+function cloudModeRequested(){
+    try {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('cloud') === '1' || localStorage.getItem(TEAM_CLOUD_MODE_KEY) === '1';
+    } catch(e){
+        return false;
+    }
+}
 
 function rememberedProjectId(){
     try {
-        return new URLSearchParams(window.location.search).get('project') || localStorage.getItem(CANVAS_LIST_PROJECT_KEY) || 'default';
+        const params = new URLSearchParams(window.location.search);
+        if(cloudModeRequested()){
+            return params.get('project') || localStorage.getItem(TEAM_CLOUD_PROJECT_KEY) || '';
+        }
+        return params.get('project') || localStorage.getItem(CANVAS_LIST_PROJECT_KEY) || 'default';
     } catch(e){
         return 'default';
     }
@@ -22,13 +44,15 @@ function rememberedProjectId(){
 
 function rememberProjectId(pid){
     if(!pid) return;
-    try { localStorage.setItem(CANVAS_LIST_PROJECT_KEY, pid); } catch(e){}
+    try {
+        localStorage.setItem(teamCloud.enabled ? TEAM_CLOUD_PROJECT_KEY : CANVAS_LIST_PROJECT_KEY, pid);
+    } catch(e){}
 }
 
 function formatCanvasTime(value){
     if(!value) return '--';
     const raw = Number(value);
-    const time = raw < 10000000000 ? raw * 1000 : raw;
+    const time = Number.isNaN(raw) ? Date.parse(value) : (raw < 10000000000 ? raw * 1000 : raw);
     const date = new Date(time);
     if(Number.isNaN(date.getTime())) return '--';
     return date.toLocaleString(langIsEn() ? 'en-US' : 'zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
@@ -176,8 +200,106 @@ function onBoardWheel(e){
 function currentProject(){ return projects.find(p => p.id === currentProjectId) || projects[0] || null; }
 function canvasesInProject(pid){ return canvases.filter(c => (c.project || 'default') === pid); }
 
+async function cloudApi(path, options){
+    const res = await fetch(`/api/team-cloud${path}`, {
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(options?.headers || {})
+        },
+        ...options
+    });
+    let data = {};
+    try { data = await res.json(); } catch(e){}
+    if(!res.ok) throw new Error(data.detail || data.message || 'team cloud request failed');
+    return data;
+}
+
+function mapCloudProject(project, index = 0){
+    return {
+        ...project,
+        id: project.id,
+        name: project.name || L('未命名项目','Untitled project'),
+        order: index,
+        canvas_count: 0,
+        is_cloud: true,
+    };
+}
+
+function mapCloudCanvas(canvas){
+    const data = canvas.data || {};
+    return {
+        ...canvas,
+        id: canvas.id,
+        title: canvas.title || L('未命名画布','Untitled canvas'),
+        project: canvas.project_id,
+        kind: data.kind || 'smart',
+        icon: data.icon || 'sparkles',
+        node_count: Array.isArray(data.nodes) ? data.nodes.length : 0,
+        board_x: data.board_x,
+        board_y: data.board_y,
+        is_cloud: true,
+    };
+}
+
+async function loadCloudAll(){
+    if(!cloudModeRequested()) return false;
+    try {
+        const me = await cloudApi('/me');
+        const teams = me.teams || [];
+        if(!teams.length){
+            teamCloud.enabled = false;
+            return false;
+        }
+        const rememberedTeamId = localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || '';
+        const selectedTeam = teams.find(t => t.id === rememberedTeamId) || teams[0];
+        teamCloud.enabled = true;
+        teamCloud.user = me.user;
+        teamCloud.teamId = selectedTeam.id;
+        localStorage.setItem(TEAM_CLOUD_MODE_KEY, '1');
+        localStorage.setItem(TEAM_CLOUD_TEAM_KEY, selectedTeam.id);
+
+        const projectData = await cloudApi(`/teams/${encodeURIComponent(selectedTeam.id)}/projects`);
+        projects = (projectData.projects || []).map(mapCloudProject);
+        if(!projects.length){
+            canvases = [];
+            currentProjectId = '';
+            renderProjects();
+            renderBoard();
+            refreshTrashCount();
+            return true;
+        }
+
+        if(!projects.find(p => p.id === currentProjectId)){
+            currentProjectId = localStorage.getItem(TEAM_CLOUD_PROJECT_KEY) || projects[0].id;
+            if(!projects.find(p => p.id === currentProjectId)) currentProjectId = projects[0].id;
+        }
+        rememberProjectId(currentProjectId);
+
+        const canvasGroups = await Promise.all(projects.map(async p => {
+            const data = await cloudApi(`/projects/${encodeURIComponent(p.id)}/canvases`);
+            return (data.canvases || []).map(mapCloudCanvas);
+        }));
+        canvases = canvasGroups.flat();
+        projects.forEach(p => {
+            p.canvas_count = canvases.filter(c => c.project === p.id).length;
+        });
+        renderProjects();
+        renderBoard();
+        resetView();
+        refreshTrashCount();
+        return true;
+    } catch(e){
+        console.error(e);
+        teamCloud.enabled = false;
+        setStatus(L('团队云端加载失败','Team cloud load failed'));
+        return false;
+    }
+}
+
 async function loadAll(){
     try {
+        if(await loadCloudAll()) return;
         const [pRes, cRes] = await Promise.all([
             fetch('/api/projects'),
             fetch('/api/canvases')
@@ -233,14 +355,14 @@ function renderProjects(){
         row.dataset.projectId = p.id;
         const count = projectCanvasCount(p.id);
         const isDefault = p.id === 'default';
+        const actionHtml = teamCloud.enabled ? '' : `
+                <button class="ws-proj-act rename" type="button" title="${L('重命名','Rename')}" aria-label="${L('重命名','Rename')}"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                ${isDefault ? '' : `<button class="ws-proj-act del" type="button" title="${L('删除','Delete')}" aria-label="${L('删除','Delete')}"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`}`;
         row.innerHTML = `
             <span class="ws-project-icon"><i data-lucide="${isDefault ? 'folder' : 'folder-open'}" class="w-4 h-4"></i></span>
             <span class="ws-project-name">${escapeHtml(p.name)}</span>
             <span class="ws-project-count">${count}</span>
-            <span class="ws-project-actions">
-                <button class="ws-proj-act rename" type="button" title="${L('重命名','Rename')}" aria-label="${L('重命名','Rename')}"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
-                ${isDefault ? '' : `<button class="ws-proj-act del" type="button" title="${L('删除','Delete')}" aria-label="${L('删除','Delete')}"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`}
-            </span>`;
+            <span class="ws-project-actions">${actionHtml}</span>`;
         row.onclick = e => {
             if(e.target.closest('.ws-proj-act')) return;
             selectProject(p.id);
@@ -304,6 +426,22 @@ async function createProject(){
     const name = newProjectInput.value.trim() || L('新项目','New project');
     closeNewProject();
     try {
+        if(teamCloud.enabled){
+            const data = await cloudApi(`/teams/${encodeURIComponent(teamCloud.teamId)}/projects`, {
+                method: 'POST',
+                body: JSON.stringify({ name, description: '' })
+            });
+            const proj = mapCloudProject(data.project, projects.length);
+            projects.push(proj);
+            currentProjectId = proj.id;
+            rememberProjectId(currentProjectId);
+            canvases = canvases.filter(c => c.project !== proj.id);
+            renderProjects();
+            renderBoard();
+            resetView();
+            setStatus(L('项目已创建','Project created'));
+            return;
+        }
         const res = await fetch('/api/projects', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -463,6 +601,10 @@ function attachCardDrag(card, c){
 }
 
 function openCanvas(c){
+    if(teamCloud.enabled || c.is_cloud){
+        setStatus(L('云端画布编辑接入中','Cloud canvas editing is being connected'));
+        return;
+    }
     const enc = encodeURIComponent(c.id);
     const project = encodeURIComponent(c.project || currentProjectId || 'default');
     rememberProjectId(c.project || currentProjectId || 'default');
@@ -521,6 +663,35 @@ async function createCanvasOnBoard(title, kind, worldPt){
     const name = title || `${base} ${new Date().toLocaleTimeString(langIsEn() ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
     closeCreateCard();
     try {
+        if(teamCloud.enabled){
+            if(!currentProjectId){
+                setStatus(L('请先创建项目','Create a project first'));
+                return;
+            }
+            const data = await cloudApi(`/projects/${encodeURIComponent(currentProjectId)}/canvases`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    title: name,
+                    data: {
+                        kind: isSmart ? 'smart' : 'classic',
+                        icon: isSmart ? 'sparkles' : 'layers',
+                        board_x: Math.round(worldPt.x),
+                        board_y: Math.round(worldPt.y),
+                        nodes: [],
+                        connections: [],
+                        viewport: { x: 0, y: 0, scale: 1 },
+                    }
+                })
+            });
+            const nc = mapCloudCanvas(data.canvas);
+            canvases.push(nc);
+            const p = projects.find(item => item.id === currentProjectId);
+            if(p) p.canvas_count = (p.canvas_count || 0) + 1;
+            renderBoard();
+            renderProjects();
+            setStatus(L('云端画布已创建','Cloud canvas created'));
+            return;
+        }
         const res = await fetch('/api/canvases', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -555,7 +726,9 @@ function openCardMenu(canvasId, anchorBtn){
     if(!c) return;
     const pop = document.createElement('div');
     pop.className = 'ws-card-pop';
-    pop.innerHTML = `
+    pop.innerHTML = (teamCloud.enabled || c.is_cloud) ? `
+        <button class="ws-pop-item" data-act="rename"><i data-lucide="pencil" class="w-4 h-4"></i><span>${L('重命名','Rename')}</span></button>
+        <button class="ws-pop-item" data-act="export"><i data-lucide="download" class="w-4 h-4"></i><span>${L('导出画布','Export canvas')}</span></button>` : `
         <button class="ws-pop-item" data-act="rename"><i data-lucide="pencil" class="w-4 h-4"></i><span>${L('重命名','Rename')}</span></button>
         <button class="ws-pop-item" data-act="export"><i data-lucide="download" class="w-4 h-4"></i><span>${L('导出画布','Export canvas')}</span></button>
         <button class="ws-pop-item" data-act="export-assets"><i data-lucide="archive" class="w-4 h-4"></i><span>${L('导出画布 + 资源','Export with assets')}</span></button>
@@ -572,9 +745,12 @@ function openCardMenu(canvasId, anchorBtn){
     pop.style.top = Math.round(Math.max(12, top)) + 'px';
     pop.querySelector('[data-act="rename"]').onclick = () => { closeCardMenu(); startCardRename(canvasId); };
     pop.querySelector('[data-act="export"]').onclick = () => { closeCardMenu(); exportCanvas(canvasId); };
-    pop.querySelector('[data-act="export-assets"]').onclick = () => { closeCardMenu(); exportCanvasWithResources(canvasId); };
-    pop.querySelector('[data-act="cut"]').onclick = () => { closeCardMenu(); cutCanvas(canvasId); };
-    pop.querySelector('[data-act="delete"]').onclick = () => { closeCardMenu(); showCardDeleteConfirm(canvasId); };
+    const exportAssetsBtn = pop.querySelector('[data-act="export-assets"]');
+    if(exportAssetsBtn) exportAssetsBtn.onclick = () => { closeCardMenu(); exportCanvasWithResources(canvasId); };
+    const cutBtn = pop.querySelector('[data-act="cut"]');
+    if(cutBtn) cutBtn.onclick = () => { closeCardMenu(); cutCanvas(canvasId); };
+    const deleteBtn = pop.querySelector('[data-act="delete"]');
+    if(deleteBtn) deleteBtn.onclick = () => { closeCardMenu(); showCardDeleteConfirm(canvasId); };
     refreshIcons();
 }
 
@@ -592,9 +768,13 @@ async function exportCanvas(id){
     const c = canvases.find(x => x.id === id);
     setStatus(L('正在导出...','Exporting...'));
     try {
-        const res = await fetch(`/api/canvases/${encodeURIComponent(id)}`);
-        if(!res.ok) throw new Error('export failed');
-        const data = await res.json();
+        const data = (teamCloud.enabled || c?.is_cloud)
+            ? await cloudApi(`/canvases/${encodeURIComponent(id)}`)
+            : await (async () => {
+                const res = await fetch(`/api/canvases/${encodeURIComponent(id)}`);
+                if(!res.ok) throw new Error('export failed');
+                return res.json();
+            })();
         const cv = data.canvas || data;
         const base = String((c?.title) || cv.title || 'canvas').replace(/[\\/:*?"<>|]+/g, '_').trim().slice(0, 60) || 'canvas';
         const blob = new Blob([JSON.stringify(cv, null, 2)], { type: 'application/json' });
@@ -852,6 +1032,24 @@ async function moveCanvasToProject(id, projectId){
 /* ===== Card meta persist (POST /meta) ===== */
 async function persistMeta(id, patch){
     try {
+        const current = canvases.find(x => x.id === id);
+        if(teamCloud.enabled || current?.is_cloud){
+            const remote = await cloudApi(`/canvases/${encodeURIComponent(id)}`);
+            const canvas = remote.canvas || {};
+            const { title, ...metaPatch } = patch;
+            const nextData = { ...(canvas.data || {}), ...metaPatch };
+            const data = await cloudApi(`/canvases/${encodeURIComponent(id)}`, {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    title: title || canvas.title,
+                    data: nextData,
+                    base_version: canvas.version,
+                })
+            });
+            const idx = canvases.findIndex(x => x.id === id);
+            if(idx >= 0) canvases[idx] = { ...canvases[idx], ...mapCloudCanvas(data.canvas) };
+            return;
+        }
         const res = await fetch(`/api/canvases/${encodeURIComponent(id)}/meta`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -883,6 +1081,15 @@ async function deleteCanvas(id){
 
 /* ===== Trash / recycle bin ===== */
 async function refreshTrashCount(){
+    if(teamCloud.enabled){
+        deletedCanvases = [];
+        trashBadge.textContent = '0';
+        trashBadge.classList.remove('visible');
+        trashEntryBtn.style.display = 'none';
+        closeTrashView();
+        return;
+    }
+    trashEntryBtn.style.display = '';
     try {
         const res = await fetch('/api/canvases/trash');
         if(!res.ok) return;
