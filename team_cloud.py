@@ -53,6 +53,22 @@ class TeamCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
 
 
+class ProjectCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: str = Field("", max_length=500)
+
+
+class CanvasCreateRequest(BaseModel):
+    title: str = Field("未命名画布", min_length=1, max_length=120)
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CanvasSaveRequest(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=120)
+    data: Dict[str, Any] = Field(default_factory=dict)
+    base_version: Optional[int] = Field(None, ge=1)
+
+
 class AuthEmailPasswordRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=254)
     password: str = Field(..., min_length=6, max_length=128)
@@ -191,7 +207,7 @@ class LocalTeamStore:
 
     def _read(self) -> Dict[str, Any]:
         if not os.path.exists(self.path):
-            return {"teams": [], "members": [], "invitations": []}
+            return {"teams": [], "members": [], "invitations": [], "projects": [], "canvases": [], "canvas_versions": []}
         try:
             with open(self.path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
@@ -201,6 +217,9 @@ class LocalTeamStore:
             "teams": data.get("teams") or [],
             "members": data.get("members") or [],
             "invitations": data.get("invitations") or [],
+            "projects": data.get("projects") or [],
+            "canvases": data.get("canvases") or [],
+            "canvas_versions": data.get("canvas_versions") or [],
         }
 
     def _write(self, data: Dict[str, Any]) -> None:
@@ -274,11 +293,134 @@ class LocalTeamStore:
             self._write(data)
             return invitation
 
+    def list_projects(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            return [p for p in data["projects"] if p.get("team_id") == team_id and not p.get("archived_at")]
+
+    def create_project(self, user: CurrentUser, team_id: str, name: str, description: str = "") -> Dict[str, Any]:
+        clean_name = name.strip()
+        if not clean_name:
+            raise HTTPException(status_code=400, detail="项目名称不能为空")
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            project = {
+                "id": str(uuid.uuid4()),
+                "team_id": team_id,
+                "name": clean_name,
+                "description": description.strip(),
+                "created_by": user.id,
+                "archived_at": None,
+                "created_at": now_ms(),
+                "updated_at": now_ms(),
+            }
+            data["projects"].append(project)
+            self._write(data)
+            return project
+
+    def list_canvases(self, user: CurrentUser, project_id: str) -> List[Dict[str, Any]]:
+        with self.lock:
+            data = self._read()
+            project = self._require_project_member(data, user.id, project_id)
+            return [
+                self._canvas_summary(canvas)
+                for canvas in data["canvases"]
+                if canvas.get("project_id") == project["id"]
+            ]
+
+    def create_canvas(self, user: CurrentUser, project_id: str, title: str, canvas_data: Dict[str, Any]) -> Dict[str, Any]:
+        clean_title = title.strip() or "未命名画布"
+        with self.lock:
+            data = self._read()
+            project = self._require_project_member(data, user.id, project_id)
+            canvas = {
+                "id": str(uuid.uuid4()),
+                "team_id": project["team_id"],
+                "project_id": project["id"],
+                "title": clean_title,
+                "data": canvas_data or {},
+                "version": 1,
+                "created_by": user.id,
+                "updated_by": user.id,
+                "created_at": now_ms(),
+                "updated_at": now_ms(),
+            }
+            data["canvases"].append(canvas)
+            data["canvas_versions"].append(self._canvas_version_row(canvas))
+            self._write(data)
+            return canvas
+
+    def get_canvas(self, user: CurrentUser, canvas_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            canvas = self._find_canvas(data, canvas_id)
+            if not canvas:
+                raise HTTPException(status_code=404, detail="画布不存在")
+            self._require_member(data, user.id, canvas["team_id"])
+            return canvas
+
+    def save_canvas(self, user: CurrentUser, canvas_id: str, payload: CanvasSaveRequest) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            canvas = self._find_canvas(data, canvas_id)
+            if not canvas:
+                raise HTTPException(status_code=404, detail="画布不存在")
+            self._require_member(data, user.id, canvas["team_id"])
+            if payload.base_version is not None and payload.base_version != canvas.get("version"):
+                raise HTTPException(status_code=409, detail="画布已被更新，请刷新后再保存")
+            canvas["data"] = payload.data or {}
+            if payload.title is not None:
+                canvas["title"] = payload.title.strip() or canvas["title"]
+            canvas["version"] = int(canvas.get("version") or 1) + 1
+            canvas["updated_by"] = user.id
+            canvas["updated_at"] = now_ms()
+            data["canvas_versions"].append(self._canvas_version_row(canvas))
+            self._write(data)
+            return canvas
+
     def _require_member(self, data: Dict[str, Any], user_id: str, team_id: str) -> Dict[str, Any]:
         for member in data["members"]:
             if member.get("team_id") == team_id and member.get("user_id") == user_id:
                 return member
         raise HTTPException(status_code=403, detail="没有访问该团队的权限")
+
+    def _require_project_member(self, data: Dict[str, Any], user_id: str, project_id: str) -> Dict[str, Any]:
+        for project in data["projects"]:
+            if project.get("id") == project_id and not project.get("archived_at"):
+                self._require_member(data, user_id, project["team_id"])
+                return project
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    def _find_canvas(self, data: Dict[str, Any], canvas_id: str) -> Optional[Dict[str, Any]]:
+        for canvas in data["canvases"]:
+            if canvas.get("id") == canvas_id:
+                return canvas
+        return None
+
+    def _canvas_summary(self, canvas: Dict[str, Any]) -> Dict[str, Any]:
+        return {key: canvas.get(key) for key in (
+            "id",
+            "team_id",
+            "project_id",
+            "title",
+            "version",
+            "created_by",
+            "updated_by",
+            "created_at",
+            "updated_at",
+        )}
+
+    def _canvas_version_row(self, canvas: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "id": str(uuid.uuid4()),
+            "canvas_id": canvas["id"],
+            "version": canvas["version"],
+            "data": canvas.get("data") or {},
+            "created_by": canvas["updated_by"],
+            "created_at": now_ms(),
+        }
 
 
 class SupabaseTeamStore:
@@ -351,6 +493,101 @@ class SupabaseTeamStore:
         )
         return rows[0]
 
+    async def list_projects(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
+        await self._require_member(user.id, team_id)
+        return await self._request(
+            "GET",
+            f"/projects?team_id=eq.{team_id}&archived_at=is.null&order=updated_at.desc&select=*",
+        )
+
+    async def create_project(self, user: CurrentUser, team_id: str, name: str, description: str = "") -> Dict[str, Any]:
+        await self._require_member(user.id, team_id)
+        rows = await self._request(
+            "POST",
+            "/projects",
+            json_body=[{
+                "team_id": team_id,
+                "name": name.strip(),
+                "description": description.strip(),
+                "created_by": user.id,
+            }],
+        )
+        return rows[0]
+
+    async def list_canvases(self, user: CurrentUser, project_id: str) -> List[Dict[str, Any]]:
+        project = await self._require_project_member(user.id, project_id)
+        return await self._request(
+            "GET",
+            f"/canvases?team_id=eq.{project['team_id']}&project_id=eq.{project_id}&order=updated_at.desc&select=id,team_id,project_id,title,version,created_by,updated_by,created_at,updated_at",
+        )
+
+    async def create_canvas(self, user: CurrentUser, project_id: str, title: str, canvas_data: Dict[str, Any]) -> Dict[str, Any]:
+        project = await self._require_project_member(user.id, project_id)
+        rows = await self._request(
+            "POST",
+            "/canvases",
+            json_body=[{
+                "team_id": project["team_id"],
+                "project_id": project_id,
+                "title": title.strip() or "未命名画布",
+                "data": canvas_data or {},
+                "version": 1,
+                "created_by": user.id,
+                "updated_by": user.id,
+            }],
+        )
+        canvas = rows[0]
+        await self._request(
+            "POST",
+            "/canvas_versions",
+            json_body=[{
+                "canvas_id": canvas["id"],
+                "version": canvas["version"],
+                "data": canvas.get("data") or {},
+                "created_by": user.id,
+            }],
+        )
+        return canvas
+
+    async def get_canvas(self, user: CurrentUser, canvas_id: str) -> Dict[str, Any]:
+        rows = await self._request("GET", f"/canvases?id=eq.{canvas_id}&select=*")
+        if not rows:
+            raise HTTPException(status_code=404, detail="画布不存在")
+        canvas = rows[0]
+        await self._require_member(user.id, canvas["team_id"])
+        return canvas
+
+    async def save_canvas(self, user: CurrentUser, canvas_id: str, payload: CanvasSaveRequest) -> Dict[str, Any]:
+        canvas = await self.get_canvas(user, canvas_id)
+        if payload.base_version is not None and payload.base_version != canvas.get("version"):
+            raise HTTPException(status_code=409, detail="画布已被更新，请刷新后再保存")
+        next_version = int(canvas.get("version") or 1) + 1
+        patch = {
+            "data": payload.data or {},
+            "version": next_version,
+            "updated_by": user.id,
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        if payload.title is not None:
+            patch["title"] = payload.title.strip() or canvas.get("title") or "未命名画布"
+        rows = await self._request(
+            "PATCH",
+            f"/canvases?id=eq.{canvas_id}",
+            json_body=patch,
+        )
+        updated = rows[0]
+        await self._request(
+            "POST",
+            "/canvas_versions",
+            json_body=[{
+                "canvas_id": canvas_id,
+                "version": updated["version"],
+                "data": updated.get("data") or {},
+                "created_by": user.id,
+            }],
+        )
+        return updated
+
     async def _require_member(self, user_id: str, team_id: str) -> Dict[str, Any]:
         rows = await self._request(
             "GET",
@@ -359,6 +596,17 @@ class SupabaseTeamStore:
         if not rows:
             raise HTTPException(status_code=403, detail="没有访问该团队的权限")
         return rows[0]
+
+    async def _require_project_member(self, user_id: str, project_id: str) -> Dict[str, Any]:
+        rows = await self._request(
+            "GET",
+            f"/projects?id=eq.{project_id}&archived_at=is.null&select=*",
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="项目不存在")
+        project = rows[0]
+        await self._require_member(user_id, project["team_id"])
+        return project
 
 
 local_store = LocalTeamStore(LOCAL_TEAM_STORE)
@@ -435,6 +683,54 @@ async def invite_team_member(
 ) -> Dict[str, Any]:
     invitation = await maybe_await(active_store().invite_member(user, team_id, payload.email, payload.role))
     return {"invitation": invitation}
+
+
+@router.get("/teams/{team_id}/projects")
+async def list_team_projects(team_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    projects = await maybe_await(active_store().list_projects(user, team_id))
+    return {"projects": projects}
+
+
+@router.post("/teams/{team_id}/projects")
+async def create_team_project(
+    team_id: str,
+    payload: ProjectCreateRequest,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    project = await maybe_await(active_store().create_project(user, team_id, payload.name, payload.description))
+    return {"project": project}
+
+
+@router.get("/projects/{project_id}/canvases")
+async def list_project_canvases(project_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    canvases = await maybe_await(active_store().list_canvases(user, project_id))
+    return {"canvases": canvases}
+
+
+@router.post("/projects/{project_id}/canvases")
+async def create_project_canvas(
+    project_id: str,
+    payload: CanvasCreateRequest,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    canvas = await maybe_await(active_store().create_canvas(user, project_id, payload.title, payload.data))
+    return {"canvas": canvas}
+
+
+@router.get("/canvases/{canvas_id}")
+async def get_team_canvas(canvas_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    canvas = await maybe_await(active_store().get_canvas(user, canvas_id))
+    return {"canvas": canvas}
+
+
+@router.patch("/canvases/{canvas_id}")
+async def save_team_canvas(
+    canvas_id: str,
+    payload: CanvasSaveRequest,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    canvas = await maybe_await(active_store().save_canvas(user, canvas_id, payload))
+    return {"canvas": canvas}
 
 
 async def maybe_await(value):

@@ -5,7 +5,10 @@
         mode: "login",
         user: null,
         teams: [],
+        projects: [],
+        canvases: [],
         selectedTeamId: "",
+        selectedProjectId: "",
         config: null,
     };
 
@@ -71,6 +74,8 @@
         $("logoutBtn").hidden = !signedIn;
         $("teamForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn);
         $("inviteForm").querySelectorAll("input,select,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
+        $("projectForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
+        $("canvasForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedProjectId);
 
         if(signedIn){
             $("userLine").textContent = state.user.email || state.user.id;
@@ -145,6 +150,60 @@
         });
     }
 
+    function renderProjects(){
+        const list = $("projectList");
+        list.innerHTML = "";
+        if(!state.selectedTeamId){
+            list.innerHTML = '<div class="empty">选择团队后显示项目</div>';
+            $("canvasList").innerHTML = '<div class="empty">选择项目后显示画布</div>';
+            return;
+        }
+        if(!state.projects.length){
+            list.innerHTML = '<div class="empty">还没有项目</div>';
+            $("canvasList").innerHTML = '<div class="empty">创建项目后显示画布</div>';
+            return;
+        }
+        state.projects.forEach((project) => {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = `team-item${project.id === state.selectedProjectId ? " active" : ""}`;
+            item.innerHTML = `
+                <span>
+                    <span class="name">${escapeHtml(project.name)}</span>
+                    <span class="meta">${escapeHtml(project.description || project.id)}</span>
+                </span>
+                <span class="badge">项目</span>
+            `;
+            item.addEventListener("click", () => selectProject(project.id));
+            list.appendChild(item);
+        });
+    }
+
+    function renderCanvases(){
+        const list = $("canvasList");
+        list.innerHTML = "";
+        if(!state.selectedProjectId){
+            list.innerHTML = '<div class="empty">选择项目后显示画布</div>';
+            return;
+        }
+        if(!state.canvases.length){
+            list.innerHTML = '<div class="empty">还没有云端画布</div>';
+            return;
+        }
+        state.canvases.forEach((canvas) => {
+            const item = document.createElement("div");
+            item.className = "member-item";
+            item.innerHTML = `
+                <span>
+                    <span class="name">${escapeHtml(canvas.title)}</span>
+                    <span class="meta">v${escapeHtml(canvas.version)} · ${escapeHtml(canvas.id)}</span>
+                </span>
+                <span class="badge">画布</span>
+            `;
+            list.appendChild(item);
+        });
+    }
+
     function roleLabel(role){
         return {
             owner: "拥有者",
@@ -176,14 +235,21 @@
                 await selectTeam(state.selectedTeamId, true);
             } else {
                 renderMembers([]);
+                renderProjects();
+                renderCanvases();
             }
         } catch(e) {
             state.user = null;
             state.teams = [];
+            state.projects = [];
+            state.canvases = [];
             state.selectedTeamId = "";
+            state.selectedProjectId = "";
             renderAuth();
             renderTeams();
             renderMembers([]);
+            renderProjects();
+            renderCanvases();
         }
     }
 
@@ -193,10 +259,47 @@
         try {
             const data = await api(`/teams/${encodeURIComponent(teamId)}/members`);
             renderMembers(data.members || []);
+            await loadProjects(teamId);
             setMessage($("teamMessage"), silent ? "" : "团队已选择", silent ? "" : "ok");
         } catch(e) {
             renderMembers([]);
+            state.projects = [];
+            state.canvases = [];
+            state.selectedProjectId = "";
+            renderProjects();
+            renderCanvases();
             setMessage($("teamMessage"), e.message, "error");
+        }
+        renderAuth();
+    }
+
+    async function loadProjects(teamId){
+        const data = await api(`/teams/${encodeURIComponent(teamId)}/projects`);
+        state.projects = data.projects || [];
+        if(!state.projects.some((project) => project.id === state.selectedProjectId)){
+            state.selectedProjectId = state.projects[0] ? state.projects[0].id : "";
+        }
+        renderProjects();
+        if(state.selectedProjectId){
+            await selectProject(state.selectedProjectId, true);
+        } else {
+            state.canvases = [];
+            renderCanvases();
+        }
+    }
+
+    async function selectProject(projectId, silent){
+        state.selectedProjectId = projectId;
+        renderProjects();
+        try {
+            const data = await api(`/projects/${encodeURIComponent(projectId)}/canvases`);
+            state.canvases = data.canvases || [];
+            renderCanvases();
+            setMessage($("projectMessage"), silent ? "" : "项目已选择", silent ? "" : "ok");
+        } catch(e) {
+            state.canvases = [];
+            renderCanvases();
+            setMessage($("projectMessage"), e.message, "error");
         }
         renderAuth();
     }
@@ -242,11 +345,61 @@
             $("teamName").value = "";
             state.teams.unshift(data.team);
             state.selectedTeamId = data.team.id;
+            state.projects = [];
+            state.canvases = [];
+            state.selectedProjectId = "";
             renderTeams();
             await selectTeam(data.team.id, true);
             setMessage($("teamMessage"), "团队已创建", "ok");
         } catch(e) {
             setMessage($("teamMessage"), e.message, "error");
+        }
+    }
+
+    async function submitProject(event){
+        event.preventDefault();
+        if(!state.selectedTeamId) return;
+        setMessage($("projectMessage"), "", "");
+        try {
+            const data = await api(`/teams/${encodeURIComponent(state.selectedTeamId)}/projects`, {
+                method: "POST",
+                body: JSON.stringify({
+                    name: $("projectName").value.trim(),
+                    description: $("projectDescription").value.trim(),
+                }),
+            });
+            $("projectName").value = "";
+            $("projectDescription").value = "";
+            state.projects.unshift(data.project);
+            state.selectedProjectId = data.project.id;
+            state.canvases = [];
+            renderProjects();
+            renderCanvases();
+            setMessage($("projectMessage"), "项目已创建", "ok");
+            renderAuth();
+        } catch(e) {
+            setMessage($("projectMessage"), e.message, "error");
+        }
+    }
+
+    async function submitCanvas(event){
+        event.preventDefault();
+        if(!state.selectedProjectId) return;
+        setMessage($("projectMessage"), "", "");
+        try {
+            const data = await api(`/projects/${encodeURIComponent(state.selectedProjectId)}/canvases`, {
+                method: "POST",
+                body: JSON.stringify({
+                    title: $("canvasTitle").value.trim(),
+                    data: { nodes: [], connections: [], viewport: { x: 0, y: 0, scale: 1 } },
+                }),
+            });
+            $("canvasTitle").value = "";
+            state.canvases.unshift(data.canvas);
+            renderCanvases();
+            setMessage($("projectMessage"), "云端画布已创建", "ok");
+        } catch(e) {
+            setMessage($("projectMessage"), e.message, "error");
         }
     }
 
@@ -275,11 +428,16 @@
         } finally {
             state.user = null;
             state.teams = [];
+            state.projects = [];
+            state.canvases = [];
             state.selectedTeamId = "";
+            state.selectedProjectId = "";
             setMessage($("authMessage"), "已退出", "ok");
             renderAuth();
             renderTeams();
             renderMembers([]);
+            renderProjects();
+            renderCanvases();
         }
     }
 
@@ -295,6 +453,8 @@
         $("authForm").addEventListener("submit", submitAuth);
         $("teamForm").addEventListener("submit", submitTeam);
         $("inviteForm").addEventListener("submit", submitInvite);
+        $("projectForm").addEventListener("submit", submitProject);
+        $("canvasForm").addEventListener("submit", submitCanvas);
         $("logoutBtn").addEventListener("click", logout);
 
         try {
@@ -309,6 +469,8 @@
         renderAuth();
         renderTeams();
         renderMembers([]);
+        renderProjects();
+        renderCanvases();
         await loadMe();
         iconRefresh();
     }

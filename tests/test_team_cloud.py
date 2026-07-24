@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from team_cloud import CurrentUser, LocalTeamStore
+from team_cloud import CanvasSaveRequest, CurrentUser, LocalTeamStore
 
 
 class TeamCloudStoreTests(unittest.TestCase):
@@ -54,6 +54,65 @@ class TeamCloudStoreTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as invite_error:
             self.store.invite_member(self.outsider, team["id"], "person@example.com", "member")
         self.assertEqual(invite_error.exception.status_code, 403)
+
+    def test_project_and_canvas_lifecycle(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        project = self.store.create_project(self.owner, team["id"], "Launch Board", "shared work")
+
+        self.assertEqual(project["team_id"], team["id"])
+        self.assertEqual(self.store.list_projects(self.owner, team["id"])[0]["name"], "Launch Board")
+
+        canvas = self.store.create_canvas(
+            self.owner,
+            project["id"],
+            "Storyboard",
+            {"nodes": [], "connections": []},
+        )
+
+        self.assertEqual(canvas["version"], 1)
+        self.assertEqual(self.store.list_canvases(self.owner, project["id"])[0]["title"], "Storyboard")
+        self.assertEqual(self.store.get_canvas(self.owner, canvas["id"])["data"], {"nodes": [], "connections": []})
+
+        saved = self.store.save_canvas(
+            self.owner,
+            canvas["id"],
+            CanvasSaveRequest(
+                title="Storyboard v2",
+                data={"nodes": [{"id": "n1"}], "connections": []},
+                base_version=1,
+            ),
+        )
+
+        self.assertEqual(saved["title"], "Storyboard v2")
+        self.assertEqual(saved["version"], 2)
+        self.assertEqual(saved["data"]["nodes"], [{"id": "n1"}])
+
+    def test_canvas_save_rejects_stale_version(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        project = self.store.create_project(self.owner, team["id"], "Launch Board")
+        canvas = self.store.create_canvas(self.owner, project["id"], "Storyboard", {})
+
+        self.store.save_canvas(
+            self.owner,
+            canvas["id"],
+            CanvasSaveRequest(data={"ok": True}, base_version=1),
+        )
+
+        with self.assertRaises(HTTPException) as stale_error:
+            self.store.save_canvas(
+                self.owner,
+                canvas["id"],
+                CanvasSaveRequest(data={"stale": True}, base_version=1),
+            )
+        self.assertEqual(stale_error.exception.status_code, 409)
+
+    def test_outsider_cannot_access_project_canvases(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        project = self.store.create_project(self.owner, team["id"], "Launch Board")
+
+        with self.assertRaises(HTTPException) as project_error:
+            self.store.list_canvases(self.outsider, project["id"])
+        self.assertEqual(project_error.exception.status_code, 403)
 
 
 if __name__ == "__main__":
