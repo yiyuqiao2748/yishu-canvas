@@ -82,6 +82,18 @@ app.add_middleware(
 )
 app.include_router(team_cloud_router)
 
+def health_version():
+    try:
+        with open(os.path.join(BASE_DIR, "VERSION"), "r", encoding="utf-8") as f:
+            return f.read().strip() or APP_VERSION
+    except Exception:
+        return APP_VERSION
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok", "version": health_version()}
+
+
 # --- WebSocket 状态管理器 ---
 class ConnectionManager:
     def __init__(self):

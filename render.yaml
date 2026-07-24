@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: yishu-canvas
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_JWT_AUDIENCE
+        value: authenticated
+      - key: TEAM_AUTH_COOKIE_SECURE
+        value: "1"
+      - key: TEAM_AUTH_COOKIE_NAME
+        value: team_cloud_access_token
+      - key: TEAM_AUTH_DEV_BYPASS
+        value: "0"
