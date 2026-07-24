@@ -40,6 +40,9 @@ jobs:
 
       - name: Check browser JavaScript syntax
         run: |
+          node --test tests/js/team-assets.test.js
+          node --check static/js/team-assets.js
+          node --check static/js/asset-manager.js
           node --check static/js/canvas-list.js
           node --check static/js/canvas.js
           node --check static/js/smart-canvas.js

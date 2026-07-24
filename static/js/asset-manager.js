@@ -107,13 +107,30 @@ let selectedCanvasAssetIds = new Set();
 let canvasAssetQuery = '';
 let canvasAssetSort = 'canvas_asc';
 let canvasAssetManageMode = false;
+let teamAssets = [];
+let teamAssetsLoaded = false;
+let teamAssetsBusy = false;
+let teamAssetQuery = '';
+let selectedTeamAssetId = '';
 let searchCompositionActive = false;
 let searchRenderTimer = null;
 let lastSearchCompositionEndAt = 0;
 let storageSettingsState = {open:false, tab:'prefs', editor:'', dirs:{}, defaults:{}, kind:'generated', items:[], selected:new Set(), loading:false, loadingMore:false, offset:0, total:0, hasMore:false, pageSize:80, restoreScrollTop:null, classificationPrompt:'', defaultClassificationPrompt:''};
 
 const LOCAL_MEDIA_EXTS = /\.(png|jpe?g|webp|gif|bmp|avif|svg|mp4|webm|mov|m4v|mp3|wav|flac|ogg|m4a|aac)(\?|#|$)/i;
-const SEARCH_INPUT_IDS = new Set(['assetSearch','workflowSearch','promptSearch','localSearch','localUploadSearch','canvasAssetSearch']);
+const SEARCH_INPUT_IDS = new Set(['assetSearch','workflowSearch','promptSearch','localSearch','localUploadSearch','canvasAssetSearch','teamAssetSearch']);
+const teamAssetApi = window.TeamAssets || {
+    getStoredTeamId: storage => {
+        try { return String(storage?.getItem?.('teamCloudCurrentTeamId') || '').trim(); } catch(_) { return ''; }
+    },
+    normalizeTeamAsset: item => item || {},
+    filterTeamAssets: (items, query) => {
+        const q = String(query || '').trim().toLowerCase();
+        const list = Array.isArray(items) ? items : [];
+        if(!q) return list;
+        return list.filter(item => [item.name, item.kind, item.mimeType, item.providerLabel, item.url].some(value => String(value || '').toLowerCase().includes(q)));
+    }
+};
 
 function refreshIcons(){ if(window.lucide) lucide.createIcons(); }
 function setStatus(text='准备就绪'){ if(statusEl) statusEl.textContent = text || '准备就绪'; }
@@ -1314,6 +1331,7 @@ async function loadAll(){
         apiJson('/api/prompt-libraries'),
         apiJson('/api/providers').catch(() => ({providers:[]})),
         apiJson('/api/canvas-assets').catch(() => ({categories:[], canvases:[], items:[]})),
+        refreshTeamAssets({silent:true}).catch(() => []),
         loadSharedFolders(),
         loadLocalAssets()
     ]);
@@ -1348,6 +1366,7 @@ function render(){
     else if(activeTab === 'workflows') renderWorkflowManager();
     else if(activeTab === 'local') renderLocalManager();
     else if(activeTab === 'canvas-assets') renderCanvasAssetsManager();
+    else if(activeTab === 'team-assets') renderTeamAssetsManager();
     else renderAssetManager();
     refreshIcons();
     if(scrollState.length){
@@ -1368,6 +1387,7 @@ function updateSearchQueryFromInput(id, value){
     else if(id === 'localSearch') localQuery = value || '';
     else if(id === 'localUploadSearch') localUploadQuery = value || '';
     else if(id === 'canvasAssetSearch') canvasAssetQuery = value || '';
+    else if(id === 'teamAssetSearch') teamAssetQuery = value || '';
 }
 function clearSearchSelection(id){
     if(id === 'assetSearch') selectedAssetId = '';
@@ -1376,6 +1396,7 @@ function clearSearchSelection(id){
     else if(id === 'localSearch') selectedLocalId = '';
     else if(id === 'localUploadSearch') selectedLocalUploadId = '';
     else if(id === 'canvasAssetSearch') selectedCanvasAssetId = '';
+    else if(id === 'teamAssetSearch') selectedTeamAssetId = '';
 }
 function scheduleSearchRender(id, pos=0, delay=140){
     clearTimeout(searchRenderTimer);
@@ -1388,6 +1409,166 @@ function scheduleSearchRender(id, pos=0, delay=140){
             try { input?.setSelectionRange?.(pos, pos); } catch(_) {}
         });
     }, Math.max(0, delay));
+}
+function currentTeamId(){
+    return teamAssetApi.getStoredTeamId(window.localStorage);
+}
+function normalizeTeamAssets(items){
+    return (Array.isArray(items) ? items : [])
+        .map(item => teamAssetApi.normalizeTeamAsset(item))
+        .filter(item => item.id);
+}
+function currentTeamAssetItems(){
+    return teamAssetApi.filterTeamAssets(teamAssets, teamAssetQuery);
+}
+function selectedTeamAsset(){
+    return currentTeamAssetItems().find(item => item.id === selectedTeamAssetId) || null;
+}
+function normalizeTeamAssetState(){
+    const items = currentTeamAssetItems();
+    if(selectedTeamAssetId && !items.some(item => item.id === selectedTeamAssetId)) selectedTeamAssetId = '';
+    if(!selectedTeamAssetId && items.length) selectedTeamAssetId = items[0].id;
+}
+async function refreshTeamAssets(options={}){
+    const silent = Boolean(options.silent);
+    const teamId = currentTeamId();
+    if(!teamId){
+        teamAssets = [];
+        teamAssetsLoaded = true;
+        selectedTeamAssetId = '';
+        if(activeTab === 'team-assets') render();
+        if(!silent) setStatus('请先在团队云端选择团队');
+        return [];
+    }
+    teamAssetsBusy = true;
+    if(!silent) setStatus('正在加载团队素材...');
+    if(activeTab === 'team-assets') render();
+    try {
+        const data = await apiJson(`/api/team-cloud/teams/${encodeURIComponent(teamId)}/assets`);
+        teamAssets = normalizeTeamAssets(data.assets);
+        teamAssetsLoaded = true;
+        normalizeTeamAssetState();
+        if(!silent) setStatus(`团队素材已刷新：${teamAssets.length} 个`);
+        return teamAssets;
+    } catch(err) {
+        if(!silent) setStatus(err.message || '团队素材加载失败');
+        throw err;
+    } finally {
+        teamAssetsBusy = false;
+        if(activeTab === 'team-assets') render();
+    }
+}
+function renderTeamAssetsManager(){
+    const teamId = currentTeamId();
+    normalizeTeamAssetState();
+    const items = currentTeamAssetItems();
+    const detail = selectedTeamAsset();
+    root.innerHTML = `
+        <aside class="asset-panel asset-nav">
+            <div class="panel-head">
+                <div class="panel-title"><strong>团队素材</strong><span>${teamId ? '当前团队共享素材' : '未选择团队'}</span></div>
+            </div>
+            <div class="nav-scroll">
+                <div class="nav-hint">${teamId ? `团队 ID：${escapeHtml(teamId)}` : '请先进入团队云端页面登录并选择团队。'}</div>
+                <div class="nav-hint">素材上传会保存到团队云存储，本地素材库不受影响。</div>
+            </div>
+        </aside>
+        <section class="asset-panel asset-content">
+            <div class="content-toolbar">
+                <div class="content-heading">
+                    <strong>团队素材库</strong>
+                    <span>${teamAssetsBusy ? '加载中...' : `${teamAssets.length} 个团队素材`}</span>
+                </div>
+                <div class="asset-tools">
+                    <button class="asset-btn" type="button" data-team-asset-refresh ${teamAssetsBusy || !teamId ? 'disabled' : ''}><i data-lucide="refresh-cw"></i><span>刷新</span></button>
+                    <label class="asset-search-wrap"><i data-lucide="search"></i><input id="teamAssetSearch" class="asset-search" type="search" value="${escapeAttr(teamAssetQuery)}" placeholder="搜索团队素材"></label>
+                    <button class="asset-btn primary" type="button" data-team-asset-upload ${teamAssetsBusy || !teamId ? 'disabled' : ''}><i data-lucide="upload-cloud"></i><span>上传</span></button>
+                </div>
+            </div>
+            <div class="content-scroll">
+                <div class="asset-grid">
+                    ${renderTeamAssetUploadCard(teamId)}
+                    ${items.map(item => renderTeamAssetCard(item)).join('')}
+                    ${items.length ? '' : `<div class="empty-state">${teamId ? (teamAssetsLoaded ? '当前团队还没有素材。可以上传图片、视频、音频或文件。' : '团队素材尚未加载。') : '未选择团队，无法加载团队素材。'}</div>`}
+                </div>
+            </div>
+        </section>
+        <aside class="asset-panel asset-detail">
+            ${renderTeamAssetDetail(detail, teamId)}
+        </aside>
+    `;
+}
+function renderTeamAssetUploadCard(teamId){
+    return `<button id="teamAssetDrop" class="upload-grid-card" type="button" data-team-asset-upload ${teamId && !teamAssetsBusy ? '' : 'disabled'}>
+        <span class="upload-thumb"><i data-lucide="cloud-upload"></i></span>
+        <span class="upload-body">
+            <strong>上传到团队素材</strong>
+            <small>拖入文件或点击上传</small>
+        </span>
+    </button>`;
+}
+function renderTeamAssetCard(item){
+    const active = item.id === selectedTeamAssetId;
+    return `<button class="asset-card ${active ? 'selected' : ''}" type="button" data-team-asset-card="${escapeAttr(item.id)}">
+        <span class="asset-thumb">${assetThumb({url:item.url, name:item.name, kind:item.kind})}</span>
+        <span class="asset-name">${escapeHtml(item.name || 'asset')}</span>
+        <span class="asset-meta">${escapeHtml(item.providerLabel || '')} · ${escapeHtml(item.sizeLabel || '')}</span>
+    </button>`;
+}
+function renderTeamAssetDetail(item, teamId){
+    if(!teamId) return `<div class="panel-head"><div class="panel-title"><strong>团队素材详情</strong><span>等待选择团队</span></div></div><div class="detail-scroll"><div class="detail-empty"><i data-lucide="cloud"></i><span>请先登录并选择团队</span></div></div>`;
+    if(!item) return `<div class="panel-head"><div class="panel-title"><strong>团队素材详情</strong><span>选择一个素材查看详情</span></div></div><div class="detail-scroll"><div class="detail-empty"><i data-lucide="cloud"></i><span>暂无团队素材</span></div></div>`;
+    const canPreview = ['image','video'].includes(assetKind(item)) && item.url;
+    return `
+        <div class="panel-head">
+            <div class="panel-title"><strong>团队素材详情</strong><span>${escapeHtml(item.providerLabel || '')}</span></div>
+            <div class="panel-actions">
+                <button class="asset-icon-btn" type="button" data-team-asset-open="${escapeAttr(item.id)}" ${item.url ? '' : 'disabled'} title="打开素材"><i data-lucide="external-link"></i></button>
+            </div>
+        </div>
+        <div class="detail-scroll">
+            <div class="detail-media"><button class="detail-media-frame ${canPreview ? 'detail-media-zoomable' : ''}" type="button" ${canPreview ? `data-team-asset-preview="${escapeAttr(item.id)}"` : ''} title="预览素材">${assetThumb({url:item.url, name:item.name, kind:item.kind})}</button></div>
+            <div class="detail-body">
+                <div class="detail-name">${escapeHtml(item.name || 'asset')}</div>
+                <div class="detail-meta-grid">
+                    <div class="detail-meta"><span>类型</span><strong>${escapeHtml(assetKindLabel(item))}</strong></div>
+                    <div class="detail-meta"><span>大小</span><strong>${escapeHtml(item.sizeLabel || '')}</strong></div>
+                    <div class="detail-meta"><span>存储</span><strong>${escapeHtml(item.providerLabel || '')}</strong></div>
+                    <div class="detail-meta"><span>创建时间</span><strong>${escapeHtml(formatDate(item.createdAt))}</strong></div>
+                </div>
+                <div class="detail-url">${escapeHtml(item.url || item.storage_key || '')}</div>
+            </div>
+        </div>
+    `;
+}
+async function uploadTeamAssetFiles(files){
+    const teamId = currentTeamId();
+    if(!teamId) throw new Error('请先在团队云端选择团队');
+    const list = [...(files || [])];
+    if(!list.length) return {count:0, items:[]};
+    teamAssetsBusy = true;
+    render();
+    const uploaded = [];
+    try {
+        for(const file of list){
+            const form = new FormData();
+            form.append('file', file);
+            setStatus(`正在上传团队素材：${file.name || 'asset'}`);
+            const data = await apiJson(`/api/team-cloud/teams/${encodeURIComponent(teamId)}/assets`, {method:'POST', body:form});
+            if(data.asset) uploaded.push(teamAssetApi.normalizeTeamAsset(data.asset));
+        }
+        await refreshTeamAssets({silent:true});
+        if(uploaded[0]) selectedTeamAssetId = uploaded[0].id;
+        setStatus(`已上传 ${uploaded.length} 个团队素材`);
+        render();
+        return {count:uploaded.length, items:uploaded};
+    } catch(err) {
+        setStatus(err.message || '团队素材上传失败');
+        throw err;
+    } finally {
+        teamAssetsBusy = false;
+        render();
+    }
 }
 function renderCanvasAssetsManager(){
     normalizeCanvasAssetState();
@@ -3289,16 +3470,36 @@ async function handleClick(event){
         }
     }
     const tabBtn = target.closest?.('[data-tab]');
-    if(tabBtn){ activeTab = tabBtn.dataset.tab || 'assets'; selectedAssetIds.clear(); selectedWorkflowIds.clear(); selectedPromptIds.clear(); selectedLocalIds.clear(); selectedLocalUploadIds.clear(); selectedCanvasAssetIds.clear(); render(); return; }
+    if(tabBtn){ activeTab = tabBtn.dataset.tab || 'assets'; selectedAssetIds.clear(); selectedWorkflowIds.clear(); selectedPromptIds.clear(); selectedLocalIds.clear(); selectedLocalUploadIds.clear(); selectedCanvasAssetIds.clear(); selectedTeamAssetId = ''; render(); return; }
     if(target.closest?.('#refreshBtn')){ await loadAll(); return; }
     const assetPreview = target.closest?.('[data-asset-preview]');
     if(assetPreview){ showDetailPreview('asset', assetPreview.dataset.assetPreview || ''); return; }
     const canvasAssetPreview = target.closest?.('[data-canvas-asset-preview]');
     if(canvasAssetPreview){ showDetailPreview('canvas-asset', canvasAssetPreview.dataset.canvasAssetPreview || ''); return; }
+    const teamAssetPreview = target.closest?.('[data-team-asset-preview]');
+    if(teamAssetPreview){ showDetailPreview('team-asset', teamAssetPreview.dataset.teamAssetPreview || ''); return; }
     const localPreview = target.closest?.('[data-local-preview]');
     if(localPreview){ showDetailPreview('local', localPreview.dataset.localPreview || ''); return; }
     const localUpPreview = target.closest?.('[data-localup-preview]');
     if(localUpPreview){ showDetailPreview('localup', localUpPreview.dataset.localupPreview || ''); return; }
+    if(target.closest?.('[data-team-asset-refresh]')){ await refreshTeamAssets(); return; }
+    if(target.closest?.('[data-team-asset-upload]')){
+        if(uploadInput) uploadInput.accept = 'image/*,video/*,audio/*,.json,.zip,application/json,application/zip,application/pdf,text/*';
+        uploadInput?.click();
+        return;
+    }
+    const teamAssetOpen = target.closest?.('[data-team-asset-open]');
+    if(teamAssetOpen){
+        const item = teamAssets.find(asset => asset.id === (teamAssetOpen.dataset.teamAssetOpen || ''));
+        if(item?.url) window.open(item.url, '_blank', 'noopener');
+        return;
+    }
+    const teamAssetCard = target.closest?.('[data-team-asset-card]');
+    if(teamAssetCard){
+        selectedTeamAssetId = teamAssetCard.dataset.teamAssetCard || '';
+        render();
+        return;
+    }
     if(target.closest?.('[data-localup-upload]')){ uploadInput?.click(); return; }
     if(target.closest?.('[data-localup-folder-new]')){ await createLocalUploadFolder(); return; }
     if(target.closest?.('[data-localup-folder-rename]')){ await renameLocalUploadFolder(); return; }
@@ -3794,7 +3995,9 @@ function showDetailPreview(source, id){
             ? findLocalUpload(id)
             : source === 'canvas-asset'
                 ? findCanvasAssetItem(id)
-                : findAssetItem(id);
+                : source === 'team-asset'
+                    ? teamAssets.find(asset => asset.id === id)
+                    : findAssetItem(id);
     if(!item) return;
     const kind = source === 'local' ? (item.kind || localItemKind(item)) : assetKind(item);
     if(!['image','video'].includes(kind)){
@@ -4718,21 +4921,22 @@ document.addEventListener('change', event => {
     }
 });
 root.addEventListener('dragover', event => {
-    const drop = event.target.closest?.('#assetDrop, #localUploadDrop, #workflowDrop');
+    const drop = event.target.closest?.('#assetDrop, #localUploadDrop, #workflowDrop, #teamAssetDrop');
     if(!drop) return;
     event.preventDefault();
     drop.classList.add('drag-over');
 });
 root.addEventListener('dragleave', event => {
-    event.target.closest?.('#assetDrop, #localUploadDrop, #workflowDrop')?.classList.remove('drag-over');
+    event.target.closest?.('#assetDrop, #localUploadDrop, #workflowDrop, #teamAssetDrop')?.classList.remove('drag-over');
 });
 root.addEventListener('drop', event => {
-    const drop = event.target.closest?.('#assetDrop, #localUploadDrop, #workflowDrop');
+    const drop = event.target.closest?.('#assetDrop, #localUploadDrop, #workflowDrop, #teamAssetDrop');
     if(!drop) return;
     event.preventDefault();
     drop.classList.remove('drag-over');
     if(drop.id === 'localUploadDrop') uploadLocalAssets(event.dataTransfer.files);
     else if(drop.id === 'workflowDrop') uploadWorkflowFiles(event.dataTransfer.files).catch(err => setStatus(err.message || '上传失败'));
+    else if(drop.id === 'teamAssetDrop') uploadTeamAssetFiles(event.dataTransfer.files).catch(err => setStatus(err.message || '团队素材上传失败'));
     else uploadFiles(event.dataTransfer.files).catch(err => setStatus(err.message || '上传失败'));
 });
 uploadInput?.addEventListener('change', event => {
@@ -4740,6 +4944,7 @@ uploadInput?.addEventListener('change', event => {
     if(files?.length){
         if(activeTab === 'local') uploadLocalAssets(files);
         else if(activeTab === 'workflows') uploadWorkflowFiles(files).catch(err => setStatus(err.message || '上传失败'));
+        else if(activeTab === 'team-assets') uploadTeamAssetFiles(files).catch(err => setStatus(err.message || '团队素材上传失败'));
         else uploadFiles(files).catch(err => setStatus(err.message || '上传失败'));
     }
     event.target.value = '';
@@ -4753,6 +4958,7 @@ document.querySelectorAll('[data-tab]').forEach(btn => {
         selectedLocalIds.clear();
         selectedLocalUploadIds.clear();
         selectedCanvasAssetIds.clear();
+        selectedTeamAssetId = '';
         render();
     });
 });
