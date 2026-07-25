@@ -21,11 +21,15 @@ test('normalizeTeamAsset maps backend records to display fields', () => {
     byte_size: 2048,
     storage_provider: 'r2',
     public_url: 'https://cdn.example/hero.png',
+    thumbnail_url: 'https://cdn.example/hero-thumb.jpg',
+    thumbnail_storage_key: 'team-assets/team/hero-thumb.jpg',
     created_at: '2026-07-24T00:00:00Z',
   });
   assert.equal(item.id, 'asset-1');
   assert.equal(item.name, 'hero.png');
   assert.equal(item.url, 'https://cdn.example/hero.png');
+  assert.equal(item.thumbnailUrl, 'https://cdn.example/hero-thumb.jpg');
+  assert.equal(item.thumbnailStorageKey, 'team-assets/team/hero-thumb.jpg');
   assert.equal(item.sizeLabel, '2 KB');
   assert.equal(item.providerLabel, 'R2');
 });

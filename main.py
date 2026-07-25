@@ -44,6 +44,7 @@ if BASE_IMPORT_DIR not in sys.path:
     sys.path.insert(0, BASE_IMPORT_DIR)
 
 from team_cloud import router as team_cloud_router
+from team_storage import save_generated_file_from_path, settings as team_storage_settings
 
 QUIET_ACCESS_PATHS = {
     "/api/queue_status",
@@ -2956,7 +2957,7 @@ def download_image(comfy_address, comfy_url_path, prefix="studio_"):
     try:
         with urllib.request.urlopen(full_url, timeout=COMFYUI_DOWNLOAD_TIMEOUT) as response, open(local_path, 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
-        return output_url_for(filename, "output")
+        return output_public_url_for_saved_file(filename, local_path, "output")
     except Exception as e:
         print(f"下载图片失败: {e}")
         if comfy_url_path.startswith("/view"):
@@ -3023,7 +3024,7 @@ def download_comfy_output(comfy_address, item, prefix="studio_"):
     try:
         with urllib.request.urlopen(full_url, timeout=COMFYUI_DOWNLOAD_TIMEOUT) as response, open(local_path, 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
-        return output_url_for(filename, "output")
+        return output_public_url_for_saved_file(filename, local_path, "output")
     except Exception as e:
         print(f"下载 ComfyUI 输出失败: {e}")
         if comfy_url_path.startswith("/view"):
@@ -3040,7 +3041,7 @@ def save_comfy_text_output(value, prefix="studio_", name=""):
     path = output_path_for(filename, "output")
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
-    return output_url_for(filename, "output")
+    return output_public_url_for_saved_file(filename, path, "output", "text/plain")
 
 def comfy_text_values_from_output(node_output):
     values = []
@@ -4540,7 +4541,8 @@ def codex_output_url_from_path(path):
     root = os.path.abspath(OUTPUT_OUTPUT_DIR)
     try:
         if os.path.commonpath([root, path]) == root:
-            return output_url_for(os.path.basename(path), "output")
+            filename = os.path.basename(path)
+            return output_public_url_for_saved_file(filename, path, "output", content_type_for_path(path))
     except Exception:
         return ""
     return ""
@@ -5986,7 +5988,8 @@ def jimeng_local_output_url(path, kind="image"):
     output_root = os.path.abspath(OUTPUT_OUTPUT_DIR)
     try:
         if os.path.commonpath([output_root, path]) == output_root:
-            return output_url_for(os.path.basename(path), "output")
+            filename = os.path.basename(path)
+            return output_public_url_for_saved_file(filename, path, "output", content_type_for_path(path))
     except Exception:
         pass
     ext = os.path.splitext(path)[1].lower()
@@ -5998,7 +6001,7 @@ def jimeng_local_output_url(path, kind="image"):
     filename = f"{prefix}{uuid.uuid4().hex[:10]}{ext}"
     dest = output_path_for(filename, "output")
     shutil.copyfile(path, dest)
-    return output_url_for(filename, "output")
+    return output_public_url_for_saved_file(filename, dest, "output", content_type_for_path(dest))
 
 async def jimeng_store_output_value(value, kind="image"):
     text = str(value or "").strip()
@@ -6418,6 +6421,21 @@ def output_url_for(filename, category="output"):
 def output_path_for(filename, category="output"):
     folder, _ = output_storage(category)
     return os.path.join(folder, filename)
+
+def output_public_url_for_saved_file(filename, path, category="output", content_type=""):
+    if category != "output" or not team_storage_settings.r2_ready:
+        return output_url_for(filename, category)
+    try:
+        stored = save_generated_file_from_path(
+            path,
+            content_type=content_type or content_type_for_path(path),
+            category=category,
+            asset_id=os.path.splitext(os.path.basename(filename))[0],
+        )
+        return stored.get("public_url") or output_url_for(filename, category)
+    except Exception as exc:
+        print(f"上传生成结果到 R2 失败，回退本地 URL: {exc}")
+        return output_url_for(filename, category)
 
 def storage_kind_dir(kind):
     kind = str(kind or "").strip().lower()
@@ -9229,7 +9247,7 @@ async def save_ai_image_to_output(image_data, prefix="online_", category="output
             path = output_path_for(filename, category)
         with open(path, "wb") as f:
             f.write(base64.b64decode(image_data["value"]))
-        return output_url_for(filename, category)
+        return output_public_url_for_saved_file(filename, path, category, mime_type)
     value = image_data["value"]
     if value.startswith("/output/") or value.startswith("/assets/"):
         return value
@@ -9248,7 +9266,7 @@ async def save_ai_image_to_output(image_data, prefix="online_", category="output
                 path = output_path_for(filename, category)
             with open(path, "wb") as f:
                 f.write(response.content)
-            return output_url_for(filename, category)
+            return output_public_url_for_saved_file(filename, path, category, content_type)
     except Exception as e:
         print(f"保存上游图片失败: {e}; url={value}")
         return value
@@ -9329,7 +9347,7 @@ async def save_remote_video_to_output(url, prefix="video_", category="output"):
                 f.write(response.content)
             if os.path.getsize(path) <= 0:
                 raise RuntimeError("empty video response")
-            return output_url_for(filename, category)
+            return output_public_url_for_saved_file(filename, path, category, content_type)
     except Exception as e:
         print(f"保存上游视频失败: {e}")
         try:
@@ -9915,7 +9933,7 @@ async def runninghub_store_remote_output(client, remote):
     path = output_path_for(filename, "output")
     with open(path, "wb") as f:
         f.write(response.content)
-    return output_url_for(filename, "output")
+    return output_public_url_for_saved_file(filename, path, "output", response.headers.get("content-type", ""))
 
 def runninghub_fail_reason(raw):
     data = raw.get("data") if isinstance(raw, dict) else None
@@ -14578,7 +14596,7 @@ async def save_video_bytes_to_output(data: bytes, prefix="video_", category="out
         f.write(raw)
     if os.path.getsize(path) <= 0:
         raise HTTPException(status_code=502, detail="上游视频下载为空")
-    return output_url_for(filename, category)
+    return output_public_url_for_saved_file(filename, path, category, content_type_for_path(path))
 
 async def yuli_fetch_reference_bytes(client, ref_url):
     """把参考图（input_reference 垫图）取成 (filename, bytes, mime)，
@@ -17701,7 +17719,7 @@ async def poll_angle_cloud(req: CloudPollRequest):
                                 file_path = output_path_for(filename, "output")
                                 with open(file_path, "wb") as f:
                                     f.write(img_res.content)
-                                local_path = output_url_for(filename, "output")
+                                local_path = output_public_url_for_saved_file(filename, file_path, "output", img_res.headers.get("content-type", ""))
                             else:
                                 local_path = img_url
                     except Exception:
@@ -17791,7 +17809,7 @@ async def generate_angle_cloud(req: CloudGenRequest):
                                 file_path = output_path_for(filename, "output")
                                 with open(file_path, "wb") as f:
                                     f.write(img_res.content)
-                                local_path = output_url_for(filename, "output")
+                                local_path = output_public_url_for_saved_file(filename, file_path, "output", img_res.headers.get("content-type", ""))
                             else:
                                 local_path = img_url
                     except Exception:
@@ -17889,7 +17907,7 @@ async def generate_cloud(req: CloudGenRequest):
                                 file_path = output_path_for(filename, "output")
                                 with open(file_path, "wb") as f:
                                     f.write(img_res.content)
-                                local_path = output_url_for(filename, "output")
+                                local_path = output_public_url_for_saved_file(filename, file_path, "output", img_res.headers.get("content-type", ""))
                             else:
                                 local_path = img_url
                     except Exception as dl_e:
@@ -17985,7 +18003,7 @@ async def ms_generate(req: MsGenerateRequest):
                                     file_path = output_path_for(filename, "output")
                                     with open(file_path, "wb") as f:
                                         f.write(img_res.content)
-                                    local_path = output_url_for(filename, "output")
+                                    local_path = output_public_url_for_saved_file(filename, file_path, "output", img_res.headers.get("content-type", ""))
                                 else:
                                     local_path = img_url
                         except Exception:

@@ -36,9 +36,9 @@
 | --- | --- | --- | --- |
 | 画布 JSON | 每个画布写入 `data/canvases/{id}.json` | 多人在线时本地文件不适合跨机器共享，版本和权限难管 | 线上团队画布只走 `team_cloud.py` 的 Supabase `canvases` |
 | 项目 JSON | `data/projects.json` 管单机项目 | 团队项目权限无法表达 | 团队项目已走 Supabase，后续单机项目仅保留本地模式 |
-| 生成输入/输出文件 | 写入 `assets/input`、`assets/output`，URL 为 `/assets/...` 或 `/api/storage-files/...` | 容器重启或多机部署时文件不可共享 | 新生成结果统一上传 R2，画布只保存公网 URL 和 storage key |
+| 生成输入/输出文件 | 写入 `assets/input`、`assets/output`，URL 为 `/assets/...` 或 `/api/storage-files/...`；已新增 `save_generated_file_from_path` 作为生成结果统一保存入口 | 容器重启或多机部署时文件不可共享 | 新生成结果统一上传 R2，画布只保存公网 URL 和 storage key |
 | 本地素材库 | 元数据在 `data/asset_library.json`，文件在 `assets/library` | 素材库无法跨成员同步，删除引用检查复杂 | 元数据进 Supabase，文件进 R2，删除前查画布引用 |
-| 团队素材 fallback | 未配置 R2 时写 `assets/team-assets` | 线上部署如果继续用本地盘，素材可能丢失或只在 NAS 单机可见 | 阶段 5 验收时必须配置 R2 环境变量 |
+| 团队素材 fallback | 未配置 R2 时写 `assets/team-assets`；图片素材会同步生成 JPEG 缩略图；删除前会检查云端画布引用 | 线上部署如果继续用本地盘，素材可能丢失或只在 NAS 单机可见 | 阶段 5 验收时必须配置 R2 环境变量 |
 | 预览缓存 | `data/media_previews` 生成 WebP/PNG/JPEG | 缓存可丢，但可能占空间 | 保留为可重建缓存，后续再考虑 CDN/R2 |
 | 历史和对话 | `history.json`、`data/conversations` | 包含提示词、媒体引用和用户内容，团队权限缺失 | 迁到 Supabase 并按用户/团队隔离 |
 | API Key | `API/.env` 直接存密钥 | 团队成员权限和审计不足 | 阶段 4 做团队级加密存储，模型调用统一走后端 |
@@ -47,7 +47,7 @@
 
 1. 固化团队云路径：线上画布只通过 `/api/team-cloud/*`，避免团队项目继续落到 `data/canvases`。
 2. 团队素材强制 R2：配置 R2 后，让 `team_storage.py` 在线上缺少 R2 时返回明确错误，而不是静默写本地。
-3. AI 生成结果入 R2：在生成完成落盘后增加上传 R2 适配，画布节点保存 R2 URL/storage key。
+3. AI 生成结果入 R2：已新增统一保存入口并接入主要生成/导出路径，下一步在 NAS/R2 配置完成后验收。
 4. 本地素材库云端化：把 `asset_library.json` 拆成素材库、分组、素材条目表。
 5. 日志和对话入库：把 `history.json` 和 `data/conversations` 迁到 Supabase，补团队/用户权限。
 6. API Key 团队化：替换 `API/.env` 写入流程，改成管理员配置、后端解密调用。
@@ -56,4 +56,4 @@
 
 - 阶段 0 的本地数据读写入口已完成初步梳理。
 - 必须迁移的文件存储逻辑已标记，优先级最高的是团队画布、团队素材、生成输入/输出和本地素材库。
-- NAS 不可操作时，下一步仍可继续做代码层改造：让线上团队素材在 R2 未配置时明确提示，或开始为 AI 生成结果抽象统一文件存储接口。
+- NAS 不可操作时，阶段 3 代码侧已基本收口；下一步可进入团队级 API Key 加密存储和统一后端调用。

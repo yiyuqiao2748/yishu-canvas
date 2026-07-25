@@ -27,6 +27,8 @@
       kind: String(item.kind || 'file'),
       mimeType: String(item.mime_type || item.mimeType || ''),
       url: String(item.public_url || item.url || ''),
+      thumbnailUrl: String(item.thumbnail_url || item.thumbnailUrl || ''),
+      thumbnailStorageKey: String(item.thumbnail_storage_key || item.thumbnailStorageKey || ''),
       byteSize: Number(item.byte_size || item.byteSize || 0),
       sizeLabel: formatTeamAssetSize(item.byte_size || item.byteSize || 0),
       providerLabel: provider === 'r2' ? 'R2' : (provider === 'local' ? 'Local' : (provider || 'unknown')),

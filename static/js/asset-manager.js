@@ -112,6 +112,7 @@ let teamAssetsLoaded = false;
 let teamAssetsBusy = false;
 let teamAssetQuery = '';
 let selectedTeamAssetId = '';
+let pendingDeleteTeamAssetId = '';
 let searchCompositionActive = false;
 let searchRenderTimer = null;
 let lastSearchCompositionEndAt = 0;
@@ -162,8 +163,22 @@ async function copyTextToClipboard(text){
 async function apiJson(url, options={}){
     const res = await fetch(url, options);
     const data = await res.json().catch(() => ({}));
-    if(!res.ok) throw new Error(data.detail || data.message || '操作失败');
+    if(!res.ok) throw new Error(apiErrorMessage(data));
     return data;
+}
+function apiErrorMessage(data){
+    const detail = data?.detail;
+    if(detail && typeof detail === 'object'){
+        const message = detail.message || data.message || '操作失败';
+        const refs = Array.isArray(detail.references) ? detail.references : [];
+        if(refs.length){
+            const names = refs.slice(0, 4).map(item => item.title || item.id).filter(Boolean).join('、');
+            const more = refs.length > 4 ? ` 等 ${refs.length} 个画布` : '';
+            return `${message}：${names}${more}`;
+        }
+        return message;
+    }
+    return detail || data?.message || '操作失败';
 }
 const STORAGE_KIND_LABELS = {upload:'上传素材', generated:'生成素材', local:'本地素材'};
 async function openStorageSettings(){
@@ -732,11 +747,12 @@ function assetPreviewUrl(url, w=256){
 }
 function assetThumb(item){
     const kind = assetKind(item);
+    const thumbUrl = item?.thumbnailUrl || item?.thumbnail_url || '';
     // 视频用 poster（服务端生成的一帧）+ preload=none：不再为每个视频加载元数据，素材多时滚动顺畅。
-    if(kind === 'video') return `<video src="${escapeAttr(item.url)}" poster="${escapeAttr(assetPreviewUrl(item.url, 256))}" muted preload="none" playsinline></video>`;
+    if(kind === 'video') return `<video src="${escapeAttr(item.url)}" poster="${escapeAttr(thumbUrl || assetPreviewUrl(item.url, 256))}" muted preload="none" playsinline></video>`;
     if(kind === 'audio') return `<div class="asset-file-icon"><i data-lucide="file-audio"></i><span>音频</span></div>`;
     if(kind === 'text') return `<div class="asset-file-icon"><i data-lucide="file-text"></i><span>文本</span></div>`;
-    return `<img src="${escapeAttr(assetPreviewUrl(item.url, 256))}" alt="${escapeAttr(item.name || 'asset')}" loading="lazy" decoding="async">`;
+    return `<img src="${escapeAttr(thumbUrl || assetPreviewUrl(item.url, 256))}" alt="${escapeAttr(item.name || 'asset')}" loading="lazy" decoding="async">`;
 }
 function workflowThumb(item){
     return `<div class="asset-file-icon workflow-file-icon"><i data-lucide="workflow"></i><span>${escapeHtml(workflowKindLabel(item))}</span></div>`;
@@ -1510,7 +1526,7 @@ function renderTeamAssetUploadCard(teamId){
 function renderTeamAssetCard(item){
     const active = item.id === selectedTeamAssetId;
     return `<button class="asset-card ${active ? 'selected' : ''}" type="button" data-team-asset-card="${escapeAttr(item.id)}">
-        <span class="asset-thumb">${assetThumb({url:item.url, name:item.name, kind:item.kind})}</span>
+        <span class="asset-thumb">${assetThumb({url:item.url, thumbnailUrl:item.thumbnailUrl, name:item.name, kind:item.kind})}</span>
         <span class="asset-name">${escapeHtml(item.name || 'asset')}</span>
         <span class="asset-meta">${escapeHtml(item.providerLabel || '')} · ${escapeHtml(item.sizeLabel || '')}</span>
     </button>`;
@@ -1524,10 +1540,11 @@ function renderTeamAssetDetail(item, teamId){
             <div class="panel-title"><strong>团队素材详情</strong><span>${escapeHtml(item.providerLabel || '')}</span></div>
             <div class="panel-actions">
                 <button class="asset-icon-btn" type="button" data-team-asset-open="${escapeAttr(item.id)}" ${item.url ? '' : 'disabled'} title="打开素材"><i data-lucide="external-link"></i></button>
+                <button class="asset-icon-btn danger ${pendingDeleteTeamAssetId === item.id ? 'detail-confirm' : ''}" type="button" data-team-asset-delete="${escapeAttr(item.id)}" title="${pendingDeleteTeamAssetId === item.id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
             </div>
         </div>
         <div class="detail-scroll">
-            <div class="detail-media"><button class="detail-media-frame ${canPreview ? 'detail-media-zoomable' : ''}" type="button" ${canPreview ? `data-team-asset-preview="${escapeAttr(item.id)}"` : ''} title="预览素材">${assetThumb({url:item.url, name:item.name, kind:item.kind})}</button></div>
+            <div class="detail-media"><button class="detail-media-frame ${canPreview ? 'detail-media-zoomable' : ''}" type="button" ${canPreview ? `data-team-asset-preview="${escapeAttr(item.id)}"` : ''} title="预览素材">${assetThumb({url:item.url, thumbnailUrl:item.thumbnailUrl, name:item.name, kind:item.kind})}</button></div>
             <div class="detail-body">
                 <div class="detail-name">${escapeHtml(item.name || 'asset')}</div>
                 <div class="detail-meta-grid">
@@ -1565,6 +1582,32 @@ async function uploadTeamAssetFiles(files){
     } catch(err) {
         setStatus(err.message || '团队素材上传失败');
         throw err;
+    } finally {
+        teamAssetsBusy = false;
+        render();
+    }
+}
+async function deleteTeamAssetItem(id){
+    const teamId = currentTeamId();
+    const asset = teamAssets.find(item => item.id === id);
+    if(!teamId || !asset) return;
+    if(pendingDeleteTeamAssetId !== id){
+        pendingDeleteTeamAssetId = id;
+        setStatus('再次点击删除按钮确认删除团队素材');
+        render();
+        return;
+    }
+    teamAssetsBusy = true;
+    render();
+    try {
+        const data = await apiJson(`/api/team-cloud/teams/${encodeURIComponent(teamId)}/assets/${encodeURIComponent(id)}`, {method:'DELETE'});
+        pendingDeleteTeamAssetId = '';
+        teamAssets = teamAssets.filter(item => item.id !== id);
+        selectedTeamAssetId = teamAssets[0]?.id || '';
+        await refreshTeamAssets({silent:true});
+        setStatus(`已删除团队素材：${data.asset?.name || asset.name || 'asset'}`);
+    } catch(err) {
+        setStatus(err.message || '团队素材删除失败');
     } finally {
         teamAssetsBusy = false;
         render();
@@ -3470,7 +3513,7 @@ async function handleClick(event){
         }
     }
     const tabBtn = target.closest?.('[data-tab]');
-    if(tabBtn){ activeTab = tabBtn.dataset.tab || 'assets'; selectedAssetIds.clear(); selectedWorkflowIds.clear(); selectedPromptIds.clear(); selectedLocalIds.clear(); selectedLocalUploadIds.clear(); selectedCanvasAssetIds.clear(); selectedTeamAssetId = ''; render(); return; }
+    if(tabBtn){ activeTab = tabBtn.dataset.tab || 'assets'; selectedAssetIds.clear(); selectedWorkflowIds.clear(); selectedPromptIds.clear(); selectedLocalIds.clear(); selectedLocalUploadIds.clear(); selectedCanvasAssetIds.clear(); selectedTeamAssetId = ''; pendingDeleteTeamAssetId = ''; render(); return; }
     if(target.closest?.('#refreshBtn')){ await loadAll(); return; }
     const assetPreview = target.closest?.('[data-asset-preview]');
     if(assetPreview){ showDetailPreview('asset', assetPreview.dataset.assetPreview || ''); return; }
@@ -3494,9 +3537,12 @@ async function handleClick(event){
         if(item?.url) window.open(item.url, '_blank', 'noopener');
         return;
     }
+    const teamAssetDelete = target.closest?.('[data-team-asset-delete]');
+    if(teamAssetDelete){ await deleteTeamAssetItem(teamAssetDelete.dataset.teamAssetDelete || ''); return; }
     const teamAssetCard = target.closest?.('[data-team-asset-card]');
     if(teamAssetCard){
         selectedTeamAssetId = teamAssetCard.dataset.teamAssetCard || '';
+        pendingDeleteTeamAssetId = '';
         render();
         return;
     }

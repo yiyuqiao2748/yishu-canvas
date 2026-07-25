@@ -11,7 +11,7 @@ import jwt
 from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
-from team_storage import save_team_asset, safe_filename
+from team_storage import build_image_thumbnail, delete_team_asset_file, save_team_asset, safe_filename
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -238,6 +238,47 @@ def sanitize_auth_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def asset_reference_terms(asset: Dict[str, Any]) -> List[str]:
+    return [
+        str(asset.get(key) or "").strip()
+        for key in ("public_url", "storage_key", "thumbnail_url", "thumbnail_storage_key")
+        if str(asset.get(key) or "").strip()
+    ]
+
+
+def data_references_asset(value: Any, terms: List[str]) -> bool:
+    if not terms:
+        return False
+    if isinstance(value, str):
+        return value in terms
+    if isinstance(value, dict):
+        return any(data_references_asset(item, terms) for item in value.values())
+    if isinstance(value, list):
+        return any(data_references_asset(item, terms) for item in value)
+    return False
+
+
+def canvas_asset_references(canvases: List[Dict[str, Any]], asset: Dict[str, Any]) -> List[Dict[str, Any]]:
+    terms = asset_reference_terms(asset)
+    return [
+        {
+            "id": canvas.get("id"),
+            "title": canvas.get("title") or "未命名画布",
+            "project_id": canvas.get("project_id"),
+        }
+        for canvas in canvases
+        if data_references_asset(canvas.get("data"), terms)
+    ]
+
+
+def require_asset_delete_permission(member: Dict[str, Any], user: CurrentUser, asset: Dict[str, Any]) -> None:
+    if member.get("role") in {"owner", "admin"}:
+        return
+    if asset.get("created_by") == user.id:
+        return
+    raise HTTPException(status_code=403, detail="只有管理员或素材上传者可以删除该素材")
+
+
 class LocalTeamStore:
     def __init__(self, path: str):
         self.path = path
@@ -436,11 +477,14 @@ class LocalTeamStore:
                 "canvas_id": asset.get("canvas_id"),
                 "kind": asset.get("kind") or "file",
                 "name": asset.get("name") or "asset",
-                "storage_provider": asset.get("storage_provider") or "r2",
                 "storage_key": asset.get("storage_key") or "",
                 "public_url": asset.get("public_url") or "",
+                "thumbnail_url": asset.get("thumbnail_url") or "",
+                "thumbnail_storage_key": asset.get("thumbnail_storage_key") or "",
                 "mime_type": asset.get("mime_type") or "",
                 "byte_size": int(asset.get("byte_size") or 0),
+                "width": asset.get("width"),
+                "height": asset.get("height"),
                 "storage_provider": asset.get("storage_provider") or "local",
                 "created_by": user.id,
                 "created_at": now_ms(),
@@ -448,6 +492,36 @@ class LocalTeamStore:
             data["assets"].append(record)
             self._write(data)
             return record
+
+    def delete_asset(self, user: CurrentUser, team_id: str, asset_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            member = self._require_member(data, user.id, team_id)
+            asset = self._find_asset(data, team_id, asset_id)
+            if not asset:
+                raise HTTPException(status_code=404, detail="团队素材不存在")
+            require_asset_delete_permission(member, user, asset)
+            references = canvas_asset_references(
+                [canvas for canvas in data["canvases"] if canvas.get("team_id") == team_id],
+                asset,
+            )
+            if references:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"message": "素材仍被画布使用，无法删除", "references": references},
+                )
+            data["assets"] = [
+                item
+                for item in data["assets"]
+                if not (item.get("team_id") == team_id and item.get("id") == asset_id)
+            ]
+            self._write(data)
+        removed_files = [
+            key
+            for key in (asset.get("storage_key"), asset.get("thumbnail_storage_key"))
+            if key and delete_team_asset_file(str(key))
+        ]
+        return {"asset": asset, "removed_files": removed_files, "references": []}
 
     def _require_member(self, data: Dict[str, Any], user_id: str, team_id: str) -> Dict[str, Any]:
         for member in data["members"]:
@@ -466,6 +540,12 @@ class LocalTeamStore:
         for canvas in data["canvases"]:
             if canvas.get("id") == canvas_id:
                 return canvas
+        return None
+
+    def _find_asset(self, data: Dict[str, Any], team_id: str, asset_id: str) -> Optional[Dict[str, Any]]:
+        for asset in data["assets"]:
+            if asset.get("team_id") == team_id and asset.get("id") == asset_id:
+                return asset
         return None
 
     def _canvas_summary(self, canvas: Dict[str, Any]) -> Dict[str, Any]:
@@ -678,12 +758,44 @@ class SupabaseTeamStore:
                 "name": asset.get("name") or "asset",
                 "storage_key": asset.get("storage_key") or "",
                 "public_url": asset.get("public_url") or "",
+                "thumbnail_url": asset.get("thumbnail_url") or "",
+                "thumbnail_storage_key": asset.get("thumbnail_storage_key") or "",
                 "mime_type": asset.get("mime_type") or "",
                 "byte_size": int(asset.get("byte_size") or 0),
+                "width": asset.get("width"),
+                "height": asset.get("height"),
                 "created_by": user.id,
             }],
         )
         return rows[0]
+
+    async def delete_asset(self, user: CurrentUser, team_id: str, asset_id: str) -> Dict[str, Any]:
+        member = await self._require_member(user.id, team_id)
+        assets = await self._request(
+            "GET",
+            f"/assets?team_id=eq.{team_id}&id=eq.{asset_id}&select=*",
+        )
+        if not assets:
+            raise HTTPException(status_code=404, detail="团队素材不存在")
+        asset = assets[0]
+        require_asset_delete_permission(member, user, asset)
+        canvases = await self._request(
+            "GET",
+            f"/canvases?team_id=eq.{team_id}&select=id,title,project_id,data",
+        )
+        references = canvas_asset_references(canvases or [], asset)
+        if references:
+            raise HTTPException(
+                status_code=409,
+                detail={"message": "素材仍被画布使用，无法删除", "references": references},
+            )
+        await self._request("DELETE", f"/assets?team_id=eq.{team_id}&id=eq.{asset_id}")
+        removed_files = [
+            key
+            for key in (asset.get("storage_key"), asset.get("thumbnail_storage_key"))
+            if key and delete_team_asset_file(str(key))
+        ]
+        return {"asset": asset, "removed_files": removed_files, "references": []}
 
     async def _require_member(self, user_id: str, team_id: str) -> Dict[str, Any]:
         rows = await self._request(
@@ -857,15 +969,44 @@ async def upload_team_asset(
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail="团队素材云存储未配置，请先配置 Cloudflare R2") from exc
+    image_meta = build_image_thumbnail(content) if (file.content_type or "").startswith("image/") else {}
+    thumbnail_url = ""
+    thumbnail_storage_key = ""
+    if image_meta.get("content"):
+        try:
+            thumb_stored = save_team_asset(
+                image_meta["content"],
+                team_id=team_id,
+                filename=f"{os.path.splitext(filename)[0]}_thumb.jpg",
+                content_type=image_meta.get("content_type") or "image/jpeg",
+                asset_id=f"{asset_id}-thumb",
+            )
+            thumbnail_url = thumb_stored.get("public_url") or ""
+            thumbnail_storage_key = thumb_stored.get("storage_key") or ""
+        except Exception as exc:
+            print(f"生成团队素材缩略图失败：{exc}")
     asset = await maybe_await(active_store().create_asset(user, team_id, {
         "id": asset_id,
         "kind": "image" if (file.content_type or "").startswith("image/") else "file",
         "name": filename,
         "mime_type": file.content_type or "",
         "byte_size": len(content),
+        "thumbnail_url": thumbnail_url,
+        "thumbnail_storage_key": thumbnail_storage_key,
+        "width": image_meta.get("width"),
+        "height": image_meta.get("height"),
         **stored,
     }))
     return {"asset": asset}
+
+
+@router.delete("/teams/{team_id}/assets/{asset_id}")
+async def delete_team_asset(
+    team_id: str,
+    asset_id: str,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    return await maybe_await(active_store().delete_asset(user, team_id, asset_id))
 
 
 async def maybe_await(value):

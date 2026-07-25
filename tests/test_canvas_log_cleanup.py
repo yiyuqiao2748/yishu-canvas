@@ -65,6 +65,35 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         path.write_bytes(content)
         return path, f"/assets/output/{name}"
 
+    def test_output_public_url_uses_local_url_without_r2(self):
+        path, url = self.generated_file()
+        with patch.object(main.team_storage_settings, "r2_endpoint_url", ""), \
+             patch.object(main.team_storage_settings, "r2_bucket", ""), \
+             patch.object(main.team_storage_settings, "r2_access_key_id", ""), \
+             patch.object(main.team_storage_settings, "r2_secret_access_key", ""):
+            self.assertEqual(
+                main.output_public_url_for_saved_file("result.png", str(path), "output", "image/png"),
+                url,
+            )
+
+    def test_output_public_url_uses_generated_storage_when_r2_ready(self):
+        path, _url = self.generated_file()
+        with patch.object(main.team_storage_settings, "r2_endpoint_url", "https://r2.example"), \
+             patch.object(main.team_storage_settings, "r2_bucket", "bucket"), \
+             patch.object(main.team_storage_settings, "r2_access_key_id", "key"), \
+             patch.object(main.team_storage_settings, "r2_secret_access_key", "secret"), \
+             patch.object(main, "save_generated_file_from_path", return_value={"public_url": "https://cdn.example/generated/output/result.png"}) as save_mock:
+            self.assertEqual(
+                main.output_public_url_for_saved_file("result.png", str(path), "output", "image/png"),
+                "https://cdn.example/generated/output/result.png",
+            )
+            save_mock.assert_called_once_with(
+                str(path),
+                content_type="image/png",
+                category="output",
+                asset_id="result",
+            )
+
     def test_collects_nested_local_media_only(self):
         value = {
             "items": [

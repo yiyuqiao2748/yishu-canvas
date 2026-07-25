@@ -6,7 +6,7 @@ Date: 2026-07-24
 
 Add a separate "team assets" tab to the existing asset manager so team members can upload and browse files stored through the team cloud asset API.
 
-This change does not merge team assets into the existing local asset library. It also does not add asset deletion, thumbnails, AI-result capture, or canvas reference checks.
+This change does not merge team assets into the existing local asset library. Team asset deletion now checks cloud canvas references before removing records; AI-result capture remains separate follow-up work.
 
 ## User Experience
 

@@ -77,6 +77,8 @@ create table if not exists public.assets (
   storage_provider text not null default 'r2',
   storage_key text not null,
   public_url text not null,
+  thumbnail_url text not null default '',
+  thumbnail_storage_key text not null default '',
   mime_type text not null default '',
   byte_size bigint not null default 0,
   width integer,
@@ -118,6 +120,9 @@ create index if not exists idx_projects_team_id on public.projects(team_id);
 create index if not exists idx_canvases_project_id on public.canvases(project_id);
 create index if not exists idx_assets_team_id on public.assets(team_id);
 create index if not exists idx_generation_logs_team_id on public.generation_logs(team_id);
+
+alter table public.assets add column if not exists thumbnail_url text not null default '';
+alter table public.assets add column if not exists thumbnail_storage_key text not null default '';
 
 alter table public.teams enable row level security;
 alter table public.team_members enable row level security;

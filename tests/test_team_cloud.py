@@ -121,17 +121,59 @@ class TeamCloudStoreTests(unittest.TestCase):
             "kind": "image",
             "storage_key": "team-assets/team/sample.png",
             "public_url": "/assets/team-assets/team/sample.png",
+            "thumbnail_url": "/assets/team-assets/team/sample-thumb.jpg",
             "mime_type": "image/png",
             "byte_size": 12,
+            "width": 640,
+            "height": 320,
             "storage_provider": "local",
         })
 
         self.assertEqual(asset["team_id"], team["id"])
+        self.assertEqual(asset["thumbnail_url"], "/assets/team-assets/team/sample-thumb.jpg")
+        self.assertEqual(asset["width"], 640)
+        self.assertEqual(asset["height"], 320)
         self.assertEqual(self.store.list_assets(self.owner, team["id"])[0]["name"], "sample.png")
 
         with self.assertRaises(HTTPException) as asset_error:
             self.store.list_assets(self.outsider, team["id"])
         self.assertEqual(asset_error.exception.status_code, 403)
+
+    def test_delete_team_asset_blocks_canvas_references(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        project = self.store.create_project(self.owner, team["id"], "Launch Board")
+        asset = self.store.create_asset(self.owner, team["id"], {
+            "id": "asset-1",
+            "name": "sample.png",
+            "kind": "image",
+            "storage_key": "team-assets/team/sample.png",
+            "public_url": "/assets/team-assets/team/sample.png",
+            "mime_type": "image/png",
+            "byte_size": 12,
+            "storage_provider": "local",
+        })
+        canvas = self.store.create_canvas(
+            self.owner,
+            project["id"],
+            "Storyboard",
+            {"nodes": [{"id": "node-1", "images": [{"url": asset["public_url"]}]}]},
+        )
+
+        with self.assertRaises(HTTPException) as delete_error:
+            self.store.delete_asset(self.owner, team["id"], asset["id"])
+
+        self.assertEqual(delete_error.exception.status_code, 409)
+        self.assertEqual(delete_error.exception.detail["references"][0]["id"], canvas["id"])
+
+        self.store.save_canvas(
+            self.owner,
+            canvas["id"],
+            CanvasSaveRequest(data={"nodes": []}, base_version=1),
+        )
+        deleted = self.store.delete_asset(self.owner, team["id"], asset["id"])
+
+        self.assertEqual(deleted["asset"]["id"], asset["id"])
+        self.assertEqual(self.store.list_assets(self.owner, team["id"]), [])
 
     def test_supabase_user_payload_maps_to_current_user(self):
         user = current_user_from_supabase_payload({
