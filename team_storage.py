@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+import mimetypes
 from io import BytesIO
 from dataclasses import dataclass
 from typing import Any, Dict
@@ -143,6 +144,29 @@ def delete_team_asset_file(key: str) -> bool:
     except OSError as exc:
         print(f"删除本地团队素材失败：{exc}")
     return False
+
+
+def read_team_asset_file(key: str) -> Dict[str, Any]:
+    clean_key = str(key or "").replace("\\", "/").lstrip("/")
+    if not clean_key.startswith("team-assets/"):
+        raise FileNotFoundError("team asset not found")
+    if settings.r2_ready:
+        client = r2_client()
+        obj = client.get_object(Bucket=settings.r2_bucket, Key=clean_key)
+        return {
+            "content": obj["Body"].read(),
+            "content_type": obj.get("ContentType") or "application/octet-stream",
+        }
+    target = os.path.abspath(os.path.join(ASSETS_DIR, clean_key.replace("/", os.sep)))
+    root = os.path.abspath(TEAM_ASSET_DIR)
+    if not target.startswith(root + os.sep) or not os.path.isfile(target):
+        raise FileNotFoundError("team asset not found")
+    with open(target, "rb") as fh:
+        content = fh.read()
+    return {
+        "content": content,
+        "content_type": mimetypes.guess_type(target)[0] or "application/octet-stream",
+    }
 
 
 def save_generated_file(content: bytes, *, filename: str, content_type: str = "", category: str = "output", asset_id: str = "") -> Dict[str, str]:

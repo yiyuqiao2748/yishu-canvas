@@ -14,7 +14,7 @@ import jwt
 from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
-from team_storage import build_image_thumbnail, delete_team_asset_file, save_team_asset, safe_filename
+from team_storage import build_image_thumbnail, delete_team_asset_file, read_team_asset_file, save_team_asset, safe_filename
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1679,6 +1679,33 @@ async def upload_team_asset(
         **stored,
     }))
     return {"asset": asset}
+
+
+@router.get("/teams/{team_id}/assets/{asset_id}/content")
+async def get_team_asset_content(
+    team_id: str,
+    asset_id: str,
+    thumbnail: bool = False,
+    user: CurrentUser = Depends(require_user),
+) -> Response:
+    assets = await maybe_await(active_store().list_assets(user, team_id))
+    asset = next((item for item in assets if item.get("id") == asset_id), None)
+    if not asset:
+        raise HTTPException(status_code=404, detail="团队素材不存在")
+    key = str(asset.get("thumbnail_storage_key") or "") if thumbnail else ""
+    key = key or str(asset.get("storage_key") or "")
+    if not key:
+        raise HTTPException(status_code=404, detail="团队素材文件不存在")
+    try:
+        stored = read_team_asset_file(key)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="团队素材文件不存在") from exc
+    content_type = stored.get("content_type") or asset.get("mime_type") or "application/octet-stream"
+    return Response(
+        content=stored.get("content") or b"",
+        media_type=content_type,
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 @router.delete("/teams/{team_id}/assets/{asset_id}")
