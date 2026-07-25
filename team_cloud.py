@@ -356,6 +356,16 @@ def require_api_admin(member: Dict[str, Any]) -> None:
         raise HTTPException(status_code=403, detail="Only team owners and admins can manage API keys")
 
 
+def require_team_admin(member: Dict[str, Any]) -> None:
+    if member.get("role") not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Only team owners and admins can delete projects and canvases")
+
+
+def require_team_owner(member: Dict[str, Any]) -> None:
+    if member.get("role") != "owner":
+        raise HTTPException(status_code=403, detail="Only the team owner can delete this team")
+
+
 def team_api_secret_material() -> str:
     if settings.team_api_secret_key:
         return settings.team_api_secret_key
@@ -523,6 +533,36 @@ class LocalTeamStore:
             self._write(data)
             return {**team, "role": "owner"}
 
+    def delete_team(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            team = next((item for item in data["teams"] if item.get("id") == team_id), None)
+            if not team:
+                raise HTTPException(status_code=404, detail="Team not found")
+            member = self._require_member(data, user.id, team_id)
+            require_team_owner(member)
+            canvas_ids = {item.get("id") for item in data["canvases"] if item.get("team_id") == team_id}
+            asset_records = [item for item in data["assets"] if item.get("team_id") == team_id]
+            data["teams"] = [item for item in data["teams"] if item.get("id") != team_id]
+            data["members"] = [item for item in data["members"] if item.get("team_id") != team_id]
+            data["invitations"] = [item for item in data["invitations"] if item.get("team_id") != team_id]
+            data["projects"] = [item for item in data["projects"] if item.get("team_id") != team_id]
+            data["canvases"] = [item for item in data["canvases"] if item.get("team_id") != team_id]
+            data["canvas_versions"] = [
+                item for item in data["canvas_versions"] if item.get("canvas_id") not in canvas_ids
+            ]
+            data["assets"] = [item for item in data["assets"] if item.get("team_id") != team_id]
+            data["api_providers"] = [item for item in data["api_providers"] if item.get("team_id") != team_id]
+            data["generation_logs"] = [item for item in data["generation_logs"] if item.get("team_id") != team_id]
+            self._write(data)
+        removed_files = [
+            key
+            for asset in asset_records
+            for key in (asset.get("storage_key"), asset.get("thumbnail_storage_key"))
+            if key and delete_team_asset_file(str(key))
+        ]
+        return {"team": {**team, "role": member.get("role")}, "removed_files": removed_files}
+
     def list_members(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
         with self.lock:
             data = self._read()
@@ -577,6 +617,31 @@ class LocalTeamStore:
             self._write(data)
             return project
 
+    def delete_project(self, user: CurrentUser, project_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            project = self._require_project_member(data, user.id, project_id)
+            member = self._require_member(data, user.id, project["team_id"])
+            require_team_admin(member)
+            canvas_ids = {item.get("id") for item in data["canvases"] if item.get("project_id") == project_id}
+            data["projects"] = [item for item in data["projects"] if item.get("id") != project_id]
+            data["canvases"] = [item for item in data["canvases"] if item.get("project_id") != project_id]
+            data["canvas_versions"] = [
+                item for item in data["canvas_versions"] if item.get("canvas_id") not in canvas_ids
+            ]
+            for asset in data["assets"]:
+                if asset.get("project_id") == project_id:
+                    asset["project_id"] = None
+                if asset.get("canvas_id") in canvas_ids:
+                    asset["canvas_id"] = None
+            for log in data["generation_logs"]:
+                if log.get("project_id") == project_id:
+                    log["project_id"] = ""
+                if log.get("canvas_id") in canvas_ids:
+                    log["canvas_id"] = ""
+            self._write(data)
+            return {"project": project}
+
     def list_canvases(self, user: CurrentUser, project_id: str) -> List[Dict[str, Any]]:
         with self.lock:
             data = self._read()
@@ -608,6 +673,27 @@ class LocalTeamStore:
             data["canvas_versions"].append(self._canvas_version_row(canvas))
             self._write(data)
             return canvas
+
+    def delete_canvas(self, user: CurrentUser, canvas_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            canvas = self._find_canvas(data, canvas_id)
+            if not canvas:
+                raise HTTPException(status_code=404, detail="Canvas not found")
+            member = self._require_member(data, user.id, canvas["team_id"])
+            require_team_admin(member)
+            data["canvases"] = [item for item in data["canvases"] if item.get("id") != canvas_id]
+            data["canvas_versions"] = [
+                item for item in data["canvas_versions"] if item.get("canvas_id") != canvas_id
+            ]
+            for asset in data["assets"]:
+                if asset.get("canvas_id") == canvas_id:
+                    asset["canvas_id"] = None
+            for log in data["generation_logs"]:
+                if log.get("canvas_id") == canvas_id:
+                    log["canvas_id"] = ""
+            self._write(data)
+            return {"canvas": self._canvas_summary(canvas)}
 
     def get_canvas(self, user: CurrentUser, canvas_id: str) -> Dict[str, Any]:
         with self.lock:
@@ -965,6 +1051,25 @@ class SupabaseTeamStore:
         )
         return {**team, "role": "owner"}
 
+    async def delete_team(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
+        member = await self._require_member(user.id, team_id)
+        require_team_owner(member)
+        teams = await self._request("GET", f"/teams?id=eq.{team_id}&select=*")
+        if not teams:
+            raise HTTPException(status_code=404, detail="Team not found")
+        assets = await self._request(
+            "GET",
+            f"/assets?team_id=eq.{team_id}&select=storage_key,thumbnail_storage_key",
+        )
+        await self._request("DELETE", f"/teams?id=eq.{team_id}")
+        removed_files = [
+            key
+            for asset in (assets or [])
+            for key in (asset.get("storage_key"), asset.get("thumbnail_storage_key"))
+            if key and delete_team_asset_file(str(key))
+        ]
+        return {"team": {**teams[0], "role": member.get("role")}, "removed_files": removed_files}
+
     async def list_members(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
         await self._require_member(user.id, team_id)
         return await self._request("GET", f"/team_members?team_id=eq.{team_id}&select=*")
@@ -1007,6 +1112,13 @@ class SupabaseTeamStore:
         )
         return rows[0]
 
+    async def delete_project(self, user: CurrentUser, project_id: str) -> Dict[str, Any]:
+        project = await self._require_project_member(user.id, project_id)
+        member = await self._require_member(user.id, project["team_id"])
+        require_team_admin(member)
+        rows = await self._request("DELETE", f"/projects?id=eq.{project_id}")
+        return {"project": (rows or [project])[0]}
+
     async def list_canvases(self, user: CurrentUser, project_id: str) -> List[Dict[str, Any]]:
         project = await self._require_project_member(user.id, project_id)
         return await self._request(
@@ -1041,6 +1153,13 @@ class SupabaseTeamStore:
             }],
         )
         return canvas
+
+    async def delete_canvas(self, user: CurrentUser, canvas_id: str) -> Dict[str, Any]:
+        canvas = await self.get_canvas(user, canvas_id)
+        member = await self._require_member(user.id, canvas["team_id"])
+        require_team_admin(member)
+        rows = await self._request("DELETE", f"/canvases?id=eq.{canvas_id}")
+        return {"canvas": (rows or [canvas])[0]}
 
     async def get_canvas(self, user: CurrentUser, canvas_id: str) -> Dict[str, Any]:
         rows = await self._request("GET", f"/canvases?id=eq.{canvas_id}&select=*")
@@ -1403,6 +1522,11 @@ async def create_team(payload: TeamCreateRequest, user: CurrentUser = Depends(re
     return {"team": team}
 
 
+@router.delete("/teams/{team_id}")
+async def delete_team(team_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    return await maybe_await(active_store().delete_team(user, team_id))
+
+
 @router.get("/teams/{team_id}/members")
 async def list_team_members(team_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
     members = await maybe_await(active_store().list_members(user, team_id))
@@ -1435,6 +1559,11 @@ async def create_team_project(
     return {"project": project}
 
 
+@router.delete("/projects/{project_id}")
+async def delete_team_project(project_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    return await maybe_await(active_store().delete_project(user, project_id))
+
+
 @router.get("/projects/{project_id}/canvases")
 async def list_project_canvases(project_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
     canvases = await maybe_await(active_store().list_canvases(user, project_id))
@@ -1449,6 +1578,11 @@ async def create_project_canvas(
 ) -> Dict[str, Any]:
     canvas = await maybe_await(active_store().create_canvas(user, project_id, payload.title, payload.data))
     return {"canvas": canvas}
+
+
+@router.delete("/canvases/{canvas_id}")
+async def delete_team_canvas(canvas_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    return await maybe_await(active_store().delete_canvas(user, canvas_id))
 
 
 @router.get("/canvases/{canvas_id}")

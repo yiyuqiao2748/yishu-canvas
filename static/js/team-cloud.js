@@ -27,6 +27,14 @@
         }
     }
 
+    function applyTheme(theme){
+        const dark = theme === "dark";
+        document.documentElement.classList.toggle("studio-theme-dark", dark);
+        document.documentElement.classList.toggle("theme-dark", dark);
+        document.body?.classList.toggle("studio-theme-dark", dark);
+        document.body?.classList.toggle("theme-dark", dark);
+    }
+
     function setMessage(el, text, type){
         el.textContent = text || "";
         el.classList.remove("error", "ok");
@@ -149,19 +157,36 @@
         }
 
         state.teams.forEach((team) => {
-            const item = document.createElement("button");
-            item.type = "button";
+            const item = document.createElement("div");
+            item.tabIndex = 0;
+            item.setAttribute("role", "button");
             item.className = `team-item${team.id === state.selectedTeamId ? " active" : ""}`;
             item.innerHTML = `
                 <span>
                     <span class="name">${escapeHtml(team.name)}</span>
                     <span class="meta">${escapeHtml(team.id)}</span>
                 </span>
-                <span class="badge">${roleLabel(team.role)}</span>
+                <span class="item-actions">
+                    <span class="badge">${roleLabel(team.role)}</span>
+                    <button class="btn ghost danger" type="button" data-team-delete="${escapeHtml(team.id)}" title="删除团队" aria-label="删除团队">
+                        <i data-lucide="trash-2" width="16" height="16"></i>
+                    </button>
+                </span>
             `;
-            item.addEventListener("click", () => selectTeam(team.id));
+            item.addEventListener("click", (event) => {
+                if(event.target.closest("[data-team-delete]")) return;
+                selectTeam(team.id);
+            });
+            item.addEventListener("keydown", (event) => {
+                if(event.target.closest("[data-team-delete]")) return;
+                if(event.key === "Enter" || event.key === " "){
+                    event.preventDefault();
+                    selectTeam(team.id);
+                }
+            });
             list.appendChild(item);
         });
+        iconRefresh();
     }
 
     function renderMembers(members){
@@ -203,19 +228,36 @@
             return;
         }
         state.projects.forEach((project) => {
-            const item = document.createElement("button");
-            item.type = "button";
+            const item = document.createElement("div");
+            item.tabIndex = 0;
+            item.setAttribute("role", "button");
             item.className = `team-item${project.id === state.selectedProjectId ? " active" : ""}`;
             item.innerHTML = `
                 <span>
                     <span class="name">${escapeHtml(project.name)}</span>
                     <span class="meta">${escapeHtml(project.description || project.id)}</span>
                 </span>
-                <span class="badge">项目</span>
+                <span class="item-actions">
+                    <span class="badge">项目</span>
+                    <button class="btn ghost danger" type="button" data-project-delete="${escapeHtml(project.id)}" title="删除项目" aria-label="删除项目">
+                        <i data-lucide="trash-2" width="16" height="16"></i>
+                    </button>
+                </span>
             `;
-            item.addEventListener("click", () => selectProject(project.id));
+            item.addEventListener("click", (event) => {
+                if(event.target.closest("[data-project-delete]")) return;
+                selectProject(project.id);
+            });
+            item.addEventListener("keydown", (event) => {
+                if(event.target.closest("[data-project-delete]")) return;
+                if(event.key === "Enter" || event.key === " "){
+                    event.preventDefault();
+                    selectProject(project.id);
+                }
+            });
             list.appendChild(item);
         });
+        iconRefresh();
     }
 
     function renderCanvases(){
@@ -243,6 +285,9 @@
                     <span class="badge">Canvas</span>
                     <button class="btn ghost" type="button" data-canvas-history="${escapeHtml(canvas.id)}" title="History">
                         <i data-lucide="history" width="16" height="16"></i>
+                    </button>
+                    <button class="btn ghost danger" type="button" data-canvas-delete="${escapeHtml(canvas.id)}" title="删除画布" aria-label="删除画布">
+                        <i data-lucide="trash-2" width="16" height="16"></i>
                     </button>
                 </span>
             `;
@@ -725,6 +770,79 @@
         }
     }
 
+    async function deleteTeam(teamId){
+        if(!teamId) return;
+        const team = state.teams.find((item) => item.id === teamId);
+        const name = team ? team.name : teamId;
+        if(!confirm(`确认删除团队“${name}”？团队下的项目、画布、素材、API 配置和调用日志都会删除。`)) return;
+        setMessage($("teamMessage"), "", "");
+        try {
+            await api(`/teams/${encodeURIComponent(teamId)}`, { method: "DELETE" });
+            if(state.selectedTeamId === teamId){
+                state.selectedTeamId = "";
+                state.selectedProjectId = "";
+                state.selectedCanvasId = "";
+                state.projects = [];
+                state.canvases = [];
+                state.canvasVersions = [];
+                state.apiProviders = [];
+                state.generationLogs = [];
+                state.generationSummary = null;
+                try {
+                    localStorage.removeItem(TEAM_CLOUD_TEAM_KEY);
+                    localStorage.removeItem(TEAM_CLOUD_PROJECT_KEY);
+                } catch(e) {}
+            }
+            state.teams = state.teams.filter((item) => item.id !== teamId);
+            await loadMe();
+            setMessage($("teamMessage"), "团队已删除", "ok");
+        } catch(e) {
+            setMessage($("teamMessage"), e.message, "error");
+        }
+    }
+
+    async function deleteProject(projectId){
+        if(!state.selectedTeamId || !projectId) return;
+        const project = state.projects.find((item) => item.id === projectId);
+        const name = project ? project.name : projectId;
+        if(!confirm(`确认删除项目“${name}”？项目下的云端画布和版本历史都会删除。`)) return;
+        setMessage($("projectMessage"), "", "");
+        try {
+            await api(`/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+            if(state.selectedProjectId === projectId){
+                state.selectedProjectId = "";
+                state.selectedCanvasId = "";
+                state.canvasVersions = [];
+                try { localStorage.removeItem(TEAM_CLOUD_PROJECT_KEY); } catch(e) {}
+            }
+            await loadProjects(state.selectedTeamId);
+            setMessage($("projectMessage"), "项目已删除", "ok");
+        } catch(e) {
+            setMessage($("projectMessage"), e.message, "error");
+        }
+    }
+
+    async function deleteCanvas(canvasId){
+        if(!state.selectedProjectId || !canvasId) return;
+        const canvas = state.canvases.find((item) => item.id === canvasId);
+        const title = canvas ? canvas.title : canvasId;
+        if(!confirm(`确认删除画布“${title}”？该画布的版本历史也会删除。`)) return;
+        setMessage($("projectMessage"), "", "");
+        try {
+            await api(`/canvases/${encodeURIComponent(canvasId)}`, { method: "DELETE" });
+            state.canvases = state.canvases.filter((item) => item.id !== canvasId);
+            if(state.selectedCanvasId === canvasId){
+                state.selectedCanvasId = "";
+                state.canvasVersions = [];
+            }
+            renderCanvases();
+            renderCanvasVersions();
+            setMessage($("projectMessage"), "画布已删除", "ok");
+        } catch(e) {
+            setMessage($("projectMessage"), e.message, "error");
+        }
+    }
+
     async function logout(){
         try {
             await api("/auth/logout", { method: "POST", body: "{}" });
@@ -773,6 +891,22 @@
         $("projectForm").addEventListener("submit", submitProject);
         $("canvasForm").addEventListener("submit", submitCanvas);
         $("apiProviderForm").addEventListener("submit", submitApiProvider);
+        $("teamList").addEventListener("click", (event) => {
+            const del = event.target.closest("[data-team-delete]");
+            if(del){
+                event.preventDefault();
+                event.stopPropagation();
+                deleteTeam(del.dataset.teamDelete);
+            }
+        });
+        $("projectList").addEventListener("click", (event) => {
+            const del = event.target.closest("[data-project-delete]");
+            if(del){
+                event.preventDefault();
+                event.stopPropagation();
+                deleteProject(del.dataset.projectDelete);
+            }
+        });
         $("apiProviderId").addEventListener("change", () => {
             const labels = {
                 openai: "OpenAI 兼容",
@@ -809,6 +943,13 @@
             if(del) deleteApiProvider(del.dataset.apiDelete);
         });
         $("canvasList").addEventListener("click", (event) => {
+            const del = event.target.closest("[data-canvas-delete]");
+            if(del){
+                event.preventDefault();
+                event.stopPropagation();
+                deleteCanvas(del.dataset.canvasDelete);
+                return;
+            }
             const history = event.target.closest("[data-canvas-history]");
             if(history) loadCanvasVersions(history.dataset.canvasHistory);
         });
@@ -838,5 +979,17 @@
         iconRefresh();
     }
 
-    document.addEventListener("DOMContentLoaded", init);
+    window.addEventListener("message", (event) => {
+        if(event.origin && event.origin !== location.origin) return;
+        if(event.data?.type === "studio-theme") applyTheme(event.data.theme || "light");
+    });
+    window.addEventListener("storage", (event) => {
+        if(event.key === "studio_theme" || event.key === "canvas_theme"){
+            applyTheme(localStorage.getItem("studio_theme") || localStorage.getItem("canvas_theme") || "light");
+        }
+    });
+    document.addEventListener("DOMContentLoaded", () => {
+        applyTheme(localStorage.getItem("studio_theme") || localStorage.getItem("canvas_theme") || "light");
+        init();
+    });
 })();

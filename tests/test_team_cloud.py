@@ -90,6 +90,75 @@ class TeamCloudStoreTests(unittest.TestCase):
         self.assertEqual(saved["version"], 2)
         self.assertEqual(saved["data"]["nodes"], [{"id": "n1"}])
 
+    def test_delete_canvas_requires_admin_and_removes_versions(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        project = self.store.create_project(self.owner, team["id"], "Launch Board")
+        canvas = self.store.create_canvas(self.owner, project["id"], "Storyboard", {})
+        member = CurrentUser(id="member-1", email="member@example.com", provider="test")
+        data = self.store._read()
+        data["members"].append({
+            "id": "member-row",
+            "team_id": team["id"],
+            "user_id": member.id,
+            "email": member.email,
+            "role": "member",
+            "created_at": 1,
+        })
+        self.store._write(data)
+
+        with self.assertRaises(HTTPException) as member_error:
+            self.store.delete_canvas(member, canvas["id"])
+        self.assertEqual(member_error.exception.status_code, 403)
+
+        deleted = self.store.delete_canvas(self.owner, canvas["id"])
+
+        self.assertEqual(deleted["canvas"]["id"], canvas["id"])
+        self.assertEqual(self.store.list_canvases(self.owner, project["id"]), [])
+        stored = self.store._read()
+        self.assertEqual([row for row in stored["canvas_versions"] if row.get("canvas_id") == canvas["id"]], [])
+
+    def test_delete_project_requires_admin_and_removes_canvases(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        project = self.store.create_project(self.owner, team["id"], "Launch Board")
+        canvas = self.store.create_canvas(self.owner, project["id"], "Storyboard", {})
+
+        deleted = self.store.delete_project(self.owner, project["id"])
+
+        self.assertEqual(deleted["project"]["id"], project["id"])
+        self.assertEqual(self.store.list_projects(self.owner, team["id"]), [])
+        stored = self.store._read()
+        self.assertEqual([row for row in stored["canvases"] if row.get("id") == canvas["id"]], [])
+        self.assertEqual([row for row in stored["canvas_versions"] if row.get("canvas_id") == canvas["id"]], [])
+
+    def test_delete_team_requires_owner_and_removes_related_records(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        project = self.store.create_project(self.owner, team["id"], "Launch Board")
+        canvas = self.store.create_canvas(self.owner, project["id"], "Storyboard", {})
+        admin = CurrentUser(id="admin-1", email="admin@example.com", provider="test")
+        data = self.store._read()
+        data["members"].append({
+            "id": "admin-row",
+            "team_id": team["id"],
+            "user_id": admin.id,
+            "email": admin.email,
+            "role": "admin",
+            "created_at": 1,
+        })
+        self.store._write(data)
+
+        with self.assertRaises(HTTPException) as admin_error:
+            self.store.delete_team(admin, team["id"])
+        self.assertEqual(admin_error.exception.status_code, 403)
+
+        deleted = self.store.delete_team(self.owner, team["id"])
+
+        self.assertEqual(deleted["team"]["id"], team["id"])
+        stored = self.store._read()
+        self.assertEqual(stored["teams"], [])
+        self.assertEqual(stored["members"], [])
+        self.assertEqual([row for row in stored["canvases"] if row.get("id") == canvas["id"]], [])
+        self.assertEqual([row for row in stored["canvas_versions"] if row.get("canvas_id") == canvas["id"]], [])
+
     def test_canvas_save_rejects_stale_version(self):
         team = self.store.create_team(self.owner, "Design Lab")
         project = self.store.create_project(self.owner, team["id"], "Launch Board")
