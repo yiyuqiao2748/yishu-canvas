@@ -6,6 +6,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="/static/images/logo.png" type="image/png">
     <title>AI Studio</title>
+    <script>
+        (function(){
+            try {
+                var hash = window.location.hash || '';
+                var params = new URLSearchParams(hash.replace(/^#/, ''));
+                if(params.get('access_token') && params.get('type') === 'recovery') {
+                    window.location.replace('/static/reset-password.html' + hash);
+                }
+            } catch(e) {}
+        })();
+    </script>
     <style>
         html.studio-route-booting body {
             visibility: hidden !important;

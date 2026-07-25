@@ -81,6 +81,10 @@ class AuthEmailPasswordRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=128)
 
 
+class AuthPasswordUpdateRequest(BaseModel):
+    password: str = Field(..., min_length=6, max_length=128)
+
+
 class MemberInviteRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=254)
     role: str = Field("member", pattern="^(owner|admin|member)$")
@@ -231,6 +235,30 @@ async def supabase_auth_request(path: str, payload: Dict[str, Any]) -> Dict[str,
         )
     if response.status_code >= 400:
         detail = "登录服务请求失败"
+        try:
+            body = response.json()
+            detail = body.get("msg") or body.get("message") or body.get("error_description") or detail
+        except ValueError:
+            detail = response.text[:200] or detail
+        raise HTTPException(status_code=response.status_code, detail=detail)
+    return response.json()
+
+
+async def supabase_update_password(access_token: str, password: str) -> Dict[str, Any]:
+    if not settings.supabase_url or not settings.supabase_anon_key:
+        raise HTTPException(status_code=503, detail="Supabase Auth 未配置")
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.put(
+            f"{settings.supabase_url}/auth/v1/user",
+            headers={
+                "apikey": settings.supabase_anon_key,
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            json={"password": password},
+        )
+    if response.status_code >= 400:
+        detail = "密码更新失败"
         try:
             body = response.json()
             detail = body.get("msg") or body.get("message") or body.get("error_description") or detail
@@ -1317,6 +1345,29 @@ async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[s
         raise HTTPException(status_code=401, detail="登录失败")
     set_auth_cookie(response, data["access_token"])
     return sanitize_auth_payload(data)
+
+
+@router.post("/auth/password")
+async def update_password(
+    payload: AuthPasswordUpdateRequest,
+    response: Response,
+    authorization: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="缺少密码恢复凭证")
+    access_token = authorization[7:].strip()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="缺少密码恢复凭证")
+    data = await supabase_update_password(access_token, payload.password)
+    set_auth_cookie(response, access_token)
+    return {
+        "ok": True,
+        "user": {
+            "id": data.get("id"),
+            "email": data.get("email"),
+            "updated_at": data.get("updated_at"),
+        },
+    }
 
 
 @router.post("/auth/logout")

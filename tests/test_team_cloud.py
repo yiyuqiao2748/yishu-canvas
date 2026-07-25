@@ -2,12 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import team_cloud
-from team_cloud import CanvasSaveRequest, CurrentUser, LocalTeamStore, TeamApiProviderSaveRequest, current_user_from_supabase_payload
+from team_cloud import AuthPasswordUpdateRequest, CanvasSaveRequest, CurrentUser, LocalTeamStore, TeamApiProviderSaveRequest, current_user_from_supabase_payload
 
 
 class TeamCloudStoreTests(unittest.TestCase):
@@ -308,6 +308,38 @@ class TeamCloudStoreTests(unittest.TestCase):
         self.assertEqual(user.id, "user-123")
         self.assertEqual(user.email, "person@example.com")
         self.assertEqual(user.provider, "supabase")
+
+
+class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_update_password_requires_recovery_token(self):
+        with self.assertRaises(HTTPException) as error:
+            await team_cloud.update_password(
+                AuthPasswordUpdateRequest(password="new-secret"),
+                Response(),
+                authorization=None,
+            )
+
+        self.assertEqual(error.exception.status_code, 401)
+
+    async def test_update_password_sets_team_cookie(self):
+        response = Response()
+        update_mock = AsyncMock(return_value={
+            "id": "user-1",
+            "email": "person@example.com",
+            "updated_at": "2026-07-25T12:00:00Z",
+        })
+
+        with patch.object(team_cloud, "supabase_update_password", update_mock):
+            payload = await team_cloud.update_password(
+                AuthPasswordUpdateRequest(password="new-secret"),
+                response,
+                authorization="Bearer recovery-token",
+            )
+
+        update_mock.assert_awaited_once_with("recovery-token", "new-secret")
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["user"]["email"], "person@example.com")
+        self.assertIn("team_cloud_access_token=recovery-token", response.headers["set-cookie"])
 
 
 if __name__ == "__main__":
