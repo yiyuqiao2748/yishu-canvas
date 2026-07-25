@@ -65,6 +65,31 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         path.write_bytes(content)
         return path, f"/assets/output/{name}"
 
+    def test_healthz_reports_deployment_readiness_without_secrets(self):
+        with patch.object(main.team_cloud_settings, "supabase_url", "https://supabase.example"), \
+             patch.object(main.team_cloud_settings, "supabase_anon_key", "anon-secret"), \
+             patch.object(main.team_cloud_settings, "supabase_service_role_key", "service-secret"), \
+             patch.object(main.team_cloud_settings, "team_api_secret_key", "team-secret"), \
+             patch.object(main.team_cloud_settings, "dev_bypass", False), \
+             patch.object(main.team_storage_settings, "r2_endpoint_url", "https://r2.example"), \
+             patch.object(main.team_storage_settings, "r2_bucket", "bucket"), \
+             patch.object(main.team_storage_settings, "r2_access_key_id", "r2-key"), \
+             patch.object(main.team_storage_settings, "r2_secret_access_key", "r2-secret"), \
+             patch.object(main.team_storage_settings, "r2_public_base_url", "https://assets.example"), \
+             patch.object(main.team_storage_settings, "require_r2", True):
+            payload = main.deployment_health_config()
+
+        self.assertTrue(payload["auth_ready"])
+        self.assertTrue(payload["supabase_ready"])
+        self.assertFalse(payload["dev_bypass"])
+        self.assertTrue(payload["team_api_secret_ready"])
+        self.assertTrue(payload["storage"]["r2_ready"])
+        self.assertTrue(payload["storage"]["r2_public_url_ready"])
+        self.assertTrue(payload["storage"]["require_r2"])
+        self.assertNotIn("team-secret", json.dumps(payload))
+        self.assertNotIn("r2-secret", json.dumps(payload))
+        self.assertNotIn("service-secret", json.dumps(payload))
+
     def test_output_public_url_uses_local_url_without_r2(self):
         path, url = self.generated_file()
         with patch.object(main.team_storage_settings, "r2_endpoint_url", ""), \

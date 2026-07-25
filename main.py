@@ -98,7 +98,21 @@ def health_version():
 
 @app.get("/healthz")
 async def healthz():
-    return {"status": "ok", "version": health_version()}
+    return {"status": "ok", "version": health_version(), "deployment": deployment_health_config()}
+
+
+def deployment_health_config():
+    return {
+        "auth_ready": team_cloud_settings.auth_ready,
+        "supabase_ready": team_cloud_settings.supabase_ready,
+        "dev_bypass": team_cloud_settings.dev_bypass,
+        "team_api_secret_ready": bool(team_cloud_settings.team_api_secret_key),
+        "storage": {
+            "r2_ready": team_storage_settings.r2_ready,
+            "r2_public_url_ready": bool(team_storage_settings.r2_public_base_url),
+            "require_r2": team_storage_settings.require_r2,
+        },
+    }
 
 
 # --- WebSocket 状态管理器 ---

@@ -41,7 +41,12 @@ const smartArrangeBtn = document.getElementById('smartArrangeBtn');
 const imageEditModal = document.getElementById('imageEditModal');
 const smartLogModal = document.getElementById('smartLogModal');
 const smartLogList = document.getElementById('smartLogList');
-const smartShortcutModal = document.getElementById('smartShortcutModal');
+const smartCloudHistoryToggle = document.getElementById('smartCloudHistoryToggle');
+const smartCloudVersionHistoryModal = document.getElementById('smartCloudVersionHistoryModal');
+const smartCloudVersionHistoryList = document.getElementById('smartCloudVersionHistoryList');
+const smartCloudVersionHistoryMessage = document.getElementById('smartCloudVersionHistoryMessage');
+const smartCloudVersionHistorySub = document.getElementById('smartCloudVersionHistorySub');
+const smartCloudVersionHistoryRefresh = document.getElementById('smartCloudVersionHistoryRefresh');const smartShortcutModal = document.getElementById('smartShortcutModal');
 const smartWorkflowToggle = document.getElementById('smartWorkflowToggle');
 const smartWorkflowTransferModal = document.getElementById('smartWorkflowTransferModal');
 const smartWorkflowTransferSub = document.getElementById('smartWorkflowTransferSub');
@@ -5955,6 +5960,7 @@ async function loadCanvas(){
         canvasUsesConnections = Object.prototype.hasOwnProperty.call(canvas || {}, 'connections');
         document.title = canvas.title || tr('canvas.smartCanvas');
         document.getElementById('smartTitle').textContent = canvas.title || tr('canvas.smartCanvas');
+        if(smartCloudHistoryToggle) smartCloudHistoryToggle.style.display = TEAM_CLOUD_CANVAS ? '' : 'none';
         nodes = (Array.isArray(canvas.nodes) ? canvas.nodes : []).map(normalizeLegacySmartNode).filter(Boolean);
         migrateSmartGroupImageMembers();
         canvas.connections = Array.isArray(canvas.connections) ? canvas.connections : [];
@@ -6020,6 +6026,89 @@ function cloudCanvasSaveBody(storageCanvas){
         base_version: canvas.cloud_version || 1,
     };
 }
+function formatSmartCloudVersionTime(value){
+    if(!value) return '--';
+    const date = typeof value === 'number' ? new Date(value < 10000000000 ? value * 1000 : value) : new Date(value);
+    if(Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString(window.StudioI18n?.lang() === 'en' ? 'en-US' : 'zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+function setSmartCloudVersionMessage(text, type=''){
+    if(!smartCloudVersionHistoryMessage) return;
+    smartCloudVersionHistoryMessage.textContent = text || '';
+    smartCloudVersionHistoryMessage.classList.toggle('error', type === 'error');
+    smartCloudVersionHistoryMessage.classList.toggle('ok', type === 'ok');
+}
+function renderSmartCloudVersionHistory(versions=[]){
+    if(!smartCloudVersionHistoryList) return;
+    if(smartCloudVersionHistorySub) smartCloudVersionHistorySub.textContent = canvas ? `${canvas.title || tr('smart.title')} · v${canvas.cloud_version || '-'}` : '当前云端画布的保存记录';
+    if(!versions.length){
+        smartCloudVersionHistoryList.innerHTML = '<div class="version-history-message">暂无版本记录</div>';
+        return;
+    }
+    const currentVersion = Number(canvas?.cloud_version || 0);
+    smartCloudVersionHistoryList.innerHTML = versions.map(version => {
+        const num = Number(version.version || 0);
+        const isCurrent = currentVersion && num === currentVersion;
+        return `
+            <div class="version-history-item${isCurrent ? ' current' : ''}">
+                <div class="version-history-main">
+                    <div class="version-history-version">v${escapeHtml(num || version.version)}${isCurrent ? '<span class="version-history-current">当前</span>' : ''}</div>
+                    <div class="version-history-meta">${escapeHtml(formatSmartCloudVersionTime(version.created_at))} · ${Number(version.node_count || 0)} 节点 · ${Number(version.connection_count || 0)} 连线</div>
+                </div>
+                <button class="version-history-restore" type="button" data-smart-cloud-version-restore="${escapeHtml(num)}" ${isCurrent ? 'disabled' : ''}>
+                    <i data-lucide="rotate-ccw"></i><span>恢复</span>
+                </button>
+            </div>
+        `;
+    }).join('');
+    refreshIcons();
+}
+async function loadSmartCloudVersionHistory(){
+    if(!TEAM_CLOUD_CANVAS || !canvasId) return;
+    setSmartCloudVersionMessage('正在读取版本历史...');
+    try {
+        const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}/versions`, {credentials:'include'});
+        if(!res.ok) throw new Error('版本历史读取失败');
+        const data = await res.json();
+        renderSmartCloudVersionHistory(data.versions || []);
+        setSmartCloudVersionMessage('');
+    } catch(e) {
+        setSmartCloudVersionMessage(e.message || '版本历史读取失败', 'error');
+    }
+}
+async function openSmartCloudVersionHistory(){
+    if(!TEAM_CLOUD_CANVAS || !canvasId) return;
+    smartCloudVersionHistoryModal?.classList.add('open');
+    await loadSmartCloudVersionHistory();
+}
+function closeSmartCloudVersionHistory(){
+    smartCloudVersionHistoryModal?.classList.remove('open');
+}
+async function restoreSmartCloudVersion(version){
+    if(!TEAM_CLOUD_CANVAS || !canvasId || !version) return;
+    if(!confirm(`恢复到 v${version}？恢复会生成新的当前版本，并刷新编辑器。`)) return;
+    setSmartCloudVersionMessage('正在恢复版本...');
+    try {
+        const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}/versions/${encodeURIComponent(version)}/restore`, {
+            method:'POST',
+            credentials:'include',
+            headers:{'Content-Type':'application/json'},
+            body:'{}'
+        });
+        if(!res.ok) throw new Error('版本恢复失败');
+        setSmartCloudVersionMessage('已恢复，正在刷新编辑器...', 'ok');
+        toast('已恢复版本');
+        window.location.reload();
+    } catch(e) {
+        setSmartCloudVersionMessage(e.message || '版本恢复失败', 'error');
+    }
+}
+smartCloudHistoryToggle?.addEventListener('click', openSmartCloudVersionHistory);
+smartCloudVersionHistoryRefresh?.addEventListener('click', loadSmartCloudVersionHistory);
+smartCloudVersionHistoryList?.addEventListener('click', event => {
+    const button = event.target.closest('[data-smart-cloud-version-restore]');
+    if(button) restoreSmartCloudVersion(button.dataset.smartCloudVersionRestore);
+});
 function smartSaveToast(text, delay=2500){
     const now = Date.now();
     if(now - smartSaveToastAt < delay) return;

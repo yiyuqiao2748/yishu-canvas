@@ -886,6 +886,21 @@ body.theme-dark .minimap-arrange-btn:hover { background:rgba(30,41,59,.96); colo
 .log-head { height:58px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); }
 .log-title { font-size:14px; font-weight:900; color:var(--text); }
 .log-list { flex:1; min-height:0; padding:12px; overflow:auto; display:flex; flex-direction:column; gap:10px; }
+.version-history-panel .log-head { align-items:flex-start; }
+.version-history-head-actions { display:flex; gap:8px; align-items:center; }
+.version-history-sub { margin-top:3px; color:var(--faint); font-size:11px; font-weight:600; }
+.version-history-message { min-height:20px; padding:10px 14px 0; color:var(--muted); font-size:12px; font-weight:650; }
+.version-history-message.error { color:#dc2626; }
+.version-history-message.ok { color:#059669; }
+.version-history-item { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:12px; border:1px solid var(--line); border-radius:14px; background:var(--card); }
+.version-history-item.current { border-color:rgba(20,184,166,.34); background:rgba(20,184,166,.08); }
+.version-history-main { min-width:0; display:flex; flex-direction:column; gap:4px; }
+.version-history-version { display:flex; align-items:center; gap:8px; color:var(--text); font-size:13px; font-weight:850; }
+.version-history-current { height:20px; padding:0 7px; border-radius:999px; background:var(--strong); color:var(--strong-text); font-size:10px; font-weight:850; }
+.version-history-meta { color:var(--muted); font-size:11px; font-weight:650; }
+.version-history-restore { height:32px; padding:0 10px; border-radius:999px; border:1px solid var(--line); background:var(--card-solid); color:var(--text); display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; }
+.version-history-restore:hover { background:var(--strong); border-color:var(--strong); color:var(--strong-text); }
+.version-history-restore:disabled { opacity:.48; cursor:not-allowed; }
 .log-empty { padding:28px; text-align:center; color:var(--muted); font-size:12px; font-weight:700; }
 .log-item { border:1px solid var(--line); border-radius:14px; background:var(--soft); padding:9px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; }
 .log-item.failed { border-color:#fecaca; background:#fff7f7; }

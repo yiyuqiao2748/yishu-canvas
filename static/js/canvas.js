@@ -351,7 +351,12 @@ function revealCanvasAssetControls(){
 revealCanvasAssetControls();
 const logModal = document.getElementById('logModal');
 const logList = document.getElementById('logList');
-const errorModal = document.getElementById('errorModal');
+const cloudVersionHistoryToggle = document.getElementById('cloudVersionHistoryToggle');
+const cloudVersionHistoryModal = document.getElementById('cloudVersionHistoryModal');
+const cloudVersionHistoryList = document.getElementById('cloudVersionHistoryList');
+const cloudVersionHistoryMessage = document.getElementById('cloudVersionHistoryMessage');
+const cloudVersionHistorySub = document.getElementById('cloudVersionHistorySub');
+const cloudVersionHistoryRefresh = document.getElementById('cloudVersionHistoryRefresh');const errorModal = document.getElementById('errorModal');
 const errorTitle = document.getElementById('errorTitle');
 const errorMessage = document.getElementById('errorMessage');
 let canvases = [];
@@ -2150,6 +2155,7 @@ async function openCanvas(id){
         await refreshMissingCanvasAssets();
         selected.clear();
         setCanvasMode(true);
+        if(cloudVersionHistoryToggle) cloudVersionHistoryToggle.style.display = TEAM_CLOUD_CANVAS ? '' : 'none';
         renderCanvasList();
         render();
         resumeCanvasImageTasks();
@@ -15022,7 +15028,89 @@ function hasImageDropData(dataTransfer){
 function hasOutputImageDrag(dataTransfer){ return [...(dataTransfer?.types || [])].includes('application/x-canvas-output-image'); }
 function escapeHtml(str){ return String(str == null ? '' : str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
 function escapeAttr(str){ return escapeHtml(str); }
-
+function formatCloudVersionTime(value){
+    if(!value) return '--';
+    const date = typeof value === 'number' ? new Date(value < 10000000000 ? value * 1000 : value) : new Date(value);
+    if(Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString(window.StudioI18n?.lang() === 'en' ? 'en-US' : 'zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+function setCloudVersionHistoryMessage(text, type=''){
+    if(!cloudVersionHistoryMessage) return;
+    cloudVersionHistoryMessage.textContent = text || '';
+    cloudVersionHistoryMessage.classList.toggle('error', type === 'error');
+    cloudVersionHistoryMessage.classList.toggle('ok', type === 'ok');
+}
+function renderCloudVersionHistory(versions=[]){
+    if(!cloudVersionHistoryList) return;
+    if(cloudVersionHistorySub) cloudVersionHistorySub.textContent = canvas ? `${canvas.title || tr('canvas.untitled')} · v${canvas.cloud_version || '-'}` : '当前云端画布的保存记录';
+    if(!versions.length){
+        cloudVersionHistoryList.innerHTML = '<div class="version-history-message">暂无版本记录</div>';
+        return;
+    }
+    const currentVersion = Number(canvas?.cloud_version || 0);
+    cloudVersionHistoryList.innerHTML = versions.map(version => {
+        const num = Number(version.version || 0);
+        const isCurrent = currentVersion && num === currentVersion;
+        return `
+            <div class="version-history-item${isCurrent ? ' current' : ''}">
+                <div class="version-history-main">
+                    <div class="version-history-version">v${escapeHtml(num || version.version)}${isCurrent ? '<span class="version-history-current">当前</span>' : ''}</div>
+                    <div class="version-history-meta">${escapeHtml(formatCloudVersionTime(version.created_at))} · ${Number(version.node_count || 0)} 节点 · ${Number(version.connection_count || 0)} 连线</div>
+                </div>
+                <button class="version-history-restore" type="button" data-cloud-version-restore="${escapeHtml(num)}" ${isCurrent ? 'disabled' : ''}>
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i><span>恢复</span>
+                </button>
+            </div>
+        `;
+    }).join('');
+    refreshIcons();
+}
+async function loadCloudVersionHistory(){
+    if(!TEAM_CLOUD_CANVAS || !canvas?.id) return;
+    setCloudVersionHistoryMessage('正在读取版本历史...');
+    try {
+        const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvas.id)}/versions`, {credentials:'include'});
+        if(!res.ok) throw new Error('版本历史读取失败');
+        const data = await res.json();
+        renderCloudVersionHistory(data.versions || []);
+        setCloudVersionHistoryMessage('');
+    } catch(e) {
+        setCloudVersionHistoryMessage(e.message || '版本历史读取失败', 'error');
+    }
+}
+async function openCloudVersionHistory(){
+    if(!TEAM_CLOUD_CANVAS || !canvas?.id) return;
+    cloudVersionHistoryModal?.classList.add('open');
+    await loadCloudVersionHistory();
+}
+function closeCloudVersionHistory(){
+    cloudVersionHistoryModal?.classList.remove('open');
+}
+async function restoreCloudVersion(version){
+    if(!TEAM_CLOUD_CANVAS || !canvas?.id || !version) return;
+    if(!confirm(`恢复到 v${version}？恢复会生成新的当前版本，并刷新编辑器。`)) return;
+    setCloudVersionHistoryMessage('正在恢复版本...');
+    try {
+        const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvas.id)}/versions/${encodeURIComponent(version)}/restore`, {
+            method:'POST',
+            credentials:'include',
+            headers:{'Content-Type':'application/json'},
+            body:'{}'
+        });
+        if(!res.ok) throw new Error('版本恢复失败');
+        setCloudVersionHistoryMessage('已恢复，正在刷新编辑器...', 'ok');
+        setStatus('Restored');
+        window.location.reload();
+    } catch(e) {
+        setCloudVersionHistoryMessage(e.message || '版本恢复失败', 'error');
+    }
+}
+cloudVersionHistoryToggle?.addEventListener('click', openCloudVersionHistory);
+cloudVersionHistoryRefresh?.addEventListener('click', loadCloudVersionHistory);
+cloudVersionHistoryList?.addEventListener('click', event => {
+    const button = event.target.closest('[data-cloud-version-restore]');
+    if(button) restoreCloudVersion(button.dataset.cloudVersionRestore);
+});
 window.onload = async () => {
     applyTheme(localStorage.getItem('studio_theme') || localStorage.getItem(CANVAS_THEME_KEY) || 'light');
     applyQuickToolbarState();

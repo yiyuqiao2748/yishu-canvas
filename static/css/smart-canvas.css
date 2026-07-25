@@ -17,6 +17,7 @@ button { border:0; cursor:pointer; }
 html[data-studio-scale="off"].studio-scale-managed .smart-back,
 html[data-studio-scale="off"].studio-scale-managed .smart-title,
 html[data-studio-scale="off"].studio-scale-managed .smart-log-toggle,
+html[data-studio-scale="off"].studio-scale-managed .smart-history-toggle,
 html[data-studio-scale="off"].studio-scale-managed .smart-shortcut-toggle,
 html[data-studio-scale="off"].studio-scale-managed .smart-workflow-toggle,
 html[data-studio-scale="off"].studio-scale-managed .asset-toggle,
@@ -49,11 +50,12 @@ html[data-studio-scale="off"].studio-scale-managed .preview-modal {
 .smart-title { position:absolute; left:22px; top:72px; z-index:10; max-width:min(420px, calc(100vw - 44px)); color:var(--muted); font-size:12px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none; }
 .smart-log-toggle,.smart-shortcut-toggle,.smart-workflow-toggle { position:absolute; top:22px; z-index:56; width:96px; height:40px; padding:0 15px; border-radius:999px; background:var(--panel); color:var(--text); border:1px solid var(--line); box-shadow:0 14px 34px var(--shadow); backdrop-filter:blur(16px); display:flex; align-items:center; justify-content:center; gap:8px; font-size:12px; font-weight:750; white-space:nowrap; transition:transform .14s ease, border-color .14s ease; }
 .smart-log-toggle { right:130px; }
-.smart-shortcut-toggle { right:238px; }
-.smart-workflow-toggle { right:346px; }
+.smart-history-toggle { right:238px; }
+.smart-shortcut-toggle { right:346px; }
+.smart-workflow-toggle { right:454px; }
 .smart-log-toggle:hover,.smart-shortcut-toggle:hover,.smart-workflow-toggle:hover { transform:translateY(-1px); border-color:var(--text); }
 .smart-log-toggle.active,.smart-shortcut-toggle.active,.smart-workflow-toggle.active { background:var(--strong); color:var(--strong-text); border-color:var(--strong); box-shadow:0 16px 38px var(--shadow); }
-.smart-log-toggle i,.smart-log-toggle svg,.smart-shortcut-toggle i,.smart-shortcut-toggle svg,.smart-workflow-toggle i,.smart-workflow-toggle svg { width:16px; height:16px; }
+.smart-log-toggle i,.smart-log-toggle svg,.smart-history-toggle i,.smart-history-toggle svg,.smart-shortcut-toggle i,.smart-shortcut-toggle svg,.smart-workflow-toggle i,.smart-workflow-toggle svg { width:16px; height:16px; }
 .image-node { position:absolute; width:260px; min-height:178px; border-radius:16px; background:transparent; border:0; box-shadow:none; overflow:visible; user-select:none; cursor:move; }
 body.smart-node-drag * { user-select:none !important; }
 body.smart-node-drag .image-node textarea,
@@ -1115,6 +1117,21 @@ input[type=range].smart-range::-webkit-slider-thumb { -webkit-appearance:none; w
 .shortcut-item kbd { min-width:34px; height:24px; padding:0 7px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; background:var(--card); border:1px solid rgba(148,163,184,.38); color:var(--text); box-shadow:inset 0 -1px 0 rgba(15,23,42,.08); font-size:10px; font-weight:900; font-family:'JetBrains Mono',ui-monospace,monospace; }
 .shortcut-item span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .log-list { padding:12px; overflow:auto; display:flex; flex-direction:column; gap:10px; }
+.version-history-panel .log-head { align-items:flex-start; }
+.version-history-head-actions { display:flex; gap:8px; align-items:center; }
+.version-history-sub { margin-top:3px; color:var(--faint); font-size:11px; font-weight:650; }
+.version-history-message { min-height:20px; padding:10px 14px 0; color:var(--muted); font-size:12px; font-weight:650; }
+.version-history-message.error { color:#dc2626; }
+.version-history-message.ok { color:#059669; }
+.version-history-item { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:12px; border:1px solid var(--line); border-radius:14px; background:var(--card); }
+.version-history-item.current { border-color:rgba(20,184,166,.34); background:rgba(20,184,166,.08); }
+.version-history-main { min-width:0; display:flex; flex-direction:column; gap:4px; }
+.version-history-version { display:flex; align-items:center; gap:8px; color:var(--text); font-size:13px; font-weight:850; }
+.version-history-current { height:20px; padding:0 7px; border-radius:999px; background:var(--strong); color:var(--strong-text); font-size:10px; font-weight:850; }
+.version-history-meta { color:var(--muted); font-size:11px; font-weight:650; }
+.version-history-restore { height:32px; padding:0 10px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--text); display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; }
+.version-history-restore:hover { background:var(--strong); border-color:var(--strong); color:var(--strong-text); }
+.version-history-restore:disabled { opacity:.48; cursor:not-allowed; }
 .log-empty { padding:28px; text-align:center; color:var(--muted); font-size:12px; font-weight:700; }
 .log-item { border:1px solid var(--line); border-radius:14px; background:var(--soft); padding:9px; display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:10px; }
 .log-item.failed { border-color:#fecaca; background:#fff7f7; }
@@ -1146,9 +1163,10 @@ input[type=range].smart-range::-webkit-slider-thumb { -webkit-appearance:none; w
 @media (max-width: 900px){
     .asset-toggle { right:14px; width:40px; padding:0; }
     .smart-log-toggle { right:62px; width:40px; padding:0; }
-    .smart-shortcut-toggle { right:110px; width:40px; padding:0; }
-    .smart-workflow-toggle { right:158px; width:40px; padding:0; }
-    .smart-log-toggle span,.smart-shortcut-toggle span,.smart-workflow-toggle span,.asset-toggle span { display:none; }
+    .smart-history-toggle { right:110px; width:40px; padding:0; }
+    .smart-shortcut-toggle { right:158px; width:40px; padding:0; }
+    .smart-workflow-toggle { right:206px; width:40px; padding:0; }
+    .smart-log-toggle span,.smart-history-toggle span,.smart-shortcut-toggle span,.smart-workflow-toggle span,.asset-toggle span { display:none; }
     .shortcut-modal { right:14px; top:118px; width:calc(100vw - 28px); max-height:calc(100vh - 132px); }
     .workflow-transfer-panel { right:14px; top:118px; width:calc(100vw - 28px); max-height:calc(100vh - 132px); }
 }

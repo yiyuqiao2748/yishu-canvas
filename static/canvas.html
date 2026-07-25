@@ -16,13 +16,13 @@
             } catch(e) {}
         })();
     </script>
-    <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.07.17.1782696751"></script>
-    <script src="/static/vendor/js/lucide.js?v=2026.07.17.1782696749"></script>
-    <script src="/static/js/theme.js?v=2026.07.17.1783117645"></script>
-    <script src="/static/js/touch-mouse.js?v=2026.07.17.1783079819"></script>
-    <script src="/static/js/i18n.js?v=2026.07.17.1784772334"></script>
-    <link rel="stylesheet" href="/static/css/canvas.css?v=2026.07.17.1784688288">
-    <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.17.1782696682">
+    <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.07.23.1784893025"></script>
+    <script src="/static/vendor/js/lucide.js?v=2026.07.23.1784893025"></script>
+    <script src="/static/js/theme.js?v=2026.07.23.1784893025"></script>
+    <script src="/static/js/touch-mouse.js?v=2026.07.23.1784893025"></script>
+    <script src="/static/js/i18n.js?v=2026.07.23.1784893025"></script>
+    <link rel="stylesheet" href="/static/css/canvas.css?v=2026.07.23.1784984879">
+    <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.23.1784893025">
 </head>
 <body>
     <div id="shell" class="shell no-canvas">
@@ -52,6 +52,7 @@
                     <button class="tool-btn" onclick="groupSelectedImages()"><i data-lucide="group" class="w-4 h-4"></i><span data-i18n="canvas.group">分组</span></button>
                 </div>
                 <div class="toolbar-fixed">
+                    <button id="cloudVersionHistoryToggle" class="tool-btn toolbar-history" type="button" title="版本历史" aria-label="版本历史" style="display:none"><i data-lucide="history" class="w-4 h-4"></i><span>历史</span></button>
                     <button id="workflowTransferToggle" class="tool-btn toolbar-workflow" type="button" title="导入导出工作流" aria-label="导入导出工作流"><i data-lucide="package-open" class="w-4 h-4"></i><span>工作流</span></button>
                     <button id="canvasAssetToggle" class="tool-btn toolbar-asset canvas-asset-toggle" type="button" title="资产库" aria-label="资产库"><i data-lucide="library" class="w-4 h-4"></i><span>资产库</span></button>
                     <button id="canvasLogToggle" class="tool-btn toolbar-log" type="button" onclick="openCanvasLog(event)" title="日志" aria-label="日志" data-i18n-title="canvas.logs"><i data-lucide="list-todo" class="w-4 h-4"></i><span data-i18n="canvas.logs">日志</span></button>
@@ -192,7 +193,22 @@
                 <div id="promptTemplateBody" class="prompt-template-body"></div>
             </div>
         </div>
-        <div id="logModal" class="log-modal" onclick="closeCanvasLog()">
+        <div id="cloudVersionHistoryModal" class="log-modal" onclick="closeCloudVersionHistory()">
+            <div class="log-panel version-history-panel" onclick="event.stopPropagation()">
+                <div class="log-head">
+                    <div>
+                        <div class="log-title">版本历史</div>
+                        <div id="cloudVersionHistorySub" class="version-history-sub">当前云端画布的保存记录</div>
+                    </div>
+                    <div class="version-history-head-actions">
+                        <button id="cloudVersionHistoryRefresh" class="preview-icon-btn" type="button" title="刷新" aria-label="刷新"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                        <button class="preview-icon-btn" type="button" onclick="closeCloudVersionHistory()" title="关闭" aria-label="关闭"><i data-lucide="x" class="w-4 h-4"></i></button>
+                    </div>
+                </div>
+                <div id="cloudVersionHistoryMessage" class="version-history-message"></div>
+                <div id="cloudVersionHistoryList" class="log-list version-history-list"></div>
+            </div>
+        </div>        <div id="logModal" class="log-modal" onclick="closeCanvasLog()">
             <div class="log-panel" onclick="event.stopPropagation()">
                 <div class="log-head">
                     <div class="log-title" data-i18n="canvas.generationLogs">生成日志</div>
@@ -350,7 +366,7 @@
         </div>
     </div>
 
-    <script src="/static/js/ltx-director-timeline.js?v=2026.07.17.1782696715"></script>
-    <script src="/static/js/canvas.js?v=2026.07.17.1784711098"></script>
+    <script src="/static/js/ltx-director-timeline.js?v=2026.07.23.1784893025"></script>
+    <script src="/static/js/canvas.js?v=2026.07.23.1784985000"></script>
 </body>
 </html>

@@ -61,9 +61,21 @@ SUPABASE_URL=你的Supabase地址
 SUPABASE_ANON_KEY=你的Supabase anon key
 SUPABASE_SERVICE_ROLE_KEY=你的Supabase service role key
 SUPABASE_JWT_SECRET=你的Supabase JWT secret
+TEAM_API_SECRET_KEY=一段长期稳定的随机密钥
 ```
 
-不要把 `.env` 发给别人，也不要提交到 Git。
+R2 配置完成后继续填写，并开启强制 R2：
+
+```bash
+TEAM_ASSET_REQUIRE_R2=true
+R2_ENDPOINT_URL=https://你的账号ID.r2.cloudflarestorage.com
+R2_BUCKET=你的bucket名称
+R2_ACCESS_KEY_ID=你的R2 access key
+R2_SECRET_ACCESS_KEY=你的R2 secret key
+R2_PUBLIC_BASE_URL=https://你的R2公开访问域名
+```
+
+`TEAM_API_SECRET_KEY` 首次线上保存团队 API Key 前必须设置，后续不要随意更换；更换后旧密钥加密的数据将无法解密。不要把 `.env` 发给别人，也不要提交到 Git。
 
 ## 第四步：启动
 
@@ -91,15 +103,36 @@ http://192.168.1.3:3000
 https://canvas.yiyuqiaoai.uk
 ```
 
-## 第五步：确认素材真正落到 NAS
-
-上传团队素材后检查：
+线上配置自检：
 
 ```bash
-ls -la ./team-assets
+curl http://127.0.0.1:3000/healthz
 ```
 
-如果这里出现团队素材文件，说明 160G NAS 空间已经被用起来了。
+R2 和团队密钥配置收口时，返回内容里的这些字段应为 `true`：
+
+```json
+{
+  "deployment": {
+    "auth_ready": true,
+    "supabase_ready": true,
+    "team_api_secret_ready": true,
+    "storage": {
+      "r2_ready": true,
+      "r2_public_url_ready": true,
+      "require_r2": true
+    }
+  }
+}
+```
+
+`dev_bypass` 线上必须为 `false`。
+
+## 第五步：确认素材真正落到 R2
+
+上传团队素材后，在浏览器开发者工具或接口返回中确认素材地址是 `R2_PUBLIC_BASE_URL` 开头。如果仍返回 `/assets/team-assets/...`，说明没有走 R2。
+
+如果 `TEAM_ASSET_REQUIRE_R2=true` 但 R2 没配齐，上传应明确失败；这比静默写入 NAS 本地盘更适合线上环境。
 
 ## 常见问题
 
