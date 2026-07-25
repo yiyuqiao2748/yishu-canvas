@@ -109,6 +109,40 @@ class TeamCloudStoreTests(unittest.TestCase):
             )
         self.assertEqual(stale_error.exception.status_code, 409)
 
+    def test_canvas_versions_can_be_listed_and_restored(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        project = self.store.create_project(self.owner, team["id"], "Launch Board")
+        canvas = self.store.create_canvas(
+            self.owner,
+            project["id"],
+            "Storyboard",
+            {"title": "v1", "nodes": [{"id": "old"}], "connections": []},
+        )
+        self.store.save_canvas(
+            self.owner,
+            canvas["id"],
+            CanvasSaveRequest(
+                title="Storyboard v2",
+                data={"title": "v2", "nodes": [{"id": "new"}], "connections": [{"from": "old", "to": "new"}]},
+                base_version=1,
+            ),
+        )
+
+        versions = self.store.list_canvas_versions(self.owner, canvas["id"])
+        self.assertEqual([item["version"] for item in versions], [2, 1])
+        self.assertEqual(versions[0]["node_count"], 1)
+        self.assertEqual(versions[0]["connection_count"], 1)
+
+        restored = self.store.restore_canvas_version(self.owner, canvas["id"], 1)
+
+        self.assertEqual(restored["canvas"]["version"], 3)
+        self.assertEqual(restored["canvas"]["data"]["nodes"], [{"id": "old"}])
+        self.assertEqual(restored["restored_version"]["version"], 1)
+        self.assertEqual([item["version"] for item in self.store.list_canvas_versions(self.owner, canvas["id"])], [3, 2, 1])
+        with self.assertRaises(HTTPException) as outsider_error:
+            self.store.list_canvas_versions(self.outsider, canvas["id"])
+        self.assertEqual(outsider_error.exception.status_code, 403)
+
     def test_outsider_cannot_access_project_canvases(self):
         team = self.store.create_team(self.owner, "Design Lab")
         project = self.store.create_project(self.owner, team["id"], "Launch Board")

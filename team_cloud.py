@@ -601,6 +601,47 @@ class LocalTeamStore:
             self._write(data)
             return canvas
 
+    def list_canvas_versions(self, user: CurrentUser, canvas_id: str) -> List[Dict[str, Any]]:
+        with self.lock:
+            data = self._read()
+            canvas = self._find_canvas(data, canvas_id)
+            if not canvas:
+                raise HTTPException(status_code=404, detail="Canvas not found")
+            self._require_member(data, user.id, canvas["team_id"])
+            versions = [
+                self._canvas_version_summary(row)
+                for row in data["canvas_versions"]
+                if row.get("canvas_id") == canvas_id
+            ]
+            return sorted(versions, key=lambda item: int(item.get("version") or 0), reverse=True)
+
+    def restore_canvas_version(self, user: CurrentUser, canvas_id: str, version: int) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            canvas = self._find_canvas(data, canvas_id)
+            if not canvas:
+                raise HTTPException(status_code=404, detail="Canvas not found")
+            self._require_member(data, user.id, canvas["team_id"])
+            source = next(
+                (
+                    row
+                    for row in data["canvas_versions"]
+                    if row.get("canvas_id") == canvas_id and int(row.get("version") or 0) == int(version)
+                ),
+                None,
+            )
+            if not source:
+                raise HTTPException(status_code=404, detail="Canvas version not found")
+            restored_data = json.loads(json.dumps(source.get("data") or {}, ensure_ascii=False))
+            canvas["data"] = restored_data
+            canvas["title"] = str(restored_data.get("title") or canvas.get("title") or "Untitled canvas").strip() or "Untitled canvas"
+            canvas["version"] = int(canvas.get("version") or 1) + 1
+            canvas["updated_by"] = user.id
+            canvas["updated_at"] = now_ms()
+            data["canvas_versions"].append(self._canvas_version_row(canvas))
+            self._write(data)
+            return {"canvas": canvas, "restored_version": self._canvas_version_summary(source)}
+
     def list_assets(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
         with self.lock:
             data = self._read()
@@ -825,6 +866,19 @@ class LocalTeamStore:
             "created_at": now_ms(),
         }
 
+    def _canvas_version_summary(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        return {
+            "id": row.get("id") or "",
+            "canvas_id": row.get("canvas_id") or "",
+            "version": row.get("version"),
+            "title": data.get("title") or "",
+            "node_count": len(data.get("nodes") or []) if isinstance(data.get("nodes"), list) else 0,
+            "connection_count": len(data.get("connections") or []) if isinstance(data.get("connections"), list) else 0,
+            "created_by": row.get("created_by") or "",
+            "created_at": row.get("created_at"),
+        }
+
 
 class SupabaseTeamStore:
     def __init__(self, base_url: str, service_key: str):
@@ -991,6 +1045,45 @@ class SupabaseTeamStore:
         )
         return updated
 
+    async def list_canvas_versions(self, user: CurrentUser, canvas_id: str) -> List[Dict[str, Any]]:
+        canvas = await self.get_canvas(user, canvas_id)
+        rows = await self._request(
+            "GET",
+            f"/canvas_versions?canvas_id=eq.{canvas['id']}&order=version.desc&select=id,canvas_id,version,data,created_by,created_at",
+        )
+        return [self._canvas_version_summary(row) for row in rows or []]
+
+    async def restore_canvas_version(self, user: CurrentUser, canvas_id: str, version: int) -> Dict[str, Any]:
+        canvas = await self.get_canvas(user, canvas_id)
+        rows = await self._request(
+            "GET",
+            f"/canvas_versions?canvas_id=eq.{canvas['id']}&version=eq.{int(version)}&select=*",
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="Canvas version not found")
+        source = rows[0]
+        restored_data = source.get("data") if isinstance(source.get("data"), dict) else {}
+        next_version = int(canvas.get("version") or 1) + 1
+        patch = {
+            "data": restored_data,
+            "title": str(restored_data.get("title") or canvas.get("title") or "Untitled canvas").strip() or "Untitled canvas",
+            "version": next_version,
+            "updated_by": user.id,
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        updated = (await self._request("PATCH", f"/canvases?id=eq.{canvas_id}", json_body=patch))[0]
+        await self._request(
+            "POST",
+            "/canvas_versions",
+            json_body=[{
+                "canvas_id": canvas_id,
+                "version": updated["version"],
+                "data": updated.get("data") or {},
+                "created_by": user.id,
+            }],
+        )
+        return {"canvas": updated, "restored_version": self._canvas_version_summary(source)}
+
     async def list_assets(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
         await self._require_member(user.id, team_id)
         return await self._request(
@@ -1155,6 +1248,19 @@ class SupabaseTeamStore:
         await self._require_member(user_id, project["team_id"])
         return project
 
+    def _canvas_version_summary(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        return {
+            "id": row.get("id") or "",
+            "canvas_id": row.get("canvas_id") or "",
+            "version": row.get("version"),
+            "title": data.get("title") or "",
+            "node_count": len(data.get("nodes") or []) if isinstance(data.get("nodes"), list) else 0,
+            "connection_count": len(data.get("connections") or []) if isinstance(data.get("connections"), list) else 0,
+            "created_by": row.get("created_by") or "",
+            "created_at": row.get("created_at"),
+        }
+
 
 local_store = LocalTeamStore(LOCAL_TEAM_STORE)
 supabase_store = SupabaseTeamStore(settings.supabase_url, settings.supabase_service_role_key) if settings.supabase_ready else None
@@ -1299,6 +1405,21 @@ async def save_team_canvas(
 ) -> Dict[str, Any]:
     canvas = await maybe_await(active_store().save_canvas(user, canvas_id, payload))
     return {"canvas": canvas}
+
+
+@router.get("/canvases/{canvas_id}/versions")
+async def list_team_canvas_versions(canvas_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    versions = await maybe_await(active_store().list_canvas_versions(user, canvas_id))
+    return {"versions": versions}
+
+
+@router.post("/canvases/{canvas_id}/versions/{version}/restore")
+async def restore_team_canvas_version(
+    canvas_id: str,
+    version: int,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    return await maybe_await(active_store().restore_canvas_version(user, canvas_id, version))
 
 
 @router.get("/teams/{team_id}/assets")

@@ -15,6 +15,8 @@
         generationSummary: null,
         selectedTeamId: "",
         selectedProjectId: "",
+        selectedCanvasId: "",
+        canvasVersions: [],
         config: null,
     };
 
@@ -198,11 +200,13 @@
         const list = $("canvasList");
         list.innerHTML = "";
         if(!state.selectedProjectId){
-            list.innerHTML = '<div class="empty">选择项目后显示画布</div>';
+            list.innerHTML = '<div class="empty">Select a project to view canvases</div>';
+            renderCanvasVersions();
             return;
         }
         if(!state.canvases.length){
-            list.innerHTML = '<div class="empty">还没有云端画布</div>';
+            list.innerHTML = '<div class="empty">No cloud canvases yet</div>';
+            renderCanvasVersions();
             return;
         }
         state.canvases.forEach((canvas) => {
@@ -211,12 +215,49 @@
             item.innerHTML = `
                 <span>
                     <span class="name">${escapeHtml(canvas.title)}</span>
-                    <span class="meta">v${escapeHtml(canvas.version)} · ${escapeHtml(canvas.id)}</span>
+                    <span class="meta">v${escapeHtml(canvas.version)} ? ${escapeHtml(canvas.id)}</span>
                 </span>
-                <span class="badge">画布</span>
+                <span class="row">
+                    <span class="badge">Canvas</span>
+                    <button class="btn ghost" type="button" data-canvas-history="${escapeHtml(canvas.id)}" title="History">
+                        <i data-lucide="history" width="16" height="16"></i>
+                    </button>
+                </span>
             `;
             list.appendChild(item);
         });
+        iconRefresh();
+    }
+
+    function renderCanvasVersions(){
+        const list = $("canvasVersionList");
+        if(!list) return;
+        list.innerHTML = "";
+        if(!state.selectedCanvasId){
+            list.innerHTML = '<div class="empty">Pick a canvas to view versions</div>';
+            return;
+        }
+        if(!state.canvasVersions.length){
+            list.innerHTML = '<div class="empty">No versions yet</div>';
+            return;
+        }
+        state.canvasVersions.forEach((version) => {
+            const item = document.createElement("div");
+            item.className = "member-item";
+            const selected = state.canvases.find((canvas) => canvas.id === state.selectedCanvasId);
+            const isCurrent = selected && Number(selected.version) === Number(version.version);
+            item.innerHTML = `
+                <span>
+                    <span class="name">v${escapeHtml(version.version)}${isCurrent ? " ? current" : ""}</span>
+                    <span class="meta">${escapeHtml(formatLogTime(version.created_at))} ? ${Number(version.node_count || 0)} nodes ? ${Number(version.connection_count || 0)} links</span>
+                </span>
+                <button class="btn ghost" type="button" data-version-restore="${escapeHtml(version.version)}" ${isCurrent ? "disabled" : ""} title="Restore">
+                    <i data-lucide="rotate-ccw" width="16" height="16"></i>
+                </button>
+            `;
+            list.appendChild(item);
+        });
+        iconRefresh();
     }
 
     function renderApiProviders(){
@@ -361,6 +402,8 @@
             state.generationSummary = null;
             state.selectedTeamId = "";
             state.selectedProjectId = "";
+            state.selectedCanvasId = "";
+            state.canvasVersions = [];
             renderAuth();
             renderTeams();
             renderMembers([]);
@@ -368,6 +411,7 @@
             renderCanvases();
             renderApiProviders();
             renderGenerationLogs();
+            renderCanvasVersions();
         }
     }
 
@@ -415,6 +459,32 @@
         renderGenerationLogs();
     }
 
+    async function loadCanvasVersions(canvasId){
+        if(!canvasId) return;
+        state.selectedCanvasId = canvasId;
+        const data = await api(`/canvases/${encodeURIComponent(canvasId)}/versions`);
+        state.canvasVersions = data.versions || [];
+        renderCanvases();
+        renderCanvasVersions();
+    }
+
+    async function restoreCanvasVersion(version){
+        if(!state.selectedCanvasId || !version) return;
+        if(!confirm(`Restore canvas to version ${version}?`)) return;
+        try {
+            const data = await api(`/canvases/${encodeURIComponent(state.selectedCanvasId)}/versions/${encodeURIComponent(version)}/restore`, {
+                method: "POST",
+                body: "{}",
+            });
+            const restored = data.canvas;
+            state.canvases = state.canvases.map((canvas) => canvas.id === restored.id ? {...canvas, ...restored} : canvas);
+            await loadCanvasVersions(state.selectedCanvasId);
+            setMessage($("projectMessage"), `Restored to v${version}; new current version is v${restored.version}`, "ok");
+        } catch(e) {
+            setMessage($("projectMessage"), e.message, "error");
+        }
+    }
+
     async function loadProjects(teamId){
         const data = await api(`/teams/${encodeURIComponent(teamId)}/projects`);
         state.projects = data.projects || [];
@@ -426,12 +496,16 @@
             await selectProject(state.selectedProjectId, true);
         } else {
             state.canvases = [];
+            state.selectedCanvasId = "";
+            state.canvasVersions = [];
             renderCanvases();
         }
     }
 
     async function selectProject(projectId, silent){
         state.selectedProjectId = projectId;
+        state.selectedCanvasId = "";
+        state.canvasVersions = [];
         try {
             localStorage.setItem(TEAM_CLOUD_MODE_KEY, "1");
             localStorage.setItem(TEAM_CLOUD_PROJECT_KEY, projectId);
@@ -441,10 +515,14 @@
             const data = await api(`/projects/${encodeURIComponent(projectId)}/canvases`);
             state.canvases = data.canvases || [];
             renderCanvases();
+            renderCanvasVersions();
             setMessage($("projectMessage"), silent ? "" : "项目已选择", silent ? "" : "ok");
         } catch(e) {
             state.canvases = [];
+            state.selectedCanvasId = "";
+            state.canvasVersions = [];
             renderCanvases();
+            renderCanvasVersions();
             setMessage($("projectMessage"), e.message, "error");
         }
         renderAuth();
@@ -520,8 +598,11 @@
             state.projects.unshift(data.project);
             state.selectedProjectId = data.project.id;
             state.canvases = [];
+            state.selectedCanvasId = "";
+            state.canvasVersions = [];
             renderProjects();
             renderCanvases();
+            renderCanvasVersions();
             setMessage($("projectMessage"), "项目已创建", "ok");
             renderAuth();
         } catch(e) {
@@ -543,7 +624,10 @@
             });
             $("canvasTitle").value = "";
             state.canvases.unshift(data.canvas);
+            state.selectedCanvasId = data.canvas.id;
+            state.canvasVersions = [];
             renderCanvases();
+            await loadCanvasVersions(data.canvas.id);
             setMessage($("projectMessage"), "云端画布已创建", "ok");
         } catch(e) {
             setMessage($("projectMessage"), e.message, "error");
@@ -629,6 +713,8 @@
             state.generationSummary = null;
             state.selectedTeamId = "";
             state.selectedProjectId = "";
+            state.selectedCanvasId = "";
+            state.canvasVersions = [];
             try {
                 localStorage.removeItem(TEAM_CLOUD_MODE_KEY);
                 localStorage.removeItem(TEAM_CLOUD_TEAM_KEY);
@@ -642,6 +728,7 @@
             renderCanvases();
             renderApiProviders();
             renderGenerationLogs();
+            renderCanvasVersions();
         }
     }
 
@@ -694,6 +781,14 @@
             }
             const del = event.target.closest("[data-api-delete]");
             if(del) deleteApiProvider(del.dataset.apiDelete);
+        });
+        $("canvasList").addEventListener("click", (event) => {
+            const history = event.target.closest("[data-canvas-history]");
+            if(history) loadCanvasVersions(history.dataset.canvasHistory);
+        });
+        $("canvasVersionList").addEventListener("click", (event) => {
+            const restore = event.target.closest("[data-version-restore]");
+            if(restore) restoreCanvasVersion(restore.dataset.versionRestore);
         });
         $("logoutBtn").addEventListener("click", logout);
 
