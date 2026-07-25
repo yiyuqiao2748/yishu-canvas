@@ -17,6 +17,7 @@ class TeamStorageSettings:
     r2_access_key_id: str = os.getenv("R2_ACCESS_KEY_ID", "")
     r2_secret_access_key: str = os.getenv("R2_SECRET_ACCESS_KEY", "")
     r2_public_base_url: str = os.getenv("R2_PUBLIC_BASE_URL", "").rstrip("/")
+    require_r2: bool = os.getenv("TEAM_ASSET_REQUIRE_R2", "").lower() in {"1", "true", "yes", "on"}
 
     @property
     def r2_ready(self) -> bool:
@@ -55,6 +56,8 @@ def save_team_asset(content: bytes, *, team_id: str, filename: str, content_type
     key = make_storage_key(team_id, filename, asset_id)
     if settings.r2_ready:
         return save_team_asset_to_r2(content, key=key, content_type=content_type)
+    if settings.require_r2:
+        raise RuntimeError("TEAM_ASSET_REQUIRE_R2 is enabled, but R2 storage is not fully configured")
     return save_team_asset_local(content, key=key)
 
 

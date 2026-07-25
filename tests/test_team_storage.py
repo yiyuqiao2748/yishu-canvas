@@ -24,6 +24,19 @@ class TeamStorageTests(unittest.TestCase):
                 self.assertEqual(result["public_url"], "/assets/team-assets/team-1/asset.png")
                 self.assertTrue((root / "assets" / "team-assets" / "team-1" / "asset.png").exists())
 
+    def test_require_r2_blocks_local_fallback(self):
+        with patch.object(team_storage.settings, "r2_endpoint_url", ""), \
+             patch.object(team_storage.settings, "r2_bucket", ""), \
+             patch.object(team_storage.settings, "r2_access_key_id", ""), \
+             patch.object(team_storage.settings, "r2_secret_access_key", ""), \
+             patch.object(team_storage.settings, "require_r2", True):
+            with self.assertRaises(RuntimeError):
+                team_storage.save_team_asset(
+                    b"image",
+                    team_id="team-1",
+                    filename="asset.png",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -847,13 +847,16 @@ async def upload_team_asset(
         raise HTTPException(status_code=413, detail="素材文件过大")
     asset_id = str(uuid.uuid4())
     filename = safe_filename(file.filename or asset_id)
-    stored = save_team_asset(
-        content,
-        team_id=team_id,
-        filename=filename,
-        content_type=file.content_type or "",
-        asset_id=asset_id,
-    )
+    try:
+        stored = save_team_asset(
+            content,
+            team_id=team_id,
+            filename=filename,
+            content_type=file.content_type or "",
+            asset_id=asset_id,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="团队素材云存储未配置，请先配置 Cloudflare R2") from exc
     asset = await maybe_await(active_store().create_asset(user, team_id, {
         "id": asset_id,
         "kind": "image" if (file.content_type or "").startswith("image/") else "file",
