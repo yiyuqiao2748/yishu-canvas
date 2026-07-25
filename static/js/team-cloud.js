@@ -106,8 +106,9 @@
         $("signupTab").classList.toggle("active", state.mode === "signup");
         $("loginTab").setAttribute("aria-selected", state.mode === "login" ? "true" : "false");
         $("signupTab").setAttribute("aria-selected", state.mode === "signup" ? "true" : "false");
-        $("authSubmit").querySelector("span").textContent = state.mode === "login" ? "登录" : "注册";
-        $("authSubmit").querySelector("i").setAttribute("data-lucide", state.mode === "login" ? "log-in" : "user-plus");
+        $("authSubmit").innerHTML = state.mode === "login"
+            ? '<i data-lucide="log-in" width="16" height="16"></i><span>登录</span>'
+            : '<i data-lucide="user-plus" width="16" height="16"></i><span>注册</span>';
         $("password").autocomplete = state.mode === "login" ? "current-password" : "new-password";
         iconRefresh();
     }
