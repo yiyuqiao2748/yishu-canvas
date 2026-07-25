@@ -10,6 +10,9 @@
         teams: [],
         projects: [],
         canvases: [],
+        apiProviders: [],
+        generationLogs: [],
+        generationSummary: null,
         selectedTeamId: "",
         selectedProjectId: "",
         config: null,
@@ -48,9 +51,17 @@
             data = {};
         }
         if(!response.ok){
-            throw new Error(data.detail || data.message || "请求失败");
+            throw new Error(apiErrorMessage(data));
         }
         return data;
+    }
+
+    function apiErrorMessage(data){
+        const detail = data && data.detail;
+        if(detail && typeof detail === "object"){
+            return detail.message || data.message || "请求失败";
+        }
+        return detail || (data && data.message) || "请求失败";
     }
 
     function updateStatus(){
@@ -79,6 +90,7 @@
         $("inviteForm").querySelectorAll("input,select,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
         $("projectForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
         $("canvasForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedProjectId);
+        $("apiProviderForm").querySelectorAll("input,select,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
 
         if(signedIn){
             $("userLine").textContent = state.user.email || state.user.id;
@@ -207,6 +219,103 @@
         });
     }
 
+    function renderApiProviders(){
+        const list = $("apiProviderList");
+        if(!list) return;
+        list.innerHTML = "";
+        if(!state.selectedTeamId){
+            list.innerHTML = '<div class="empty">选择团队后显示团队 API 配置</div>';
+            return;
+        }
+        if(!state.apiProviders.length){
+            list.innerHTML = '<div class="empty">还没有团队 API 配置</div>';
+            return;
+        }
+        state.apiProviders.forEach((provider) => {
+            const item = document.createElement("div");
+            item.className = "api-item";
+            const keyText = provider.has_api_key ? `已保存 ${provider.api_key_preview || ""}` : "未保存 Key";
+            item.innerHTML = `
+                <span>
+                    <span class="name">${escapeHtml(provider.label || provider.provider_id)}</span>
+                    <span class="meta">${escapeHtml(provider.provider_id)} · ${escapeHtml(provider.protocol || "openai")} · ${escapeHtml(keyText)}</span>
+                </span>
+                <span class="row">
+                    <span class="badge">${provider.enabled === false ? "停用" : "启用"}</span>
+                    <button class="btn ghost" type="button" data-api-edit="${escapeHtml(provider.provider_id)}" title="编辑">
+                        <i data-lucide="pencil" width="16" height="16"></i>
+                    </button>
+                    <button class="btn ghost" type="button" data-api-delete="${escapeHtml(provider.provider_id)}" title="删除">
+                        <i data-lucide="trash-2" width="16" height="16"></i>
+                    </button>
+                </span>
+            `;
+            list.appendChild(item);
+        });
+        iconRefresh();
+    }
+
+    function renderGenerationLogs(){
+        renderGenerationSummary();
+        const list = $("generationLogList");
+        if(!list) return;
+        list.innerHTML = "";
+        if(!state.selectedTeamId){
+            list.innerHTML = '<div class="empty">Select a team to view generation logs</div>';
+            return;
+        }
+        if(!state.generationLogs.length){
+            list.innerHTML = '<div class="empty">No generation logs yet</div>';
+            return;
+        }
+        state.generationLogs.forEach((log) => {
+            const item = document.createElement("div");
+            item.className = "log-item";
+            const status = log.status === "failed" ? "failed" : (log.status === "succeeded" ? "succeeded" : (log.status || "pending"));
+            const timeText = formatLogTime(log.created_at);
+            const promptLength = log.request_summary && log.request_summary.prompt_length ? ` ? ${log.request_summary.prompt_length} chars` : "";
+            const error = log.error ? `<span class="meta">${escapeHtml(log.error)}</span>` : "";
+            item.innerHTML = `
+                <span>
+                    <span class="name">${escapeHtml(log.provider_id || "API")} ? ${escapeHtml(log.model || "default model")}</span>
+                    <span class="meta">${escapeHtml(timeText)}${escapeHtml(promptLength)}</span>
+                    ${error}
+                </span>
+                <span class="badge">${escapeHtml(status)}</span>
+            `;
+            list.appendChild(item);
+        });
+    }
+
+    function renderGenerationSummary(){
+        const list = $("generationLogSummary");
+        if(!list) return;
+        const summary = state.generationSummary || {};
+        if(!state.selectedTeamId){
+            list.innerHTML = "";
+            return;
+        }
+        const providers = summary.providers || {};
+        const providerText = Object.entries(providers).slice(0, 4).map(([name, count]) => `${name}: ${count}`).join(" · ");
+        list.innerHTML = `
+            <div class="log-item">
+                <span>
+                    <span class="name">Usage summary</span>
+                    <span class="meta">Total ${Number(summary.total || 0)} · Succeeded ${Number(summary.succeeded || 0)} · Failed ${Number(summary.failed || 0)}${providerText ? ` · ${escapeHtml(providerText)}` : ""}</span>
+                </span>
+                <span class="badge">latest</span>
+            </div>
+        `;
+    }
+
+    function formatLogTime(value){
+        if(!value) return "";
+        if(typeof value === "number"){
+            return new Date(value).toLocaleString();
+        }
+        return String(value).replace("T", " ").replace("Z", "");
+    }
+
     function roleLabel(role){
         return {
             owner: "拥有者",
@@ -240,12 +349,16 @@
                 renderMembers([]);
                 renderProjects();
                 renderCanvases();
+                renderGenerationLogs();
             }
         } catch(e) {
             state.user = null;
             state.teams = [];
             state.projects = [];
             state.canvases = [];
+            state.apiProviders = [];
+            state.generationLogs = [];
+            state.generationSummary = null;
             state.selectedTeamId = "";
             state.selectedProjectId = "";
             renderAuth();
@@ -253,6 +366,8 @@
             renderMembers([]);
             renderProjects();
             renderCanvases();
+            renderApiProviders();
+            renderGenerationLogs();
         }
     }
 
@@ -267,17 +382,37 @@
             const data = await api(`/teams/${encodeURIComponent(teamId)}/members`);
             renderMembers(data.members || []);
             await loadProjects(teamId);
+            await loadApiProviders(teamId);
+            await loadGenerationLogs(teamId);
             setMessage($("teamMessage"), silent ? "" : "团队已选择", silent ? "" : "ok");
         } catch(e) {
             renderMembers([]);
             state.projects = [];
             state.canvases = [];
+            state.apiProviders = [];
+            state.generationLogs = [];
+            state.generationSummary = null;
             state.selectedProjectId = "";
             renderProjects();
             renderCanvases();
+            renderApiProviders();
+            renderGenerationLogs();
             setMessage($("teamMessage"), e.message, "error");
         }
         renderAuth();
+    }
+
+    async function loadApiProviders(teamId){
+        const data = await api(`/teams/${encodeURIComponent(teamId)}/api-providers`);
+        state.apiProviders = data.providers || [];
+        renderApiProviders();
+    }
+
+    async function loadGenerationLogs(teamId){
+        const data = await api(`/teams/${encodeURIComponent(teamId)}/generation-logs?limit=100`);
+        state.generationLogs = data.logs || [];
+        state.generationSummary = data.summary || null;
+        renderGenerationLogs();
     }
 
     async function loadProjects(teamId){
@@ -358,6 +493,7 @@
             state.selectedTeamId = data.team.id;
             state.projects = [];
             state.canvases = [];
+            state.apiProviders = [];
             state.selectedProjectId = "";
             renderTeams();
             await selectTeam(data.team.id, true);
@@ -433,6 +569,53 @@
         }
     }
 
+    async function submitApiProvider(event){
+        event.preventDefault();
+        if(!state.selectedTeamId) return;
+        const providerId = $("apiProviderId").value.trim();
+        const button = $("apiProviderSubmit");
+        setBusy(button, true);
+        setMessage($("apiMessage"), "", "");
+        try {
+            const data = await api(`/teams/${encodeURIComponent(state.selectedTeamId)}/api-providers/${encodeURIComponent(providerId)}`, {
+                method: "PUT",
+                body: JSON.stringify({
+                    label: $("apiProviderLabel").value.trim(),
+                    base_url: $("apiProviderBaseUrl").value.trim(),
+                    protocol: $("apiProviderProtocol").value,
+                    enabled: true,
+                    api_key: $("apiProviderKey").value,
+                    wallet_api_key: $("apiProviderWalletKey").value,
+                }),
+            });
+            $("apiProviderKey").value = "";
+            $("apiProviderWalletKey").value = "";
+            const next = state.apiProviders.filter((item) => item.provider_id !== data.provider.provider_id);
+            next.push(data.provider);
+            state.apiProviders = next.sort((a, b) => String(a.provider_id).localeCompare(String(b.provider_id)));
+            renderApiProviders();
+            setMessage($("apiMessage"), "团队 API 已保存，成员只能看到密钥状态", "ok");
+        } catch(e) {
+            setMessage($("apiMessage"), e.message, "error");
+        } finally {
+            setBusy(button, false);
+        }
+    }
+
+    async function deleteApiProvider(providerId){
+        if(!state.selectedTeamId || !providerId) return;
+        if(!confirm("确认删除这个团队 API 配置？")) return;
+        setMessage($("apiMessage"), "", "");
+        try {
+            await api(`/teams/${encodeURIComponent(state.selectedTeamId)}/api-providers/${encodeURIComponent(providerId)}`, { method: "DELETE" });
+            state.apiProviders = state.apiProviders.filter((item) => item.provider_id !== providerId);
+            renderApiProviders();
+            setMessage($("apiMessage"), "团队 API 配置已删除", "ok");
+        } catch(e) {
+            setMessage($("apiMessage"), e.message, "error");
+        }
+    }
+
     async function logout(){
         try {
             await api("/auth/logout", { method: "POST", body: "{}" });
@@ -441,6 +624,9 @@
             state.teams = [];
             state.projects = [];
             state.canvases = [];
+            state.apiProviders = [];
+            state.generationLogs = [];
+            state.generationSummary = null;
             state.selectedTeamId = "";
             state.selectedProjectId = "";
             try {
@@ -454,6 +640,8 @@
             renderMembers([]);
             renderProjects();
             renderCanvases();
+            renderApiProviders();
+            renderGenerationLogs();
         }
     }
 
@@ -471,6 +659,42 @@
         $("inviteForm").addEventListener("submit", submitInvite);
         $("projectForm").addEventListener("submit", submitProject);
         $("canvasForm").addEventListener("submit", submitCanvas);
+        $("apiProviderForm").addEventListener("submit", submitApiProvider);
+        $("apiProviderId").addEventListener("change", () => {
+            const labels = {
+                openai: "OpenAI 兼容",
+                modelscope: "ModelScope",
+                runninghub: "RunningHub",
+                volcengine: "火山引擎",
+            };
+            const protocols = {
+                runninghub: "runninghub",
+                volcengine: "volcengine",
+                modelscope: "openai",
+                openai: "openai",
+            };
+            const id = $("apiProviderId").value;
+            $("apiProviderLabel").value = labels[id] || id;
+            $("apiProviderProtocol").value = protocols[id] || "openai";
+        });
+        $("apiProviderList").addEventListener("click", (event) => {
+            const edit = event.target.closest("[data-api-edit]");
+            if(edit){
+                const provider = state.apiProviders.find((item) => item.provider_id === edit.dataset.apiEdit);
+                if(provider){
+                    $("apiProviderId").value = provider.provider_id;
+                    $("apiProviderLabel").value = provider.label || provider.provider_id;
+                    $("apiProviderBaseUrl").value = provider.base_url || "";
+                    $("apiProviderProtocol").value = provider.protocol || "openai";
+                    $("apiProviderKey").value = "";
+                    $("apiProviderWalletKey").value = "";
+                    setMessage($("apiMessage"), "已载入配置，留空密钥会保持原值", "ok");
+                }
+                return;
+            }
+            const del = event.target.closest("[data-api-delete]");
+            if(del) deleteApiProvider(del.dataset.apiDelete);
+        });
         $("logoutBtn").addEventListener("click", logout);
 
         try {
@@ -487,6 +711,8 @@
         renderMembers([]);
         renderProjects();
         renderCanvases();
+        renderApiProviders();
+        renderGenerationLogs();
         await loadMe();
         iconRefresh();
     }

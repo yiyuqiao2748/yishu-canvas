@@ -43,7 +43,13 @@ BASE_IMPORT_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_IMPORT_DIR not in sys.path:
     sys.path.insert(0, BASE_IMPORT_DIR)
 
-from team_cloud import router as team_cloud_router
+from team_cloud import (
+    record_team_generation_log,
+    require_user,
+    resolve_team_api_provider_config,
+    router as team_cloud_router,
+    settings as team_cloud_settings,
+)
 from team_storage import save_generated_file_from_path, settings as team_storage_settings
 
 QUIET_ACCESS_PATHS = {
@@ -2492,6 +2498,9 @@ class AIReference(BaseModel):
 class OnlineImageRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=ONLINE_IMAGE_PROMPT_MAX_LENGTH)
     provider_id: str = "comfly"
+    team_id: str = ""
+    project_id: str = ""
+    canvas_id: str = ""
     model: str = ""
     size: str = "1024x1024"
     aspect_ratio: str = ""
@@ -2505,6 +2514,9 @@ class OnlineImageRequest(BaseModel):
 
 class ImageTaskQueryRequest(BaseModel):
     provider_id: str = "comfly"
+    team_id: str = ""
+    project_id: str = ""
+    canvas_id: str = ""
     task_id: str = Field(min_length=1, max_length=240)
 
 CANVAS_TASKS: Dict[str, Dict[str, Any]] = {}
@@ -2513,6 +2525,9 @@ CANVAS_TASK_LOCK = Lock()
 class CanvasVideoRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=VIDEO_PROMPT_MAX_LENGTH)
     provider_id: str = "comfly"
+    team_id: str = ""
+    project_id: str = ""
+    canvas_id: str = ""
     model: str = "veo3-fast"
     duration: int = 5
     aspect_ratio: str = "16:9"
@@ -2628,6 +2643,9 @@ class ApiProviderPayload(BaseModel):
 class ChatRequest(BaseModel):
     conversation_id: str = ""
     message: str = Field(min_length=1, max_length=LLM_MESSAGE_MAX_LENGTH)
+    team_id: str = ""
+    project_id: str = ""
+    canvas_id: str = ""
     system_prompt: str = ""
     model: str = ""
     image_model: str = ""
@@ -2656,6 +2674,9 @@ class MsGenerateRequest(BaseModel):
 
 class CanvasLLMRequest(BaseModel):
     message: str = Field(min_length=1, max_length=LLM_MESSAGE_MAX_LENGTH)
+    team_id: str = ""
+    project_id: str = ""
+    canvas_id: str = ""
     system_prompt: str = ""
     model: str = ""
     messages: List[Dict[str, Any]] = []
@@ -3522,8 +3543,65 @@ def display_title(text):
     title = re.sub(r"\s+", " ", text or "").strip()
     return title[:24] or "新对话"
 
-def resolve_chat_provider(provider: str, model: str, ms_model: str):
-    if provider == "modelscope":
+def payload_team_id(payload) -> str:
+    return str(getattr(payload, "team_id", "") or "").strip()
+
+
+async def team_user_for_payload(payload, request: Optional[Request]):
+    if not payload_team_id(payload):
+        return None
+    if request is None:
+        raise HTTPException(status_code=401, detail="Team login is required")
+    return await require_user(
+        request.headers.get("authorization"),
+        request.cookies.get(team_cloud_settings.cookie_name),
+    )
+
+
+async def request_api_provider(provider_id: str, payload, request: Optional[Request], user=None):
+    provider = dict(get_api_provider(provider_id))
+    team_id = payload_team_id(payload)
+    if not team_id:
+        return provider, None
+    if user is None:
+        user = await team_user_for_payload(payload, request)
+    team_provider = await resolve_team_api_provider_config(user, team_id, provider["id"])
+    merged = {**provider}
+    if team_provider.get("label"):
+        merged["name"] = team_provider["label"]
+    if team_provider.get("base_url"):
+        merged["base_url"] = team_provider["base_url"]
+    if team_provider.get("protocol"):
+        merged["protocol"] = team_provider["protocol"]
+    merged["api_key"] = team_provider.get("api_key") or ""
+    merged["wallet_api_key"] = team_provider.get("wallet_api_key") or ""
+    return merged, user
+
+
+async def log_team_generation(payload, user, provider, model="", status="succeeded", result_summary=None, error=""):
+    team_id = payload_team_id(payload)
+    if not team_id or user is None:
+        return
+    try:
+        await record_team_generation_log(user, team_id, {
+            "project_id": getattr(payload, "project_id", "") or "",
+            "canvas_id": getattr(payload, "canvas_id", "") or "",
+            "provider_id": provider.get("id") or getattr(payload, "provider_id", "") or getattr(payload, "provider", ""),
+            "model": model,
+            "status": status,
+            "request_summary": {
+                "type": type(payload).__name__,
+                "prompt_length": len(str(getattr(payload, "prompt", "") or getattr(payload, "message", "") or "")),
+            },
+            "result_summary": result_summary or {},
+            "error": str(error or "")[:1000],
+        })
+    except Exception as exc:
+        print(f"[team-generation-log] skipped: {exc}", flush=True)
+
+
+def resolve_chat_provider(provider: str, model: str, ms_model: str, provider_config=None):
+    if provider == "modelscope" and not provider_config:
         clean_token = modelscope_api_key()
         if not clean_token:
             raise HTTPException(status_code=400, detail="未配置 ModelScope API Key，请在 API 设置中填写。")
@@ -3531,7 +3609,7 @@ def resolve_chat_provider(provider: str, model: str, ms_model: str):
         hdrs = {"Authorization": bearer_auth_value(clean_token), "Content-Type": "application/json"}
         mdl = selected_model(ms_model or model, MODELSCOPE_CHAT_MODELS[0] if MODELSCOPE_CHAT_MODELS else "MiniMax/MiniMax-M2.7")
         return base, hdrs, mdl
-    api_provider = get_api_provider(provider or "")
+    api_provider = provider_config or get_api_provider(provider or "")
     if is_codex_provider(api_provider):
         raise HTTPException(status_code=400, detail="OpenAI CLI 使用本机 codex 登录态，不需要 API Key。请使用画布/聊天里的 OpenAI CLI 专用通道。")
     if is_gemini_cli_provider(api_provider):
@@ -3588,7 +3666,7 @@ def api_headers(json_body=True, provider=None, model=""):
     if provider:
         if is_codex_provider(provider) or is_gemini_cli_provider(provider):
             raise HTTPException(status_code=400, detail="CLI 协议使用本机登录态，不需要 API Key。当前入口应走对应 CLI 专用通道。")
-        api_key = provider_env_key_value(provider["id"])
+        api_key = str(provider.get("api_key") or "").strip() or provider_env_key_value(provider["id"])
         provider_name = provider.get("name") or provider["id"]
         if not api_key:
             raise HTTPException(status_code=400, detail=f"未配置 {provider_name} 的 API Key，请在 API 平台管理中填写。")
@@ -10966,8 +11044,8 @@ async def generate_runninghub_video(payload, provider):
         local_urls = [await save_remote_video_to_output(url, prefix="rh_video_") for url in urls]
         return {"videos": local_urls, "task_id": task_id, "raw": result}
 
-async def generate_ai_image(prompt, size, quality, model, reference_images=None, provider_id="comfly", aspect_ratio="", resolution=""):
-    provider = get_api_provider(provider_id)
+async def generate_ai_image(prompt, size, quality, model, reference_images=None, provider_id="comfly", aspect_ratio="", resolution="", provider_config=None):
+    provider = provider_config or get_api_provider(provider_id)
     if provider["id"] == "modelscope":
         return await generate_modelscope_provider_image(prompt, size, model, reference_images, provider)
     if is_codex_provider(provider):
@@ -13773,8 +13851,10 @@ async def fetch_upstream_models(provider_id: str):
         raise HTTPException(status_code=400, detail=f"{provider.get('name') or provider_id} 未配置 API Key")
     return await fetch_models_from_upstream(provider.get("base_url") or "", api_key, provider_protocol(provider), provider.get("image_request_mode") or "openai")
 
-async def build_online_image_result(payload: OnlineImageRequest):
-    provider = get_api_provider(payload.provider_id)
+async def build_online_image_result(payload: OnlineImageRequest, request: Optional[Request] = None, user=None):
+    provider, resolved_user = await request_api_provider(payload.provider_id, payload, request, user)
+    if user is None:
+        user = resolved_user
     default_model = (provider.get("image_models") or [IMAGE_MODEL])[0]
     model = selected_model(payload.model, default_model)
     request_size = snap_size_to_multiple(payload.size, 16)
@@ -13792,7 +13872,7 @@ async def build_online_image_result(payload: OnlineImageRequest):
         if operation == "upscale":
             image_data, raw_item = await generate_jimeng_upscale_image(image_refs, payload.resolution_type)
         else:
-            image_data, raw_item = await generate_ai_image(payload.prompt, request_size, payload.quality, model, image_refs, provider["id"], payload.aspect_ratio, payload.resolution)
+            image_data, raw_item = await generate_ai_image(payload.prompt, request_size, payload.quality, model, image_refs, provider["id"], payload.aspect_ratio, payload.resolution, provider_config=provider)
         try:
             image_items = extract_images(raw_item) if isinstance(raw_item, dict) else [image_data]
         except HTTPException:
@@ -13839,17 +13919,32 @@ async def build_online_image_result(payload: OnlineImageRequest):
         "raw_usage": raw.get("usage") if isinstance(raw, dict) else None,
     }
     save_to_history(result)
+    await log_team_generation(payload, user, provider, model, "succeeded", {
+        "image_count": len(local_urls),
+        "task_id": result.get("task_id") or "",
+        "request_id": result.get("request_id") or "",
+    })
     if GLOBAL_LOOP:
         asyncio.run_coroutine_threadsafe(manager.broadcast_new_image(result), GLOBAL_LOOP)
     return result
 
 @app.post("/api/online-image")
-async def online_image(payload: OnlineImageRequest):
-    return await build_online_image_result(payload)
+async def online_image(payload: OnlineImageRequest, request: Request):
+    try:
+        return await build_online_image_result(payload, request)
+    except Exception as exc:
+        user = None
+        try:
+            user = await team_user_for_payload(payload, request)
+            provider = get_api_provider(payload.provider_id)
+            await log_team_generation(payload, user, provider, payload.model, "failed", {}, getattr(exc, "detail", "") or str(exc))
+        except Exception:
+            pass
+        raise
 
 @app.post("/api/image-task-query")
-async def query_image_task(payload: ImageTaskQueryRequest):
-    provider = get_api_provider(payload.provider_id)
+async def query_image_task(payload: ImageTaskQueryRequest, request: Request):
+    provider, user = await request_api_provider(payload.provider_id, payload, request)
     task_id = str(payload.task_id or "").strip()
     if is_runninghub_provider(provider):
         api_key = runninghub_api_key(provider)
@@ -13975,13 +14070,13 @@ async def query_image_task(payload: ImageTaskQueryRequest):
         "raw": raw,
     }
 
-async def run_canvas_image_task(task_id: str, payload: OnlineImageRequest):
+async def run_canvas_image_task(task_id: str, payload: OnlineImageRequest, user=None):
     with CANVAS_TASK_LOCK:
         if task_id in CANVAS_TASKS:
             CANVAS_TASKS[task_id]["status"] = "running"
             CANVAS_TASKS[task_id]["updated_at"] = time.time()
     try:
-        result = await build_online_image_result(payload)
+        result = await build_online_image_result(payload, user=user)
         with CANVAS_TASK_LOCK:
             CANVAS_TASKS[task_id].update({
                 "status": "succeeded",
@@ -14007,6 +14102,10 @@ async def run_canvas_image_task(task_id: str, payload: OnlineImageRequest):
         detail = getattr(exc, "detail", None) or str(exc)
         status_code = getattr(exc, "status_code", 500)
         upstream_task_id = getattr(exc, "upstream_task_id", "") or extract_task_id_from_text(detail)
+        try:
+            await log_team_generation(payload, user, get_api_provider(payload.provider_id), payload.model, "failed", {}, detail)
+        except Exception:
+            pass
         with CANVAS_TASK_LOCK:
             CANVAS_TASKS[task_id].update({
                 "status": "failed",
@@ -14017,7 +14116,8 @@ async def run_canvas_image_task(task_id: str, payload: OnlineImageRequest):
             })
 
 @app.post("/api/canvas-image-tasks")
-async def create_canvas_image_task(payload: OnlineImageRequest):
+async def create_canvas_image_task(payload: OnlineImageRequest, request: Request):
+    user = await team_user_for_payload(payload, request)
     task_id = f"canvas_img_{uuid.uuid4().hex}"
     with CANVAS_TASK_LOCK:
         CANVAS_TASKS[task_id] = {
@@ -14031,7 +14131,7 @@ async def create_canvas_image_task(payload: OnlineImageRequest):
             "provider_id": payload.provider_id,
             "model": payload.model,
         }
-    asyncio.create_task(run_canvas_image_task(task_id, payload))
+    asyncio.create_task(run_canvas_image_task(task_id, payload, user))
     return {"task_id": task_id, "status": "queued"}
 
 @app.get("/api/canvas-image-tasks/{task_id}")
@@ -15102,8 +15202,8 @@ def volcengine_video_prompt_text(prompt, aspect_ratio="", duration=None):
     return f"{text} {suffix_text}".strip() if text else suffix_text
 
 @app.post("/api/canvas-video")
-async def canvas_video(payload: CanvasVideoRequest):
-    provider = get_api_provider(payload.provider_id)
+async def canvas_video(payload: CanvasVideoRequest, request: Request):
+    provider, user = await request_api_provider(payload.provider_id, payload, request)
     if is_jimeng_provider(provider):
         return await generate_jimeng_video(payload, provider)
     if is_runninghub_provider(provider):
@@ -15122,7 +15222,7 @@ async def canvas_video(payload: CanvasVideoRequest):
     base_url = video_api_root(provider)
     if not base_url:
         raise HTTPException(status_code=400, detail=f"{provider.get('name') or provider['id']} 未配置 Base URL")
-    api_key = provider_env_key_value(provider["id"])
+    api_key = str(provider.get("api_key") or "").strip() or provider_env_key_value(provider["id"])
     if not api_key:
         raise HTTPException(status_code=400, detail=f"未配置 {provider.get('name') or provider['id']} 的 API Key，请在 API 设置中填写。")
     is_apimart = is_apimart_provider(provider)
@@ -15598,21 +15698,23 @@ async def canvas_video(payload: CanvasVideoRequest):
 # --- Canvas LLM ---
 
 @app.post("/api/canvas-llm")
-async def canvas_llm(payload: CanvasLLMRequest):
-    _provider = get_api_provider(payload.provider)
+async def canvas_llm(payload: CanvasLLMRequest, request: Request):
+    _provider, user = await request_api_provider(payload.provider, payload, request)
     if is_codex_provider(_provider):
         model = selected_model(payload.model, (_provider.get("chat_models") or CODEX_DEFAULT_CHAT_MODELS)[0])
         payload.model = model
         text, raw = await codex_chat_text(payload, payload.messages)
+        await log_team_generation(payload, user, _provider, model, "succeeded", {"text_length": len(text or "")})
         return {"text": text, "model": model, "raw_usage": None, "raw": raw}
     if is_gemini_cli_provider(_provider):
         model = selected_model(payload.model, (_provider.get("chat_models") or GEMINI_CLI_DEFAULT_CHAT_MODELS)[0])
         payload.model = model
         text, raw = await gemini_cli_chat_text(payload, payload.messages)
+        await log_team_generation(payload, user, _provider, model, "succeeded", {"text_length": len(text or "")})
         return {"text": text, "model": model, "raw_usage": None, "raw": raw}
-    chat_base, chat_hdrs, model = resolve_chat_provider(payload.provider, payload.model, payload.ms_model)
+    chat_base, chat_hdrs, model = resolve_chat_provider(payload.provider, payload.model, payload.ms_model, provider_config=_provider)
     # 判断协议：APIMart 异步 vs 标准 OpenAI
-    _llm_provider = get_api_provider(payload.provider) if payload.provider not in ("modelscope",) else {}
+    _llm_provider = _provider if payload.provider not in ("modelscope",) or payload_team_id(payload) else {}
     _is_apimart = is_apimart_provider(_llm_provider)
     system_prompt = (payload.system_prompt or "").strip()
     upstream_messages = [{"role": "system", "content": system_prompt}] if system_prompt else []
@@ -15673,8 +15775,10 @@ async def canvas_llm(payload: CanvasLLMRequest):
     except httpx.HTTPStatusError as exc:
         body = exc.response.text or ""
         friendly = friendly_chat_error_detail(body, model, _llm_provider)
+        await log_team_generation(payload, user, _provider, model, "failed", {}, friendly or body)
         raise HTTPException(status_code=exc.response.status_code, detail=friendly or f"上游接口错误：{body}") from exc
     except httpx.HTTPError as exc:
+        await log_team_generation(payload, user, _provider, model, "failed", {}, str(exc))
         raise HTTPException(status_code=502, detail=f"请求上游接口失败：{exc}") from exc
     except HTTPException:
         raise
@@ -15686,6 +15790,7 @@ async def canvas_llm(payload: CanvasLLMRequest):
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"解析回复内容失败：{exc}") from exc
     raw_data = unwrap_apimart_response(raw) if isinstance(raw, dict) else {}
+    await log_team_generation(payload, user, _provider, model, "succeeded", {"text_length": len(text or "")})
     return {"text": text, "model": model, "raw_usage": raw_data.get("usage")}
 
 # --- 对话管理 ---

@@ -94,6 +94,7 @@ create table if not exists public.api_providers (
   label text not null,
   encrypted_config jsonb not null default '{}'::jsonb,
   created_by uuid not null,
+  updated_by uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (team_id, provider_id)
@@ -123,6 +124,7 @@ create index if not exists idx_generation_logs_team_id on public.generation_logs
 
 alter table public.assets add column if not exists thumbnail_url text not null default '';
 alter table public.assets add column if not exists thumbnail_storage_key text not null default '';
+alter table public.api_providers add column if not exists updated_by uuid;
 
 alter table public.teams enable row level security;
 alter table public.team_members enable row level security;

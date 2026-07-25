@@ -392,10 +392,23 @@ let canvasMetaAnchorId = '';
 let canvasSortMode = (() => { try { return localStorage.getItem('canvasSortMode') || 'recent'; } catch(e){ return 'recent'; } })();
 const CANVAS_LIST_PROJECT_KEY = 'canvasListCurrentProjectId';
 const TEAM_CLOUD_MODE_KEY = 'teamCloudMode';
+const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
 const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
 const CANVAS_URL_PARAMS = new URLSearchParams(window.location.search);
 const TEAM_CLOUD_CANVAS = CANVAS_URL_PARAMS.get('cloud') === '1';
 const CANVAS_COLOR_OPTIONS = ['red','orange','amber','green','teal','blue','violet','pink','slate'];
+function currentTeamCloudTeamId(){
+    if(!TEAM_CLOUD_CANVAS) return '';
+    try { return localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || ''; } catch(e){ return ''; }
+}
+function teamCloudRequestMeta(){
+    if(!TEAM_CLOUD_CANVAS) return {};
+    return {
+        team_id: currentTeamCloudTeamId(),
+        project_id: canvas?.project || requestedCanvasListProject() || '',
+        canvas_id: canvas?.id || ''
+    };
+}
 // 先绑定返回，避免编辑器后续初始化较慢时丢失来源项目。
 backToManagerBtn?.addEventListener('click', () => {
     window.location.href = canvasListUrlForProject(canvas?.project || requestedCanvasListProject() || rememberedCanvasListProject());
@@ -2155,6 +2168,7 @@ function cloudCanvasForEditor(raw){
     return {
         ...data,
         id: raw.id,
+        team_id: raw.team_id || data.team_id || '',
         title: raw.title || data.title || tr('canvas.untitled'),
         icon: data.icon || 'layers',
         kind: data.kind || 'classic',
@@ -10692,6 +10706,7 @@ async function runGeneratorLegacy(genId, opts={}){
     else refreshRunNodes(gen, out);
     try {
         const payload = {
+            ...teamCloudRequestMeta(),
             prompt: prompt || 'Edit the reference images.',
             provider_id:resolveImageProviderId(gen.apiProvider || 'comfly'),
             model:resolveImageModel(gen.model),
@@ -10750,6 +10765,7 @@ async function runVideoNode(nodeId, opts={}){
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({
+                ...teamCloudRequestMeta(),
                 prompt,
                 provider_id:resolveVideoProviderId(node.apiProvider || 'comfly'),
                 model:node.model || 'veo3-fast',
@@ -11622,6 +11638,7 @@ async function callCanvasLLM(node, message, messages=[], options={}){
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
+            ...teamCloudRequestMeta(),
             message,
             model,
             ms_model: llmProv === 'modelscope' ? model : '',
@@ -12488,7 +12505,7 @@ async function createCanvasImageTask(payload, options={}){
     const res = await cascadeFetch('/api/canvas-image-tasks', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(payload)
+        body:JSON.stringify({...teamCloudRequestMeta(), ...payload})
     }, options);
     if(!res.ok) throw new Error(await responseErrorMessage(res, tr('canvas.generationFailed')));
     return res.json();
@@ -12571,7 +12588,7 @@ async function queryRecoverPendingOutput(pendingId){
         const res = await fetch('/api/image-task-query', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({provider_id:providerIdForPending(pending), task_id:taskId})
+            body:JSON.stringify({...teamCloudRequestMeta(), provider_id:providerIdForPending(pending), task_id:taskId})
         });
         if(!res.ok) throw new Error(await responseErrorMessage(res, '查询失败'));
         const data = await res.json();

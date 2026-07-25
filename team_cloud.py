@@ -1,5 +1,8 @@
+import base64
+import hashlib
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -32,6 +35,7 @@ class TeamCloudSettings:
     dev_bypass: bool = os.getenv("TEAM_AUTH_DEV_BYPASS", "").lower() in {"1", "true", "yes", "on"}
     cookie_secure: bool = os.getenv("TEAM_AUTH_COOKIE_SECURE", "").lower() in {"1", "true", "yes", "on"}
     cookie_name: str = os.getenv("TEAM_AUTH_COOKIE_NAME", "team_cloud_access_token")
+    team_api_secret_key: str = os.getenv("TEAM_API_SECRET_KEY", "")
 
     @property
     def supabase_ready(self) -> bool:
@@ -84,6 +88,17 @@ class MemberInviteRequest(BaseModel):
 
 class RoleUpdateRequest(BaseModel):
     role: str = Field(..., pattern="^(owner|admin|member)$")
+
+
+class TeamApiProviderSaveRequest(BaseModel):
+    label: str = Field("API", min_length=1, max_length=80)
+    base_url: str = Field("", max_length=500)
+    protocol: str = Field("openai", max_length=40)
+    enabled: bool = True
+    api_key: str = Field("", max_length=4096)
+    wallet_api_key: str = Field("", max_length=4096)
+    clear_api_key: bool = False
+    clear_wallet_api_key: bool = False
 
 
 def now_ms() -> int:
@@ -278,6 +293,130 @@ def require_asset_delete_permission(member: Dict[str, Any], user: CurrentUser, a
         return
     raise HTTPException(status_code=403, detail="只有管理员或素材上传者可以删除该素材")
 
+def normalize_provider_id(value: str) -> str:
+    provider_id = str(value or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,63}", provider_id):
+        raise HTTPException(status_code=400, detail="Invalid provider id")
+    return provider_id
+
+
+def normalize_team_api_base_url(value: str) -> str:
+    url = str(value or "").strip().rstrip("/")
+    if url and not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Base URL must start with http:// or https://")
+    return url
+
+
+def normalize_team_api_protocol(value: str) -> str:
+    protocol = str(value or "openai").strip().lower()
+    allowed = {"openai", "runninghub", "volcengine", "gemini", "apimart"}
+    if protocol not in allowed:
+        raise HTTPException(status_code=400, detail="Invalid API protocol")
+    return protocol
+
+
+def require_api_admin(member: Dict[str, Any]) -> None:
+    if member.get("role") not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Only team owners and admins can manage API keys")
+
+
+def team_api_secret_material() -> str:
+    if settings.team_api_secret_key:
+        return settings.team_api_secret_key
+    if settings.supabase_service_role_key:
+        return settings.supabase_service_role_key
+    if settings.dev_bypass:
+        return "local-dev-team-api-secret"
+    raise HTTPException(status_code=503, detail="TEAM_API_SECRET_KEY is not configured")
+
+
+def team_api_fernet():
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail="Missing cryptography dependency") from exc
+    digest = hashlib.sha256(team_api_secret_material().encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def encrypt_team_api_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    raw = json.dumps(config or {}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    token = team_api_fernet().encrypt(raw).decode("ascii")
+    return {"v": 1, "alg": "fernet-sha256", "ciphertext": token}
+
+
+def decrypt_team_api_config(encrypted: Any) -> Dict[str, Any]:
+    if not encrypted:
+        return {}
+    if isinstance(encrypted, str):
+        try:
+            encrypted = json.loads(encrypted)
+        except ValueError:
+            return {}
+    if not isinstance(encrypted, dict):
+        return {}
+    token = str(encrypted.get("ciphertext") or "")
+    if not token:
+        return {}
+    try:
+        raw = team_api_fernet().decrypt(token.encode("ascii"))
+        data = json.loads(raw.decode("utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def mask_team_secret(value: str) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    tail = text[-4:] if len(text) > 4 else text
+    return f"********{tail}"
+
+
+def team_api_config_from_payload(payload: TeamApiProviderSaveRequest, current: Dict[str, Any] = None) -> Dict[str, Any]:
+    current = current or {}
+    api_key = str(current.get("api_key") or "")
+    wallet_api_key = str(current.get("wallet_api_key") or "")
+    if payload.clear_api_key:
+        api_key = ""
+    elif payload.api_key.strip():
+        api_key = payload.api_key.strip()
+    if payload.clear_wallet_api_key:
+        wallet_api_key = ""
+    elif payload.wallet_api_key.strip():
+        wallet_api_key = payload.wallet_api_key.strip()
+    return {
+        "base_url": normalize_team_api_base_url(payload.base_url),
+        "protocol": normalize_team_api_protocol(payload.protocol),
+        "enabled": bool(payload.enabled),
+        "api_key": api_key,
+        "wallet_api_key": wallet_api_key,
+    }
+
+
+def public_team_api_provider(record: Dict[str, Any]) -> Dict[str, Any]:
+    config = decrypt_team_api_config(record.get("encrypted_config"))
+    api_key = str(config.get("api_key") or "")
+    wallet_api_key = str(config.get("wallet_api_key") or "")
+    return {
+        "id": record.get("provider_id") or record.get("id") or "",
+        "team_id": record.get("team_id") or "",
+        "provider_id": record.get("provider_id") or "",
+        "label": record.get("label") or record.get("provider_id") or "API",
+        "base_url": config.get("base_url") or "",
+        "protocol": config.get("protocol") or "openai",
+        "enabled": bool(config.get("enabled", True)),
+        "has_api_key": bool(api_key),
+        "api_key_preview": mask_team_secret(api_key),
+        "has_wallet_api_key": bool(wallet_api_key),
+        "wallet_api_key_preview": mask_team_secret(wallet_api_key),
+        "created_by": record.get("created_by") or "",
+        "updated_by": record.get("updated_by") or "",
+        "created_at": record.get("created_at"),
+        "updated_at": record.get("updated_at"),
+    }
+
 
 class LocalTeamStore:
     def __init__(self, path: str):
@@ -286,7 +425,7 @@ class LocalTeamStore:
 
     def _read(self) -> Dict[str, Any]:
         if not os.path.exists(self.path):
-            return {"teams": [], "members": [], "invitations": [], "projects": [], "canvases": [], "canvas_versions": [], "assets": []}
+            return {"teams": [], "members": [], "invitations": [], "projects": [], "canvases": [], "canvas_versions": [], "assets": [], "api_providers": [], "generation_logs": []}
         try:
             with open(self.path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
@@ -300,6 +439,8 @@ class LocalTeamStore:
             "canvases": data.get("canvases") or [],
             "canvas_versions": data.get("canvas_versions") or [],
             "assets": data.get("assets") or [],
+            "api_providers": data.get("api_providers") or [],
+            "generation_logs": data.get("generation_logs") or [],
         }
 
     def _write(self, data: Dict[str, Any]) -> None:
@@ -523,6 +664,113 @@ class LocalTeamStore:
         ]
         return {"asset": asset, "removed_files": removed_files, "references": []}
 
+    def list_api_providers(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            providers = [
+                public_team_api_provider(record)
+                for record in data["api_providers"]
+                if record.get("team_id") == team_id
+            ]
+            return sorted(providers, key=lambda item: item.get("provider_id") or "")
+
+    def upsert_api_provider(self, user: CurrentUser, team_id: str, provider_id: str, payload: TeamApiProviderSaveRequest) -> Dict[str, Any]:
+        provider_id = normalize_provider_id(provider_id)
+        with self.lock:
+            data = self._read()
+            member = self._require_member(data, user.id, team_id)
+            require_api_admin(member)
+            current = self._find_api_provider(data, team_id, provider_id)
+            current_config = decrypt_team_api_config((current or {}).get("encrypted_config"))
+            encrypted_config = encrypt_team_api_config(team_api_config_from_payload(payload, current_config))
+            if current:
+                current["label"] = payload.label.strip()
+                current["encrypted_config"] = encrypted_config
+                current["updated_by"] = user.id
+                current["updated_at"] = now_ms()
+                record = current
+            else:
+                record = {
+                    "id": str(uuid.uuid4()),
+                    "team_id": team_id,
+                    "provider_id": provider_id,
+                    "label": payload.label.strip(),
+                    "encrypted_config": encrypted_config,
+                    "created_by": user.id,
+                    "updated_by": user.id,
+                    "created_at": now_ms(),
+                    "updated_at": now_ms(),
+                }
+                data["api_providers"].append(record)
+            self._write(data)
+            return public_team_api_provider(record)
+
+    def delete_api_provider(self, user: CurrentUser, team_id: str, provider_id: str) -> Dict[str, Any]:
+        provider_id = normalize_provider_id(provider_id)
+        with self.lock:
+            data = self._read()
+            member = self._require_member(data, user.id, team_id)
+            require_api_admin(member)
+            record = self._find_api_provider(data, team_id, provider_id)
+            if not record:
+                raise HTTPException(status_code=404, detail="Team API provider is not configured")
+            data["api_providers"] = [
+                item
+                for item in data["api_providers"]
+                if not (item.get("team_id") == team_id and item.get("provider_id") == provider_id)
+            ]
+            self._write(data)
+            return {"provider": public_team_api_provider(record)}
+
+    def get_api_provider_config(self, user: CurrentUser, team_id: str, provider_id: str) -> Dict[str, Any]:
+        provider_id = normalize_provider_id(provider_id)
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            record = self._find_api_provider(data, team_id, provider_id)
+            if not record:
+                raise HTTPException(status_code=404, detail="Team API provider is not configured")
+            config = decrypt_team_api_config(record.get("encrypted_config"))
+            if not bool(config.get("enabled", True)):
+                raise HTTPException(status_code=400, detail="Team API provider is disabled")
+            return {
+                **public_team_api_provider(record),
+                "api_key": str(config.get("api_key") or ""),
+                "wallet_api_key": str(config.get("wallet_api_key") or ""),
+            }
+
+    def create_generation_log(self, user: CurrentUser, team_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            record = {
+                "id": str(uuid.uuid4()),
+                "team_id": team_id,
+                "project_id": str(payload.get("project_id") or ""),
+                "canvas_id": str(payload.get("canvas_id") or ""),
+                "user_id": user.id,
+                "provider_id": str(payload.get("provider_id") or ""),
+                "model": str(payload.get("model") or ""),
+                "status": str(payload.get("status") or "pending"),
+                "request_summary": payload.get("request_summary") if isinstance(payload.get("request_summary"), dict) else {},
+                "result_summary": payload.get("result_summary") if isinstance(payload.get("result_summary"), dict) else {},
+                "error": str(payload.get("error") or ""),
+                "created_at": now_ms(),
+                "finished_at": now_ms() if str(payload.get("status") or "") in {"succeeded", "failed"} else None,
+            }
+            data["generation_logs"].append(record)
+            self._write(data)
+            return record
+
+    def list_generation_logs(self, user: CurrentUser, team_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            logs = [item for item in data["generation_logs"] if item.get("team_id") == team_id]
+            logs.sort(key=lambda item: int(item.get("created_at") or 0), reverse=True)
+            return logs[:max(1, min(200, int(limit or 100)))]
+
     def _require_member(self, data: Dict[str, Any], user_id: str, team_id: str) -> Dict[str, Any]:
         for member in data["members"]:
             if member.get("team_id") == team_id and member.get("user_id") == user_id:
@@ -546,6 +794,12 @@ class LocalTeamStore:
         for asset in data["assets"]:
             if asset.get("team_id") == team_id and asset.get("id") == asset_id:
                 return asset
+        return None
+
+    def _find_api_provider(self, data: Dict[str, Any], team_id: str, provider_id: str) -> Optional[Dict[str, Any]]:
+        for provider in data["api_providers"]:
+            if provider.get("team_id") == team_id and provider.get("provider_id") == provider_id:
+                return provider
         return None
 
     def _canvas_summary(self, canvas: Dict[str, Any]) -> Dict[str, Any]:
@@ -797,6 +1051,90 @@ class SupabaseTeamStore:
         ]
         return {"asset": asset, "removed_files": removed_files, "references": []}
 
+    async def list_api_providers(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
+        await self._require_member(user.id, team_id)
+        rows = await self._request("GET", f"/api_providers?team_id=eq.{team_id}&order=provider_id.asc&select=*")
+        return [public_team_api_provider(row) for row in rows or []]
+
+    async def upsert_api_provider(self, user: CurrentUser, team_id: str, provider_id: str, payload: TeamApiProviderSaveRequest) -> Dict[str, Any]:
+        provider_id = normalize_provider_id(provider_id)
+        member = await self._require_member(user.id, team_id)
+        require_api_admin(member)
+        rows = await self._request("GET", f"/api_providers?team_id=eq.{team_id}&provider_id=eq.{provider_id}&select=*")
+        current = rows[0] if rows else None
+        current_config = decrypt_team_api_config((current or {}).get("encrypted_config"))
+        body = {
+            "label": payload.label.strip(),
+            "encrypted_config": encrypt_team_api_config(team_api_config_from_payload(payload, current_config)),
+            "updated_by": user.id,
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        if current:
+            updated = await self._request("PATCH", f"/api_providers?team_id=eq.{team_id}&provider_id=eq.{provider_id}", json_body=body)
+            record = updated[0]
+        else:
+            created = await self._request("POST", "/api_providers", json_body=[{
+                "team_id": team_id,
+                "provider_id": provider_id,
+                "label": payload.label.strip(),
+                "encrypted_config": body["encrypted_config"],
+                "created_by": user.id,
+                "updated_by": user.id,
+            }])
+            record = created[0]
+        return public_team_api_provider(record)
+
+    async def delete_api_provider(self, user: CurrentUser, team_id: str, provider_id: str) -> Dict[str, Any]:
+        provider_id = normalize_provider_id(provider_id)
+        member = await self._require_member(user.id, team_id)
+        require_api_admin(member)
+        rows = await self._request("GET", f"/api_providers?team_id=eq.{team_id}&provider_id=eq.{provider_id}&select=*")
+        if not rows:
+            raise HTTPException(status_code=404, detail="Team API provider is not configured")
+        await self._request("DELETE", f"/api_providers?team_id=eq.{team_id}&provider_id=eq.{provider_id}")
+        return {"provider": public_team_api_provider(rows[0])}
+
+    async def get_api_provider_config(self, user: CurrentUser, team_id: str, provider_id: str) -> Dict[str, Any]:
+        provider_id = normalize_provider_id(provider_id)
+        await self._require_member(user.id, team_id)
+        rows = await self._request("GET", f"/api_providers?team_id=eq.{team_id}&provider_id=eq.{provider_id}&select=*")
+        if not rows:
+            raise HTTPException(status_code=404, detail="Team API provider is not configured")
+        record = rows[0]
+        config = decrypt_team_api_config(record.get("encrypted_config"))
+        if not bool(config.get("enabled", True)):
+            raise HTTPException(status_code=400, detail="Team API provider is disabled")
+        return {
+            **public_team_api_provider(record),
+            "api_key": str(config.get("api_key") or ""),
+            "wallet_api_key": str(config.get("wallet_api_key") or ""),
+        }
+
+    async def create_generation_log(self, user: CurrentUser, team_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        await self._require_member(user.id, team_id)
+        created = await self._request("POST", "/generation_logs", json_body=[{
+            "team_id": team_id,
+            "project_id": payload.get("project_id") or None,
+            "canvas_id": payload.get("canvas_id") or None,
+            "user_id": user.id,
+            "provider_id": str(payload.get("provider_id") or ""),
+            "model": str(payload.get("model") or ""),
+            "status": str(payload.get("status") or "pending"),
+            "request_summary": payload.get("request_summary") if isinstance(payload.get("request_summary"), dict) else {},
+            "result_summary": payload.get("result_summary") if isinstance(payload.get("result_summary"), dict) else {},
+            "error": str(payload.get("error") or ""),
+            "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()) if str(payload.get("status") or "") in {"succeeded", "failed"} else None,
+        }])
+        return created[0]
+
+    async def list_generation_logs(self, user: CurrentUser, team_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        await self._require_member(user.id, team_id)
+        safe_limit = max(1, min(200, int(limit or 100)))
+        return await self._request(
+            "GET",
+            f"/generation_logs?team_id=eq.{team_id}&order=created_at.desc&limit={safe_limit}&select=*",
+        )
+
     async def _require_member(self, user_id: str, team_id: str) -> Dict[str, Any]:
         rows = await self._request(
             "GET",
@@ -824,6 +1162,27 @@ supabase_store = SupabaseTeamStore(settings.supabase_url, settings.supabase_serv
 
 def active_store():
     return supabase_store or local_store
+
+
+async def resolve_team_api_provider_config(user: CurrentUser, team_id: str, provider_id: str) -> Dict[str, Any]:
+    return await maybe_await(active_store().get_api_provider_config(user, team_id, provider_id))
+
+
+async def record_team_generation_log(user: CurrentUser, team_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    return await maybe_await(active_store().create_generation_log(user, team_id, payload))
+
+
+def generation_log_summary(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    summary = {"total": len(logs), "succeeded": 0, "failed": 0, "providers": {}}
+    for log in logs:
+        status = str(log.get("status") or "")
+        if status == "succeeded":
+            summary["succeeded"] += 1
+        elif status == "failed":
+            summary["failed"] += 1
+        provider_id = str(log.get("provider_id") or "unknown")
+        summary["providers"][provider_id] = int(summary["providers"].get(provider_id) or 0) + 1
+    return summary
 
 
 @router.get("/config")
@@ -1007,6 +1366,42 @@ async def delete_team_asset(
     user: CurrentUser = Depends(require_user),
 ) -> Dict[str, Any]:
     return await maybe_await(active_store().delete_asset(user, team_id, asset_id))
+
+
+@router.get("/teams/{team_id}/api-providers")
+async def list_team_api_providers(team_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    providers = await maybe_await(active_store().list_api_providers(user, team_id))
+    return {"providers": providers}
+
+
+@router.put("/teams/{team_id}/api-providers/{provider_id}")
+async def save_team_api_provider(
+    team_id: str,
+    provider_id: str,
+    payload: TeamApiProviderSaveRequest,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    provider = await maybe_await(active_store().upsert_api_provider(user, team_id, provider_id, payload))
+    return {"provider": provider}
+
+
+@router.delete("/teams/{team_id}/api-providers/{provider_id}")
+async def delete_team_api_provider(
+    team_id: str,
+    provider_id: str,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    return await maybe_await(active_store().delete_api_provider(user, team_id, provider_id))
+
+
+@router.get("/teams/{team_id}/generation-logs")
+async def list_team_generation_logs(
+    team_id: str,
+    limit: int = 100,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    logs = await maybe_await(active_store().list_generation_logs(user, team_id, limit))
+    return {"logs": logs, "summary": generation_log_summary(logs)}
 
 
 async def maybe_await(value):

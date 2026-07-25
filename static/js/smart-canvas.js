@@ -3,8 +3,21 @@ const canvasId = params.get('id') || '';
 const sourceProjectId = params.get('project') || '';
 const CANVAS_LIST_PROJECT_KEY = 'canvasListCurrentProjectId';
 const TEAM_CLOUD_MODE_KEY = 'teamCloudMode';
+const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
 const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
 const TEAM_CLOUD_CANVAS = params.get('cloud') === '1';
+function currentTeamCloudTeamId(){
+    if(!TEAM_CLOUD_CANVAS) return '';
+    try { return localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || ''; } catch(e){ return ''; }
+}
+function teamCloudRequestMeta(){
+    if(!TEAM_CLOUD_CANVAS) return {};
+    return {
+        team_id: currentTeamCloudTeamId(),
+        project_id: canvas?.project || sourceProjectId || '',
+        canvas_id: canvasId || ''
+    };
+}
 const shell = document.getElementById('shell');
 const world = document.getElementById('world');
 const composer = document.getElementById('composer');
@@ -5986,6 +5999,7 @@ function cloudCanvasForEditor(raw){
     return {
         ...data,
         id: raw.id,
+        team_id: raw.team_id || data.team_id || '',
         title: raw.title || data.title || tr('canvas.smartCanvas'),
         icon: data.icon || 'sparkles',
         kind: data.kind || 'smart',
@@ -7656,6 +7670,7 @@ async function runJimengUpscale(node, index){
     render();
     try {
         const payload = {
+            ...teamCloudRequestMeta(),
             prompt:`upscale ${resolution}`,
             provider_id:providerId,
             model:'',
@@ -15038,6 +15053,7 @@ async function runPromptLLMNode(nodeId){
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({
+                ...teamCloudRequestMeta(),
                 message,
                 messages:[],
                 images,
@@ -15071,7 +15087,7 @@ function comfyFieldKind(field){
 async function runApiGeneration(prompt, refs, runSettings=settings){
     if(!runSettings.provider_id || !runSettings.model) throw new Error(tr('smart.errNoApiModel'));
     const count = Math.max(1, Math.min(8, Number(runSettings.count || 1)));
-    const payload = {prompt, provider_id:runSettings.provider_id, model:runSettings.model, size:sizeForRun(runSettings), aspect_ratio:runSettings.ratio === 'custom' ? (runSettings.customRatio || '') : (runSettings.ratio || ''), resolution:runSettings.resolution || '', quality:runSettings.quality || 'auto', n:1, reference_images:imageRefsOnly(refs).slice(0, SMART_REFERENCE_IMAGE_MAX)};
+    const payload = {...teamCloudRequestMeta(), prompt, provider_id:runSettings.provider_id, model:runSettings.model, size:sizeForRun(runSettings), aspect_ratio:runSettings.ratio === 'custom' ? (runSettings.customRatio || '') : (runSettings.ratio || ''), resolution:runSettings.resolution || '', quality:runSettings.quality || 'auto', n:1, reference_images:imageRefsOnly(refs).slice(0, SMART_REFERENCE_IMAGE_MAX)};
     const tasks = await Promise.all(Array.from({length:count}, () => fetch('/api/canvas-image-tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(async r => {
         if(!r.ok) throw new Error(await r.text());
         return r.json();
@@ -15168,6 +15184,7 @@ async function runApiVideoGeneration(prompt, refs, runSettings=settings){
         }
         if(mismatchedAsset) toast('部分认证素材属于其它平台，已回退为普通素材。切换到对应平台的视频接口才能用 asset:// 认证地址。');
         const payload = {
+            ...teamCloudRequestMeta(),
             prompt,
             provider_id: runSettings.videoProvider || 'comfly',
             model: runSettings.videoModel || 'veo3-fast',
@@ -15538,7 +15555,7 @@ async function fetchImageTaskQuery(providerId, taskId){
     return fetch('/api/image-task-query', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({provider_id:providerId || 'comfly', task_id:taskId})
+        body:JSON.stringify({...teamCloudRequestMeta(), provider_id:providerId || 'comfly', task_id:taskId})
     }).then(async r => {
         if(!r.ok) throw new Error(await r.text());
         return r.json();

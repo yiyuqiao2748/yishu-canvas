@@ -4,7 +4,10 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from team_cloud import CanvasSaveRequest, CurrentUser, LocalTeamStore, current_user_from_supabase_payload
+from unittest.mock import patch
+
+import team_cloud
+from team_cloud import CanvasSaveRequest, CurrentUser, LocalTeamStore, TeamApiProviderSaveRequest, current_user_from_supabase_payload
 
 
 class TeamCloudStoreTests(unittest.TestCase):
@@ -174,6 +177,93 @@ class TeamCloudStoreTests(unittest.TestCase):
 
         self.assertEqual(deleted["asset"]["id"], asset["id"])
         self.assertEqual(self.store.list_assets(self.owner, team["id"]), [])
+
+    def test_team_api_provider_encrypts_and_masks_keys(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+
+        with patch.object(team_cloud.settings, "team_api_secret_key", "test-secret"):
+            provider = self.store.upsert_api_provider(
+                self.owner,
+                team["id"],
+                "openai",
+                TeamApiProviderSaveRequest(
+                    label="OpenAI",
+                    base_url="https://api.openai.com/v1",
+                    protocol="openai",
+                    api_key="sk-test-secret",
+                ),
+            )
+
+            self.assertEqual(provider["provider_id"], "openai")
+            self.assertTrue(provider["has_api_key"])
+            self.assertEqual(provider["api_key_preview"], "********cret")
+            self.assertNotIn("api_key", provider)
+            self.assertNotIn("sk-test-secret", self.store_path.read_text(encoding="utf-8"))
+
+            updated = self.store.upsert_api_provider(
+                self.owner,
+                team["id"],
+                "openai",
+                TeamApiProviderSaveRequest(
+                    label="OpenAI Team",
+                    base_url="https://api.openai.com/v1",
+                    protocol="openai",
+                    api_key="",
+                ),
+            )
+            self.assertTrue(updated["has_api_key"])
+            self.assertEqual(updated["label"], "OpenAI Team")
+            self.assertEqual(self.store.list_api_providers(self.owner, team["id"])[0]["api_key_preview"], "********cret")
+
+    def test_team_api_provider_management_requires_admin(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        member = CurrentUser(id="member-1", email="member@example.com", provider="test")
+        data = self.store._read()
+        data["members"].append({
+            "id": "member-row",
+            "team_id": team["id"],
+            "user_id": member.id,
+            "email": member.email,
+            "role": "member",
+            "created_at": 1,
+        })
+        self.store._write(data)
+
+        with patch.object(team_cloud.settings, "team_api_secret_key", "test-secret"):
+            self.store.upsert_api_provider(
+                self.owner,
+                team["id"],
+                "openai",
+                TeamApiProviderSaveRequest(label="OpenAI", api_key="sk-owner"),
+            )
+            self.assertEqual(len(self.store.list_api_providers(member, team["id"])), 1)
+            with self.assertRaises(HTTPException) as save_error:
+                self.store.upsert_api_provider(
+                    member,
+                    team["id"],
+                    "openai",
+                    TeamApiProviderSaveRequest(label="OpenAI", api_key="sk-member"),
+                )
+            self.assertEqual(save_error.exception.status_code, 403)
+
+    def test_generation_logs_are_team_scoped(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        log = self.store.create_generation_log(self.owner, team["id"], {
+            "provider_id": "openai",
+            "model": "gpt-image-1",
+            "status": "succeeded",
+            "request_summary": {"prompt_length": 12},
+            "result_summary": {"image_count": 1},
+        })
+
+        logs = self.store.list_generation_logs(self.owner, team["id"])
+
+        self.assertEqual(logs[0]["id"], log["id"])
+        self.assertEqual(logs[0]["provider_id"], "openai")
+        self.assertEqual(logs[0]["result_summary"]["image_count"], 1)
+        with self.assertRaises(HTTPException) as outsider_error:
+            self.store.list_generation_logs(self.outsider, team["id"])
+        self.assertEqual(outsider_error.exception.status_code, 403)
 
     def test_supabase_user_payload_maps_to_current_user(self):
         user = current_user_from_supabase_payload({

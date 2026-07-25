@@ -7,3 +7,4 @@ httpx
 pillow
 PyJWT
 boto3
+cryptography
