@@ -355,6 +355,19 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["user"]["email"], "person@example.com")
         self.assertIn("team_cloud_access_token=recovery-token", response.headers["set-cookie"])
 
+    async def test_authenticate_token_falls_back_to_supabase_when_jwt_decode_rejects(self):
+        fallback_user = CurrentUser(id="user-1", email="person@example.com", provider="supabase")
+
+        with patch.object(team_cloud.settings, "supabase_jwt_secret", "wrong-secret"), \
+             patch.object(team_cloud.settings, "supabase_url", "https://supabase.example"), \
+             patch.object(team_cloud.settings, "supabase_anon_key", "anon-key"), \
+             patch.object(team_cloud, "decode_supabase_token", side_effect=HTTPException(status_code=401, detail="bad token")), \
+             patch.object(team_cloud, "fetch_supabase_user", AsyncMock(return_value=fallback_user)) as fetch_mock:
+            user = await team_cloud.authenticate_supabase_token("access-token")
+
+        fetch_mock.assert_awaited_once_with("access-token")
+        self.assertEqual(user.email, "person@example.com")
+
 
 if __name__ == "__main__":
     unittest.main()

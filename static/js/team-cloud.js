@@ -396,7 +396,7 @@
             .replace(/'/g, "&#039;");
     }
 
-    async function loadMe(){
+    async function loadMe(showAuthError){
         try {
             const data = await api("/me");
             state.user = data.user;
@@ -434,6 +434,7 @@
             renderApiProviders();
             renderGenerationLogs();
             renderCanvasVersions();
+            if(showAuthError) setMessage($("authMessage"), `登录成功，但读取用户状态失败：${e.message}`, "error");
         }
     }
 
@@ -568,7 +569,7 @@
             if(data.session_ready){
                 storeAccessToken(data.access_token || "");
                 setMessage($("authMessage"), state.mode === "login" ? "已登录" : "已注册并登录", "ok");
-                await loadMe();
+                await loadMe(true);
             } else {
                 storeAccessToken("");
                 setMessage($("authMessage"), "注册已提交，请检查邮箱验证", "ok");

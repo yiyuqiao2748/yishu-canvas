@@ -183,7 +183,11 @@ async def fetch_supabase_user(token: str) -> CurrentUser:
 
 async def authenticate_supabase_token(token: str) -> CurrentUser:
     if settings.supabase_jwt_secret:
-        return decode_supabase_token(token)
+        try:
+            return decode_supabase_token(token)
+        except HTTPException as exc:
+            if exc.status_code != 401 or not (settings.supabase_url and settings.supabase_anon_key):
+                raise
     return await fetch_supabase_user(token)
 
 
