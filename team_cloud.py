@@ -1059,7 +1059,7 @@ class SupabaseTeamStore:
             raise HTTPException(status_code=404, detail="Team not found")
         assets = await self._request(
             "GET",
-            f"/assets?team_id=eq.{team_id}&select=storage_key,thumbnail_storage_key",
+            f"/assets?team_id=eq.{team_id}&select=*",
         )
         await self._request("DELETE", f"/teams?id=eq.{team_id}")
         removed_files = [
@@ -1248,27 +1248,31 @@ class SupabaseTeamStore:
 
     async def create_asset(self, user: CurrentUser, team_id: str, asset: Dict[str, Any]) -> Dict[str, Any]:
         await self._require_member(user.id, team_id)
-        rows = await self._request(
-            "POST",
-            "/assets",
-            json_body=[{
-                "id": asset.get("id"),
-                "team_id": team_id,
-                "project_id": asset.get("project_id"),
-                "canvas_id": asset.get("canvas_id"),
-                "kind": asset.get("kind") or "file",
-                "name": asset.get("name") or "asset",
-                "storage_key": asset.get("storage_key") or "",
-                "public_url": asset.get("public_url") or "",
-                "thumbnail_url": asset.get("thumbnail_url") or "",
-                "thumbnail_storage_key": asset.get("thumbnail_storage_key") or "",
-                "mime_type": asset.get("mime_type") or "",
-                "byte_size": int(asset.get("byte_size") or 0),
-                "width": asset.get("width"),
-                "height": asset.get("height"),
-                "created_by": user.id,
-            }],
-        )
+        body = {
+            "id": asset.get("id"),
+            "team_id": team_id,
+            "project_id": asset.get("project_id"),
+            "canvas_id": asset.get("canvas_id"),
+            "kind": asset.get("kind") or "file",
+            "name": asset.get("name") or "asset",
+            "storage_key": asset.get("storage_key") or "",
+            "public_url": asset.get("public_url") or "",
+            "thumbnail_url": asset.get("thumbnail_url") or "",
+            "mime_type": asset.get("mime_type") or "",
+            "byte_size": int(asset.get("byte_size") or 0),
+            "width": asset.get("width"),
+            "height": asset.get("height"),
+            "created_by": user.id,
+        }
+        if asset.get("thumbnail_storage_key"):
+            body["thumbnail_storage_key"] = asset.get("thumbnail_storage_key")
+        try:
+            rows = await self._request("POST", "/assets", json_body=[body])
+        except HTTPException as exc:
+            if "thumbnail_storage_key" not in str(exc.detail):
+                raise
+            body.pop("thumbnail_storage_key", None)
+            rows = await self._request("POST", "/assets", json_body=[body])
         return rows[0]
 
     async def delete_asset(self, user: CurrentUser, team_id: str, asset_id: str) -> Dict[str, Any]:
