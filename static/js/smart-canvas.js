@@ -96,6 +96,10 @@ let didPan = false;
 let portDragState = null;
 let connectionEraseState = null;
 let saveTimer = null;
+let smartSaveDirty = false;
+let smartSaveAgain = false;
+let smartSaveRetryCount = 0;
+let smartSaveToastAt = 0;
 let apiProviders = [];
 let comfyWorkflows = [];
 let comfyInstanceCount = 1;
@@ -6002,12 +6006,34 @@ function cloudCanvasSaveBody(storageCanvas){
         base_version: canvas.cloud_version || 1,
     };
 }
+function smartSaveToast(text, delay=2500){
+    const now = Date.now();
+    if(now - smartSaveToastAt < delay) return;
+    smartSaveToastAt = now;
+    toast(text);
+}
+function scheduleSmartSaveRetry(delay=300){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveCanvas, delay);
+}
 function scheduleSave(){
+    smartSaveDirty = true;
+    if(canvasSyncInFlight){
+        smartSaveAgain = true;
+        return;
+    }
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveCanvas, 450);
 }
 async function saveCanvas(){
     if(!canvasId || !canvas) return;
+    if(canvasSyncInFlight){
+        smartSaveDirty = true;
+        smartSaveAgain = true;
+        return;
+    }
+    clearTimeout(saveTimer);
+    saveTimer = null;
     savePromptDraftForCurrent();
     nodes.forEach(node => {
         node.images = (node.images || []).map(img => mediaItemForStorage(stripImageGenerationMeta(img)));
@@ -6018,6 +6044,7 @@ async function saveCanvas(){
     canvas.viewport = {...viewport};
     const storageCanvas = canvasForStorage();
     canvasSyncInFlight = true;
+    smartSaveAgain = false;
     try {
         if(TEAM_CLOUD_CANVAS){
             const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`, {
@@ -6032,14 +6059,19 @@ async function saveCanvas(){
                     canvas.updated_at = data.canvas.updated_at || canvas.updated_at;
                     canvas.cloud_version = data.canvas.version || canvas.cloud_version;
                 }
+                smartSaveDirty = Boolean(smartSaveAgain);
+                smartSaveRetryCount = 0;
             } else if(res.status === 409) {
                 const data = await res.json().catch(() => ({}));
                 const serverCanvas = data.detail?.canvas || data.canvas;
                 if(serverCanvas){
                     applyMergedServerCanvas(cloudCanvasForEditor(serverCanvas));
+                    smartSaveToast('云端画布已更新，已自动合并并继续保存');
                 }
-                clearTimeout(saveTimer);
-                saveTimer = setTimeout(saveCanvas, 300);
+                smartSaveDirty = true;
+                smartSaveAgain = true;
+            } else {
+                throw new Error('team cloud save failed');
             }
             return;
         }
@@ -6061,6 +6093,8 @@ async function saveCanvas(){
         if(res.ok){
             const data = await res.json();
             if(data.canvas && data.canvas.updated_at) canvas.updated_at = data.canvas.updated_at;
+            smartSaveDirty = Boolean(smartSaveAgain);
+            smartSaveRetryCount = 0;
         } else if(res.status === 409) {
             // 冲突：别人先保存了。合并对方的状态（节点 id 合并、图片取并集，谁都不丢），
             // 然后用对方最新的 updated_at 作为基底重存，把合并结果落盘——而不是直接覆盖对方。
@@ -6076,11 +6110,24 @@ async function saveCanvas(){
             } else if(data.detail?.updated_at) {
                 canvas.updated_at = data.detail.updated_at;
             }
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(saveCanvas, 300);
+            smartSaveToast('云端画布已更新，已自动合并并继续保存');
+            smartSaveDirty = true;
+            smartSaveAgain = true;
+        } else {
+            throw new Error('canvas save failed');
         }
-    } catch(e) {} finally {
+    } catch(e) {
+        smartSaveDirty = true;
+        smartSaveAgain = true;
+        smartSaveRetryCount += 1;
+        smartSaveToast('自动保存失败，稍后会重试', 4000);
+    } finally {
         canvasSyncInFlight = false;
+        if(smartSaveAgain || smartSaveDirty){
+            smartSaveAgain = false;
+            const retryDelay = Math.min(5000, 300 * Math.max(1, smartSaveRetryCount));
+            scheduleSmartSaveRetry(retryDelay);
+        }
     }
 }
 function imageMetaFromNode(node){
