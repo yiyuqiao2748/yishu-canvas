@@ -17,6 +17,24 @@
     return `${(size / 1024 / 1024).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
   }
 
+  function previewTokenParam(){
+    try {
+      const token = localStorage.getItem('teamCloudAccessToken') || '';
+      return token ? `access_token=${encodeURIComponent(token)}` : '';
+    } catch(_err) {
+      return '';
+    }
+  }
+
+  function teamAssetPreviewUrl(proxyUrl, options={}){
+    if(!proxyUrl) return '';
+    const parts = [];
+    if(options.thumbnail) parts.push('thumbnail=1');
+    const token = previewTokenParam();
+    if(token) parts.push(token);
+    return parts.length ? `${proxyUrl}?${parts.join('&')}` : proxyUrl;
+  }
+
   function normalizeTeamAsset(asset){
     const item = asset && typeof asset === 'object' ? asset : {};
     const provider = String(item.storage_provider || '').toLowerCase();
@@ -31,6 +49,8 @@
       mimeType: String(item.mime_type || item.mimeType || ''),
       url: proxyUrl || String(item.public_url || item.url || ''),
       thumbnailUrl: proxyUrl ? `${proxyUrl}?thumbnail=1` : String(item.thumbnail_url || item.thumbnailUrl || ''),
+      previewUrl: proxyUrl ? teamAssetPreviewUrl(proxyUrl) : String(item.public_url || item.url || ''),
+      thumbnailPreviewUrl: proxyUrl ? teamAssetPreviewUrl(proxyUrl, {thumbnail:true}) : String(item.thumbnail_url || item.thumbnailUrl || ''),
       thumbnailStorageKey: String(item.thumbnail_storage_key || item.thumbnailStorageKey || ''),
       byteSize: Number(item.byte_size || item.byteSize || 0),
       sizeLabel: formatTeamAssetSize(item.byte_size || item.byteSize || 0),
@@ -52,7 +72,7 @@
     ].some(value => String(value || '').toLowerCase().includes(q)));
   }
 
-  const api = {getStoredTeamId, formatTeamAssetSize, normalizeTeamAsset, filterTeamAssets};
+  const api = {getStoredTeamId, formatTeamAssetSize, normalizeTeamAsset, filterTeamAssets, teamAssetPreviewUrl};
   global.TeamAssets = api;
   if(typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

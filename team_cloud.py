@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 import jwt
-from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from team_storage import build_image_thumbnail, delete_team_asset_file, read_team_asset_file, save_team_asset, safe_filename
@@ -206,6 +206,16 @@ async def require_user(
             provider="dev-bypass",
         )
     raise HTTPException(status_code=401, detail="请先登录")
+
+
+async def require_user_or_query_token(
+    authorization: Optional[str] = Header(default=None),
+    team_cloud_access_token: Optional[str] = Cookie(default=None, alias=settings.cookie_name),
+    access_token: Optional[str] = Query(default=None),
+) -> CurrentUser:
+    if access_token:
+        return await authenticate_supabase_token(access_token.strip())
+    return await require_user(authorization, team_cloud_access_token)
 
 
 def set_auth_cookie(response: Response, access_token: str) -> None:
@@ -1686,7 +1696,7 @@ async def get_team_asset_content(
     team_id: str,
     asset_id: str,
     thumbnail: bool = False,
-    user: CurrentUser = Depends(require_user),
+    user: CurrentUser = Depends(require_user_or_query_token),
 ) -> Response:
     assets = await maybe_await(active_store().list_assets(user, team_id))
     asset = next((item for item in assets if item.get("id") == asset_id), None)

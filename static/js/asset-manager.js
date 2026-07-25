@@ -758,11 +758,13 @@ function assetPreviewUrl(url, w=256){
 function assetThumb(item){
     const kind = assetKind(item);
     const thumbUrl = item?.thumbnailUrl || item?.thumbnail_url || '';
+    const previewUrl = item?.previewUrl || item?.url || '';
+    const thumbPreviewUrl = item?.thumbnailPreviewUrl || thumbUrl || '';
     // 视频用 poster（服务端生成的一帧）+ preload=none：不再为每个视频加载元数据，素材多时滚动顺畅。
-    if(kind === 'video') return `<video src="${escapeAttr(item.url)}" poster="${escapeAttr(thumbUrl || assetPreviewUrl(item.url, 256))}" muted preload="none" playsinline></video>`;
+    if(kind === 'video') return `<video src="${escapeAttr(previewUrl)}" poster="${escapeAttr(thumbPreviewUrl || assetPreviewUrl(previewUrl, 256))}" muted preload="none" playsinline></video>`;
     if(kind === 'audio') return `<div class="asset-file-icon"><i data-lucide="file-audio"></i><span>音频</span></div>`;
     if(kind === 'text') return `<div class="asset-file-icon"><i data-lucide="file-text"></i><span>文本</span></div>`;
-    return `<img src="${escapeAttr(thumbUrl || assetPreviewUrl(item.url, 256))}" alt="${escapeAttr(item.name || 'asset')}" loading="lazy" decoding="async">`;
+    return `<img src="${escapeAttr(thumbPreviewUrl || assetPreviewUrl(previewUrl, 256))}" alt="${escapeAttr(item.name || 'asset')}" loading="lazy" decoding="async">`;
 }
 function workflowThumb(item){
     return `<div class="asset-file-icon workflow-file-icon"><i data-lucide="workflow"></i><span>${escapeHtml(workflowKindLabel(item))}</span></div>`;
@@ -1536,7 +1538,7 @@ function renderTeamAssetUploadCard(teamId){
 function renderTeamAssetCard(item){
     const active = item.id === selectedTeamAssetId;
     return `<button class="asset-card ${active ? 'selected' : ''}" type="button" data-team-asset-card="${escapeAttr(item.id)}">
-        <span class="asset-thumb">${assetThumb({url:item.url, thumbnailUrl:item.thumbnailUrl, name:item.name, kind:item.kind})}</span>
+        <span class="asset-thumb">${assetThumb(item)}</span>
         <span class="asset-name">${escapeHtml(item.name || 'asset')}</span>
         <span class="asset-meta">${escapeHtml(item.providerLabel || '')} · ${escapeHtml(item.sizeLabel || '')}</span>
     </button>`;
@@ -1554,7 +1556,7 @@ function renderTeamAssetDetail(item, teamId){
             </div>
         </div>
         <div class="detail-scroll">
-            <div class="detail-media"><button class="detail-media-frame ${canPreview ? 'detail-media-zoomable' : ''}" type="button" ${canPreview ? `data-team-asset-preview="${escapeAttr(item.id)}"` : ''} title="预览素材">${assetThumb({url:item.url, thumbnailUrl:item.thumbnailUrl, name:item.name, kind:item.kind})}</button></div>
+            <div class="detail-media"><button class="detail-media-frame ${canPreview ? 'detail-media-zoomable' : ''}" type="button" ${canPreview ? `data-team-asset-preview="${escapeAttr(item.id)}"` : ''} title="预览素材">${assetThumb(item)}</button></div>
             <div class="detail-body">
                 <div class="detail-name">${escapeHtml(item.name || 'asset')}</div>
                 <div class="detail-meta-grid">
@@ -4060,7 +4062,7 @@ function showDetailPreview(source, id){
         setStatus('仅图片和视频支持预览');
         return;
     }
-    const url = source === 'local' ? localObjectUrl(item) : item.url;
+    const url = source === 'local' ? localObjectUrl(item) : (item.previewUrl || item.url);
     if(!url) return;
     document.querySelector('.asset-lightbox')?.remove();
     const overlay = document.createElement('div');

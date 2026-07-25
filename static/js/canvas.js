@@ -39,13 +39,23 @@ function canvasProxiedMediaUrl(url, name=''){
     const filename = name || canvasFileNameFromUrl(raw) || 'preview';
     return `/api/download-output?inline=1&url=${encodeURIComponent(raw)}&name=${encodeURIComponent(filename)}`;
 }
+function canvasTeamAssetAuthedUrl(url){
+    const raw = String(url || '');
+    if(!raw.startsWith('/api/team-cloud/') || raw.includes('access_token=')) return raw;
+    let token = '';
+    try { token = localStorage.getItem('teamCloudAccessToken') || ''; } catch(e) {}
+    if(!token) return raw;
+    return `${raw}${raw.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`;
+}
 function canvasDisplayMediaUrl(url, name=''){
     const raw = canvasOriginalMediaUrl(url);
+    if(raw.startsWith('/api/team-cloud/')) return canvasTeamAssetAuthedUrl(raw);
     return /^https?:\/\//i.test(raw) ? canvasProxiedMediaUrl(raw, name) : raw;
 }
 function canvasMediaPreviewUrl(url, size=512){
     const raw = canvasOriginalMediaUrl(url);
     if(!raw || raw.startsWith('data:') || raw.startsWith('blob:')) return raw;
+    if(raw.startsWith('/api/team-cloud/')) return canvasTeamAssetAuthedUrl(raw);
     if(!raw.startsWith('/output/') && !raw.startsWith('/assets/')) return canvasDisplayMediaUrl(raw);
     if(!/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|mp4|webm|mov|m4v|avi|mkv|flv)(\?|#|$)/i.test(raw)) return raw;
     const width = Math.max(64, Math.min(2048, Math.round(Number(size) || 512)));
@@ -413,7 +423,6 @@ function teamCloudFetch(url, options={}){
     return fetch(url, {...options, credentials:'include', headers});
 }
 function currentTeamCloudTeamId(){
-    if(!TEAM_CLOUD_CANVAS) return '';
     try { return localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || ''; } catch(e){ return ''; }
 }
 function teamCloudRequestMeta(){
@@ -491,7 +500,9 @@ let canvasAssetLibraryOpen = false;
 let activeCanvasAssetLibraryId = '';
 let activeCanvasAssetCategoryId = '';
 const LOCAL_CANVAS_ASSET_LIBRARY_ID = '__local_assets__';
+const TEAM_CANVAS_ASSET_LIBRARY_ID = '__team_assets__';
 let localCanvasAssetLibrary = {items:[], tree:null};
+let teamCanvasAssets = [];
 let assetManagerTab = 'assets';
 let managerSelectedAssetIds = new Set();
 let managerSelectedWorkflowIds = new Set();
@@ -6855,14 +6866,40 @@ function localCanvasAssetFolderCategories(){
 function canvasAssetLibraryIsLocal(){
     return activeCanvasAssetLibraryId === LOCAL_CANVAS_ASSET_LIBRARY_ID;
 }
+function canvasAssetLibraryIsTeam(){
+    return activeCanvasAssetLibraryId === TEAM_CANVAS_ASSET_LIBRARY_ID;
+}
+function normalizedTeamCanvasAssets(){
+    const normalizer = window.TeamAssets?.normalizeTeamAsset || (item => item || {});
+    return (teamCanvasAssets || []).map(normalizer).filter(item => item.id);
+}
+function teamCanvasAssetLibrary(){
+    const teamId = currentTeamCloudTeamId();
+    return {
+        id: TEAM_CANVAS_ASSET_LIBRARY_ID,
+        name: '团队素材',
+        readonly: true,
+        source: 'team',
+        categories: [{
+            id: teamId || '__team_assets__',
+            name: teamId ? '全部团队素材' : '未选择团队',
+            type: 'image',
+            readonly: true,
+            source: 'team',
+            items: teamId ? normalizedTeamCanvasAssets() : [],
+        }],
+    };
+}
 function canvasAssetSourceLibraries(){
     return [
         ...canvasAssetLibraries(),
+        teamCanvasAssetLibrary(),
         {id:LOCAL_CANVAS_ASSET_LIBRARY_ID, name:'本地素材', categories:localCanvasAssetFolderCategories(), readonly:true, source:'local'}
     ];
 }
 function activeCanvasAssetLibrary(){
     if(canvasAssetLibraryIsLocal()) return canvasAssetSourceLibraries().find(lib => lib.id === LOCAL_CANVAS_ASSET_LIBRARY_ID);
+    if(canvasAssetLibraryIsTeam()) return teamCanvasAssetLibrary();
     const libs = canvasAssetLibraries();
     return libs.find(lib => lib.id === activeCanvasAssetLibraryId) || libs[0] || null;
 }
@@ -6896,6 +6933,7 @@ function activeCanvasWorkflowCategory(){
 function currentCanvasAssetItem(itemId){
     return (activeCanvasAssetCategory()?.items || []).find(item => item.id === itemId)
         || (activeCanvasWorkflowCategory()?.items || []).find(item => item.id === itemId)
+        || normalizedTeamCanvasAssets().find(item => item.id === itemId)
         || null;
 }
 function canvasAssetItemKind(item){
@@ -6911,7 +6949,7 @@ function canvasAssetItemKind(item){
 function canvasAssetThumbHtml(item){
     const kind = canvasAssetItemKind(item);
     const url = escapeAttr(item?.url || '');
-    const thumbUrl = item?.thumbnail || item?.url || '';
+    const thumbUrl = item?.thumbnailPreviewUrl || item?.thumbnail || item?.thumbnailUrl || item?.url || '';
     if(kind === 'video'){
         return `<div class="canvas-asset-thumb-wrap">${canvasVideoPreviewHtml(item?.url || '', 512, 'class="canvas-asset-thumb" alt=""')}<div class="canvas-asset-video-badge"><i data-lucide="play"></i><span>VIDEO</span></div></div>`;
     }
@@ -6944,7 +6982,7 @@ function showCanvasAssetHoverPreview(event, item){
     const name = canvasAssetHoverPreview.querySelector('.canvas-asset-hover-name');
     if(img){
         img.style.display = 'block';
-        img.src = canvasMediaPreviewUrl(isVideo ? item.url : (item.thumbnail || item.url || ''), 768);
+        img.src = canvasMediaPreviewUrl(isVideo ? item.url : (item.thumbnailPreviewUrl || item.thumbnail || item.thumbnailUrl || item.url || ''), 768);
         img.dataset.previewSrc = img.src || '';
         img.dataset.originalSrc = item.url || item.thumbnail || '';
         img.dataset.url = item.url || item.thumbnail || '';
@@ -6998,17 +7036,35 @@ async function deleteCanvasAssetItem(itemId){
     renderCanvasAssetLibrary();
     if(assetManagerModal?.classList.contains('open')) renderAssetManager();
 }
+async function loadTeamCanvasAssets(){
+    const teamId = currentTeamCloudTeamId();
+    if(!teamId){
+        teamCanvasAssets = [];
+        return [];
+    }
+    try {
+        const res = await teamCloudFetch(`/api/team-cloud/teams/${encodeURIComponent(teamId)}/assets`);
+        if(!res.ok) throw new Error('团队素材加载失败');
+        const data = await res.json();
+        teamCanvasAssets = Array.isArray(data.assets) ? data.assets : [];
+        return teamCanvasAssets;
+    } catch(e) {
+        teamCanvasAssets = [];
+        return [];
+    }
+}
 async function loadCanvasAssetLibrary({renderPanel=true}={}){
     try {
         const [data, localData] = await Promise.all([
             fetch('/api/asset-library').then(r => r.json()),
-            fetch('/api/local-assets').then(r => r.ok ? r.json() : {items:[], tree:null}).catch(() => ({items:[], tree:null}))
+            fetch('/api/local-assets').then(r => r.ok ? r.json() : {items:[], tree:null}).catch(() => ({items:[], tree:null})),
+            loadTeamCanvasAssets()
         ]);
         canvasAssetLibrary = data.library || canvasAssetLibrary;
         localCanvasAssetLibrary = {items:Array.isArray(localData.items) ? localData.items : [], tree:localData.tree || null};
         const libs = canvasAssetLibraries();
         if(!activeCanvasAssetLibraryId) activeCanvasAssetLibraryId = canvasAssetLibrary.active_library_id || libs[0]?.id || '';
-        if(activeCanvasAssetLibraryId !== LOCAL_CANVAS_ASSET_LIBRARY_ID && !libs.some(lib => lib.id === activeCanvasAssetLibraryId)) activeCanvasAssetLibraryId = libs[0]?.id || '';
+        if(activeCanvasAssetLibraryId !== LOCAL_CANVAS_ASSET_LIBRARY_ID && activeCanvasAssetLibraryId !== TEAM_CANVAS_ASSET_LIBRARY_ID && !libs.some(lib => lib.id === activeCanvasAssetLibraryId)) activeCanvasAssetLibraryId = libs[0]?.id || '';
         const cats = canvasAssetCategories();
         if(!cats.some(cat => cat.id === activeCanvasAssetCategoryId)) activeCanvasAssetCategoryId = cats[0]?.id || '';
         if(renderPanel) renderCanvasAssetLibrary();
@@ -7038,10 +7094,12 @@ function renderCanvasAssetLibrary(){
     const cat = activeCanvasAssetCategory();
     const catType = String(cat?.type || 'image').toLowerCase();
     const localMode = canvasAssetLibraryIsLocal();
-    if(canvasAssetAddCategoryBtn) canvasAssetAddCategoryBtn.disabled = localMode;
+    const teamMode = canvasAssetLibraryIsTeam();
+    if(canvasAssetAddCategoryBtn) canvasAssetAddCategoryBtn.disabled = localMode || teamMode;
     if(canvasAssetDropZone) {
         canvasAssetDropZone.style.display = localMode ? 'none' : 'flex';
         canvasAssetDropZone.textContent = catType === 'workflow' ? '工作流分组支持上传/导出工作流，双击卡片导入画布' : '拖入图片或输出保存到当前分组';
+        if(teamMode) canvasAssetDropZone.textContent = '拖入文件上传到团队素材';
     }
     const items = cat?.items || [];
     canvasAssetGrid.innerHTML = items.length ? items.map(item => `
@@ -7051,11 +7109,13 @@ function renderCanvasAssetLibrary(){
                 <span class="canvas-asset-name" title="${escapeAttr(item.name || '')}">${escapeHtml(item.name || 'asset')}</span>
                 ${localMode
                     ? `<span class="canvas-asset-local-tag">本地</span>`
+                    : teamMode
+                    ? `<span class="canvas-asset-local-tag">团队</span>`
                     : `<button class="canvas-asset-action" type="button" data-canvas-asset-rename="${escapeAttr(item.id || '')}" title="重命名" aria-label="重命名"><i data-lucide="pencil" class="w-4 h-4"></i></button>
                        <button class="canvas-asset-action danger" type="button" data-canvas-asset-delete="${escapeAttr(item.id || '')}" title="删除" aria-label="删除"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`}
             </div>
         </div>
-    `).join('') : `<div class="canvas-asset-empty">${escapeHtml(localMode ? '暂无本地素材，请在素材库管理中上传' : '当前分组还没有资产')}</div>`;
+    `).join('') : `<div class="canvas-asset-empty">${escapeHtml(localMode ? '暂无本地素材，请在素材库管理中上传' : (teamMode ? '暂无团队素材，可以拖入文件上传' : '当前分组还没有资产'))}</div>`;
     bindCanvasPreviewImageFallbacks(canvasAssetGrid);
     canvasAssetGrid.querySelectorAll('.canvas-asset-item').forEach(card => {
         card.addEventListener('dragstart', event => {
@@ -7125,6 +7185,38 @@ async function uploadFilesToLibrary(files, libraryId, categoryId){
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({library_id:libraryId, category_id:categoryId, items})
     }).then(r => r.json());
+}
+async function uploadFilesToTeamCanvasAssets(files){
+    const teamId = currentTeamCloudTeamId();
+    if(!teamId) throw new Error('请先在团队页选择团队');
+    const list = [...(files || [])].filter(Boolean);
+    if(!list.length) return [];
+    const uploaded = [];
+    for(const file of list){
+        const form = new FormData();
+        form.append('file', file);
+        const res = await teamCloudFetch(`/api/team-cloud/teams/${encodeURIComponent(teamId)}/assets`, {method:'POST', body:form});
+        if(!res.ok) throw new Error(await responseErrorMessage(res, '团队素材上传失败'));
+        const data = await res.json();
+        if(data.asset) uploaded.push(data.asset);
+    }
+    await loadTeamCanvasAssets();
+    renderCanvasAssetLibrary();
+    setStatus(`已上传 ${uploaded.length} 个团队素材`);
+    return uploaded;
+}
+async function uploadUrlsToTeamCanvasAssets(items=[]){
+    const files = [];
+    for(const item of items){
+        const url = canvasDisplayMediaUrl(item?.url || '');
+        if(!url) continue;
+        const res = await fetch(url);
+        if(!res.ok) throw new Error(await responseErrorMessage(res, '团队素材上传失败'));
+        const blob = await res.blob();
+        const name = item?.name || outputImageName(url) || 'asset';
+        files.push(new File([blob], name, {type:blob.type || 'application/octet-stream'}));
+    }
+    return uploadFilesToTeamCanvasAssets(files);
 }
 function openAssetManager(){
     assetManagerModal?.classList.add('open');
@@ -13125,6 +13217,17 @@ canvasAssetDropZone?.addEventListener('drop', async event => {
     event.stopPropagation();
     canvasAssetDropZone.classList.remove('drag-over');
     try {
+        if(canvasAssetLibraryIsTeam()){
+            if(hasOutputImageDrag(event.dataTransfer)){
+                await uploadUrlsToTeamCanvasAssets([{url:event.dataTransfer.getData('application/x-canvas-output-image'), name:'output'}]);
+                return;
+            }
+            const payload = await resolveImageDropPayload(event.dataTransfer);
+            if(payload.type === 'files') await uploadFilesToTeamCanvasAssets(payload.files);
+            else if(payload.type === 'url') await uploadUrlsToTeamCanvasAssets([{url:payload.url, name:outputImageName(payload.url)}]);
+            else throw new Error('团队素材只支持文件或图片地址');
+            return;
+        }
         if(hasOutputImageDrag(event.dataTransfer)){
             await addUrlToCanvasAssetLibrary(event.dataTransfer.getData('application/x-canvas-output-image'), 'output');
             return;
