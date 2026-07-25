@@ -309,6 +309,19 @@ class TeamCloudStoreTests(unittest.TestCase):
         self.assertEqual(user.email, "person@example.com")
         self.assertEqual(user.provider, "supabase")
 
+    def test_auth_payload_includes_access_token_when_session_ready(self):
+        payload = team_cloud.sanitize_auth_payload({
+            "access_token": "session-token",
+            "user": {
+                "id": "user-123",
+                "email": "person@example.com",
+            },
+        })
+
+        self.assertTrue(payload["session_ready"])
+        self.assertEqual(payload["access_token"], "session-token")
+        self.assertEqual(payload["user"]["email"], "person@example.com")
+
 
 class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_update_password_requires_recovery_token(self):
@@ -338,6 +351,7 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
 
         update_mock.assert_awaited_once_with("recovery-token", "new-secret")
         self.assertTrue(payload["ok"])
+        self.assertEqual(payload["access_token"], "recovery-token")
         self.assertEqual(payload["user"]["email"], "person@example.com")
         self.assertIn("team_cloud_access_token=recovery-token", response.headers["set-cookie"])
 

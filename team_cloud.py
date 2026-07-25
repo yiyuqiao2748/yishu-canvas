@@ -270,8 +270,9 @@ async def supabase_update_password(access_token: str, password: str) -> Dict[str
 
 def sanitize_auth_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     user = data.get("user") or {}
+    access_token = str(data.get("access_token") or "")
     session_ready = bool(data.get("access_token"))
-    return {
+    payload = {
         "session_ready": session_ready,
         "user": {
             "id": user.get("id"),
@@ -279,6 +280,9 @@ def sanitize_auth_payload(data: Dict[str, Any]) -> Dict[str, Any]:
             "created_at": user.get("created_at"),
         },
     }
+    if access_token:
+        payload["access_token"] = access_token
+    return payload
 
 
 def asset_reference_terms(asset: Dict[str, Any]) -> List[str]:
@@ -1362,6 +1366,7 @@ async def update_password(
     set_auth_cookie(response, access_token)
     return {
         "ok": True,
+        "access_token": access_token,
         "user": {
             "id": data.get("id"),
             "email": data.get("email"),

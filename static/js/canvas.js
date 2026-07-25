@@ -399,9 +399,19 @@ const CANVAS_LIST_PROJECT_KEY = 'canvasListCurrentProjectId';
 const TEAM_CLOUD_MODE_KEY = 'teamCloudMode';
 const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
 const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
+const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
 const CANVAS_URL_PARAMS = new URLSearchParams(window.location.search);
 const TEAM_CLOUD_CANVAS = CANVAS_URL_PARAMS.get('cloud') === '1';
 const CANVAS_COLOR_OPTIONS = ['red','orange','amber','green','teal','blue','violet','pink','slate'];
+function teamCloudFetch(url, options={}){
+    let token = '';
+    try { token = localStorage.getItem(TEAM_CLOUD_ACCESS_TOKEN_KEY) || ''; } catch(e){}
+    const headers = {...(options.headers || {})};
+    if(token && !headers.Authorization && !headers.authorization){
+        headers.Authorization = `Bearer ${token}`;
+    }
+    return fetch(url, {...options, credentials:'include', headers});
+}
 function currentTeamCloudTeamId(){
     if(!TEAM_CLOUD_CANVAS) return '';
     try { return localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || ''; } catch(e){ return ''; }
@@ -1492,9 +1502,8 @@ async function saveCanvas(){
     saveCanvasAgain = false;
     try {
         if(TEAM_CLOUD_CANVAS){
-            const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvas.id)}`, {
+            const res = await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(canvas.id)}`, {
                 method:'PATCH',
-                credentials:'include',
                 headers:{'Content-Type':'application/json'},
                 body:JSON.stringify(cloudCanvasSaveBody())
             });
@@ -2125,10 +2134,9 @@ async function setCanvasTitle(id, title){
 async function openCanvas(id){
     setStatus('Opening...');
     try {
-        const res = await fetch(TEAM_CLOUD_CANVAS
-            ? `/api/team-cloud/canvases/${encodeURIComponent(id)}`
-            : `/api/canvases/${id}`,
-            { credentials:'include' });
+        const res = TEAM_CLOUD_CANVAS
+            ? await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(id)}`)
+            : await fetch(`/api/canvases/${id}`);
         if(!res.ok) throw new Error(tr('canvas.openFailed'));
         const data = await res.json();
         resetCascadeRuntimeState();
@@ -15069,7 +15077,7 @@ async function loadCloudVersionHistory(){
     if(!TEAM_CLOUD_CANVAS || !canvas?.id) return;
     setCloudVersionHistoryMessage('正在读取版本历史...');
     try {
-        const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvas.id)}/versions`, {credentials:'include'});
+        const res = await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(canvas.id)}/versions`);
         if(!res.ok) throw new Error('版本历史读取失败');
         const data = await res.json();
         renderCloudVersionHistory(data.versions || []);
@@ -15091,9 +15099,8 @@ async function restoreCloudVersion(version){
     if(!confirm(`恢复到 v${version}？恢复会生成新的当前版本，并刷新编辑器。`)) return;
     setCloudVersionHistoryMessage('正在恢复版本...');
     try {
-        const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvas.id)}/versions/${encodeURIComponent(version)}/restore`, {
+        const res = await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(canvas.id)}/versions/${encodeURIComponent(version)}/restore`, {
             method:'POST',
-            credentials:'include',
             headers:{'Content-Type':'application/json'},
             body:'{}'
         });

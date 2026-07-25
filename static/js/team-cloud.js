@@ -3,6 +3,7 @@
     const TEAM_CLOUD_MODE_KEY = "teamCloudMode";
     const TEAM_CLOUD_TEAM_KEY = "teamCloudCurrentTeamId";
     const TEAM_CLOUD_PROJECT_KEY = "teamCloudCurrentProjectId";
+    const TEAM_CLOUD_ACCESS_TOKEN_KEY = "teamCloudAccessToken";
 
     const state = {
         mode: "login",
@@ -37,14 +38,34 @@
         button.disabled = !!busy;
     }
 
+    function storedAccessToken(){
+        try {
+            return localStorage.getItem(TEAM_CLOUD_ACCESS_TOKEN_KEY) || "";
+        } catch(e) {
+            return "";
+        }
+    }
+
+    function storeAccessToken(token){
+        try {
+            if(token) localStorage.setItem(TEAM_CLOUD_ACCESS_TOKEN_KEY, token);
+            else localStorage.removeItem(TEAM_CLOUD_ACCESS_TOKEN_KEY);
+        } catch(e) {}
+    }
+
     async function api(path, options){
+        const token = storedAccessToken();
+        const headers = {
+            "Content-Type": "application/json",
+            ...(options && options.headers ? options.headers : {}),
+        };
+        if(token && !headers.Authorization && !headers.authorization){
+            headers.Authorization = `Bearer ${token}`;
+        }
         const response = await fetch(`/api/team-cloud${path}`, {
-            credentials: "include",
-            headers: {
-                "Content-Type": "application/json",
-                ...(options && options.headers ? options.headers : {}),
-            },
             ...options,
+            credentials: "include",
+            headers,
         });
         let data = null;
         try {
@@ -545,9 +566,11 @@
                 body: JSON.stringify(payload),
             });
             if(data.session_ready){
+                storeAccessToken(data.access_token || "");
                 setMessage($("authMessage"), state.mode === "login" ? "已登录" : "已注册并登录", "ok");
                 await loadMe();
             } else {
+                storeAccessToken("");
                 setMessage($("authMessage"), "注册已提交，请检查邮箱验证", "ok");
             }
         } catch(e) {
@@ -721,6 +744,7 @@
                 localStorage.removeItem(TEAM_CLOUD_TEAM_KEY);
                 localStorage.removeItem(TEAM_CLOUD_PROJECT_KEY);
             } catch(e) {}
+            storeAccessToken("");
             setMessage($("authMessage"), "已退出", "ok");
             renderAuth();
             renderTeams();

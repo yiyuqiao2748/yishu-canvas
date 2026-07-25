@@ -14,6 +14,7 @@ const CANVAS_LIST_PROJECT_KEY = 'canvasListCurrentProjectId';
 const TEAM_CLOUD_MODE_KEY = 'teamCloudMode';
 const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
 const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
+const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
 
 const teamCloud = {
     enabled: false,
@@ -201,13 +202,19 @@ function currentProject(){ return projects.find(p => p.id === currentProjectId) 
 function canvasesInProject(pid){ return canvases.filter(c => (c.project || 'default') === pid); }
 
 async function cloudApi(path, options){
+    let token = '';
+    try { token = localStorage.getItem(TEAM_CLOUD_ACCESS_TOKEN_KEY) || ''; } catch(e){}
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(options?.headers || {})
+    };
+    if(token && !headers.Authorization && !headers.authorization){
+        headers.Authorization = `Bearer ${token}`;
+    }
     const res = await fetch(`/api/team-cloud${path}`, {
+        ...options,
         credentials: 'include',
-        headers: {
-            'Content-Type': 'application/json',
-            ...(options?.headers || {})
-        },
-        ...options
+        headers,
     });
     let data = {};
     try { data = await res.json(); } catch(e){}

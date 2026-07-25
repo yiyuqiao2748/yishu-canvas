@@ -161,7 +161,17 @@ async function copyTextToClipboard(text){
     } catch(_) { return false; }
 }
 async function apiJson(url, options={}){
-    const res = await fetch(url, options);
+    const nextOptions = {...options};
+    if(String(url || '').startsWith('/api/team-cloud/')){
+        let token = '';
+        try { token = localStorage.getItem('teamCloudAccessToken') || ''; } catch(_) {}
+        nextOptions.credentials = 'include';
+        nextOptions.headers = {...(options.headers || {})};
+        if(token && !nextOptions.headers.Authorization && !nextOptions.headers.authorization){
+            nextOptions.headers.Authorization = `Bearer ${token}`;
+        }
+    }
+    const res = await fetch(url, nextOptions);
     const data = await res.json().catch(() => ({}));
     if(!res.ok) throw new Error(apiErrorMessage(data));
     return data;

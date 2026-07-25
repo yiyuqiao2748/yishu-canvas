@@ -5,7 +5,17 @@ const CANVAS_LIST_PROJECT_KEY = 'canvasListCurrentProjectId';
 const TEAM_CLOUD_MODE_KEY = 'teamCloudMode';
 const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
 const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
+const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
 const TEAM_CLOUD_CANVAS = params.get('cloud') === '1';
+function teamCloudFetch(url, options={}){
+    let token = '';
+    try { token = localStorage.getItem(TEAM_CLOUD_ACCESS_TOKEN_KEY) || ''; } catch(e){}
+    const headers = {...(options.headers || {})};
+    if(token && !headers.Authorization && !headers.authorization){
+        headers.Authorization = `Bearer ${token}`;
+    }
+    return fetch(url, {...options, credentials:'include', headers});
+}
 function currentTeamCloudTeamId(){
     if(!TEAM_CLOUD_CANVAS) return '';
     try { return localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || ''; } catch(e){ return ''; }
@@ -5387,10 +5397,9 @@ async function mergeReloadCanvasNow(){
         return;
     }
     try {
-        const res = await fetch(TEAM_CLOUD_CANVAS
-            ? `/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`
-            : `/api/canvases/${encodeURIComponent(canvasId)}`,
-            {credentials:'include'});
+        const res = TEAM_CLOUD_CANVAS
+            ? await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`)
+            : await fetch(`/api/canvases/${encodeURIComponent(canvasId)}`);
         if(!res.ok) return;
         const data = await res.json();
         if(data && data.canvas) applyMergedServerCanvas(TEAM_CLOUD_CANVAS ? cloudCanvasForEditor(data.canvas) : data.canvas);
@@ -5417,7 +5426,7 @@ function startCanvasMetaPoll(){
         if(canvasSyncInFlight || dragState || selectionState) return;
         try {
             if(TEAM_CLOUD_CANVAS){
-                const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`, {credentials:'include'});
+                const res = await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`);
                 if(!res.ok) return;
                 const data = await res.json();
                 const remoteVersion = Number(data.canvas?.version || 0);
@@ -5949,10 +5958,9 @@ function migrateSmartGroupImageMembers(){
 async function loadCanvas(){
     if(!canvasId) return;
     try {
-        const res = await fetch(TEAM_CLOUD_CANVAS
-            ? `/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`
-            : `/api/canvases/${encodeURIComponent(canvasId)}`,
-            { credentials: 'include' });
+        const res = TEAM_CLOUD_CANVAS
+            ? await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`)
+            : await fetch(`/api/canvases/${encodeURIComponent(canvasId)}`);
         if(!res.ok) return;
         const data = await res.json();
         canvas = TEAM_CLOUD_CANVAS ? cloudCanvasForEditor(data.canvas) : data.canvas;
@@ -6067,7 +6075,7 @@ async function loadSmartCloudVersionHistory(){
     if(!TEAM_CLOUD_CANVAS || !canvasId) return;
     setSmartCloudVersionMessage('正在读取版本历史...');
     try {
-        const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}/versions`, {credentials:'include'});
+        const res = await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}/versions`);
         if(!res.ok) throw new Error('版本历史读取失败');
         const data = await res.json();
         renderSmartCloudVersionHistory(data.versions || []);
@@ -6089,9 +6097,8 @@ async function restoreSmartCloudVersion(version){
     if(!confirm(`恢复到 v${version}？恢复会生成新的当前版本，并刷新编辑器。`)) return;
     setSmartCloudVersionMessage('正在恢复版本...');
     try {
-        const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}/versions/${encodeURIComponent(version)}/restore`, {
+        const res = await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}/versions/${encodeURIComponent(version)}/restore`, {
             method:'POST',
-            credentials:'include',
             headers:{'Content-Type':'application/json'},
             body:'{}'
         });
@@ -6150,9 +6157,8 @@ async function saveCanvas(){
     smartSaveAgain = false;
     try {
         if(TEAM_CLOUD_CANVAS){
-            const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`, {
+            const res = await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`, {
                 method:'PATCH',
-                credentials:'include',
                 headers:{'Content-Type':'application/json'},
                 body:JSON.stringify(cloudCanvasSaveBody(storageCanvas))
             });
