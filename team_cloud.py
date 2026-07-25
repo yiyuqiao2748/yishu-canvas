@@ -1266,13 +1266,16 @@ class SupabaseTeamStore:
         }
         if asset.get("thumbnail_storage_key"):
             body["thumbnail_storage_key"] = asset.get("thumbnail_storage_key")
-        try:
-            rows = await self._request("POST", "/assets", json_body=[body])
-        except HTTPException as exc:
-            if "thumbnail_storage_key" not in str(exc.detail):
-                raise
-            body.pop("thumbnail_storage_key", None)
-            rows = await self._request("POST", "/assets", json_body=[body])
+        while True:
+            try:
+                rows = await self._request("POST", "/assets", json_body=[body])
+                break
+            except HTTPException as exc:
+                match = re.search(r"column assets\.([a-zA-Z0-9_]+) does not exist", str(exc.detail))
+                missing_column = match.group(1) if match else ""
+                if not missing_column or missing_column not in body:
+                    raise
+                body.pop(missing_column, None)
         return rows[0]
 
     async def delete_asset(self, user: CurrentUser, team_id: str, asset_id: str) -> Dict[str, Any]:
