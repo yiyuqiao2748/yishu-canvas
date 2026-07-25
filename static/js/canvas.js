@@ -403,6 +403,8 @@ backToManagerBtn?.addEventListener('click', () => {
 let localCanvasDirty = false;
 let savingCanvasNow = false;
 let saveCanvasAgain = false;
+let saveRetryCount = 0;
+let saveStatusNoticeAt = 0;
 let applyingRemoteCanvas = false;
 let remoteSyncTimer = null;
 let remoteSyncInterval = null;
@@ -1085,6 +1087,19 @@ function setStatus(text){
     document.getElementById('saveState').textContent = text;
     if(gateStatus) gateStatus.textContent = text;
 }
+function canvasSaveText(zh, en){
+    return langIsEn() ? en : zh;
+}
+function setSaveNotice(zh, en, delay=2500){
+    const now = Date.now();
+    if(now - saveStatusNoticeAt < delay) return;
+    saveStatusNoticeAt = now;
+    setStatus(canvasSaveText(zh, en));
+}
+function scheduleSaveRetry(delay=300){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveCanvas, delay);
+}
 let generationCompleteSoundAt = 0;
 function playGenerationCompleteSound(){
     const now = Date.now();
@@ -1448,9 +1463,12 @@ function serializableCanvasNodes(list=nodes){
 async function saveCanvas(){
     if(!canvas || applyingRemoteCanvas) return;
     if(savingCanvasNow){
+        localCanvasDirty = true;
         saveCanvasAgain = true;
         return;
     }
+    clearTimeout(saveTimer);
+    saveTimer = null;
     sanitizeConnections();
     savingCanvasNow = true;
     saveCanvasAgain = false;
@@ -1465,13 +1483,15 @@ async function saveCanvas(){
             if(res.status === 409){
                 const data = await res.json().catch(() => ({}));
                 const remote = data.detail?.canvas || data.canvas;
+                if(remote) canvas.cloud_version = remote.version || canvas.cloud_version;
                 if(remote && !localCanvasDirty && !saveCanvasAgain){
                     applyRemoteCanvasData(cloudCanvasForEditor(remote));
                     setStatus('Synced');
                 } else {
-                    if(remote) canvas.cloud_version = remote.version || canvas.cloud_version;
+                    if(remote) mergeRemoteCanvasIntoLocal(cloudCanvasForEditor(remote));
+                    setSaveNotice('云端画布已更新，正在合并重存', 'Cloud canvas changed, merging and saving');
+                    localCanvasDirty = true;
                     saveCanvasAgain = true;
-                    setStatus('Saving...');
                 }
                 return;
             }
@@ -1482,6 +1502,7 @@ async function saveCanvas(){
                 canvas.cloud_version = data.canvas.version || canvas.cloud_version;
             }
             localCanvasDirty = Boolean(saveCanvasAgain);
+            saveRetryCount = 0;
             if(currentCanvasTime) currentCanvasTime.textContent = formatCanvasTime(canvas.updated_at);
             setStatus('Saved');
             return;
@@ -1504,9 +1525,11 @@ async function saveCanvas(){
             const data = await res.json().catch(() => ({}));
             const remote = data.detail?.canvas || data.canvas;
             if(localCanvasDirty || saveCanvasAgain){
+                if(remote) mergeRemoteCanvasIntoLocal(remote);
                 lastCanvasUpdatedAt = Number(data.detail?.updated_at || data.updated_at || remote?.updated_at || lastCanvasUpdatedAt || 0);
+                setSaveNotice('云端画布已更新，正在合并重存', 'Canvas changed remotely, merging and saving');
+                localCanvasDirty = true;
                 saveCanvasAgain = true;
-                setStatus('Saving...');
                 return;
             }
             if(remote) applyRemoteCanvasData(remote);
@@ -1521,18 +1544,23 @@ async function saveCanvas(){
         canvas.updated_at = Number(canvas.updated_at || Date.now());
         lastCanvasUpdatedAt = canvas.updated_at;
         localCanvasDirty = Boolean(saveCanvasAgain);
+        saveRetryCount = 0;
         if(currentCanvasTime) currentCanvasTime.textContent = formatCanvasTime(canvas.updated_at);
         setStatus('Saved');
         loadCanvasList(false);
     } catch(e) {
-        setStatus('Save failed');
+        localCanvasDirty = true;
+        saveCanvasAgain = true;
+        saveRetryCount += 1;
+        setSaveNotice('保存失败，稍后会自动重试', 'Save failed, retrying soon', 4000);
         console.error(e);
     } finally {
         savingCanvasNow = false;
-        if(saveCanvasAgain && canvas && !applyingRemoteCanvas){
+        if((saveCanvasAgain || localCanvasDirty) && canvas && !applyingRemoteCanvas){
             saveCanvasAgain = false;
             localCanvasDirty = true;
-            setTimeout(saveCanvas, 0);
+            const retryDelay = Math.min(5000, 300 * Math.max(1, saveRetryCount));
+            scheduleSaveRetry(retryDelay);
         }
     }
 }
@@ -2150,6 +2178,39 @@ function cloudCanvasSaveBody(){
         },
         base_version: canvas.cloud_version || 1,
     };
+}
+function mergeConnectionLists(localList=[], remoteList=[]){
+    const out = [];
+    const seen = new Set();
+    [...(localList || []), ...(remoteList || [])].forEach(conn => {
+        if(!conn) return;
+        const key = `${conn.from || ''}->${conn.to || ''}:${conn.fromPort || ''}:${conn.toPort || ''}:${conn.kind || ''}`;
+        if(seen.has(key)) return;
+        seen.add(key);
+        out.push(conn);
+    });
+    return out;
+}
+function mergeRemoteCanvasIntoLocal(remote){
+    if(!remote || !canvas) return false;
+    const remoteNodes = Array.isArray(remote.nodes) ? remote.nodes : [];
+    const localNodes = Array.isArray(nodes) ? nodes : [];
+    const localIds = new Set(localNodes.map(node => node?.id).filter(Boolean));
+    const mergedNodes = [
+        ...localNodes,
+        ...remoteNodes.filter(node => node?.id && !localIds.has(node.id)),
+    ];
+    nodes = mergedNodes;
+    connections = mergeConnectionLists(connections, remote.connections || []);
+    canvas.nodes = nodes;
+    canvas.connections = connections;
+    canvas.logs = Array.isArray(canvas.logs) ? canvas.logs : [];
+    canvas.updated_at = remote.updated_at || canvas.updated_at;
+    canvas.cloud_version = remote.version || remote.cloud_version || canvas.cloud_version;
+    lastCanvasUpdatedAt = Number(remote.updated_at || lastCanvasUpdatedAt || 0);
+    sanitizeConnections();
+    render();
+    return true;
 }
 function applyRemoteCanvasData(remote){
     if(!remote || !canvas || remote.id !== canvas.id) return;
