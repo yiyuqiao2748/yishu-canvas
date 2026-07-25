@@ -5340,7 +5340,11 @@ function applyMergedServerCanvas(serverCanvas){
     canvas.connections = mergeSmartConnections(canvas.connections, serverCanvas.connections, nodeIds);
     const cleanedState = clearCompletedNodeBusyStates();
     const recoveredLoopOutputs = recoverStuckLoopOutputsFromLogs();
-    canvas.updated_at = Number(serverCanvas.updated_at || canvas.updated_at || 0);
+    const remoteUpdatedAt = serverCanvas.updated_at || canvas.updated_at || 0;
+    const numericUpdatedAt = Number(remoteUpdatedAt);
+    canvas.updated_at = Number.isFinite(numericUpdatedAt) ? numericUpdatedAt : remoteUpdatedAt;
+    const remoteCloudVersion = Number(serverCanvas.cloud_version || serverCanvas.version || 0);
+    if(Number.isFinite(remoteCloudVersion) && remoteCloudVersion > 0) canvas.cloud_version = remoteCloudVersion;
     if(canvas.title !== serverCanvas.title && serverCanvas.title){
         canvas.title = serverCanvas.title;
         const titleEl = document.getElementById('smartTitle');
@@ -5361,10 +5365,13 @@ async function mergeReloadCanvasNow(){
         return;
     }
     try {
-        const res = await fetch(`/api/canvases/${encodeURIComponent(canvasId)}`);
+        const res = await fetch(TEAM_CLOUD_CANVAS
+            ? `/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`
+            : `/api/canvases/${encodeURIComponent(canvasId)}`,
+            {credentials:'include'});
         if(!res.ok) return;
         const data = await res.json();
-        if(data && data.canvas) applyMergedServerCanvas(data.canvas);
+        if(data && data.canvas) applyMergedServerCanvas(TEAM_CLOUD_CANVAS ? cloudCanvasForEditor(data.canvas) : data.canvas);
     } catch(e) {}
 }
 function scheduleCanvasMergeReload(delay=200){
@@ -5387,6 +5394,16 @@ function startCanvasMetaPoll(){
         if(!canvasId || !canvas) return;
         if(canvasSyncInFlight || dragState || selectionState) return;
         try {
+            if(TEAM_CLOUD_CANVAS){
+                const res = await fetch(`/api/team-cloud/canvases/${encodeURIComponent(canvasId)}`, {credentials:'include'});
+                if(!res.ok) return;
+                const data = await res.json();
+                const remoteVersion = Number(data.canvas?.version || 0);
+                if(remoteVersion && remoteVersion > Number(canvas.cloud_version || 0)){
+                    applyMergedServerCanvas(cloudCanvasForEditor(data.canvas));
+                }
+                return;
+            }
             const res = await fetch(`/api/canvases/${encodeURIComponent(canvasId)}/meta`);
             if(!res.ok) return;
             const meta = await res.json();
