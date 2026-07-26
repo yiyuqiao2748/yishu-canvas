@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="/static/images/logo.png" type="image/png">
-    <title>项目工作台</title>
+    <title>AI 设计师工作台</title>
     <script>
         (function(){
             try {
@@ -26,10 +26,18 @@
 </head>
 <body>
     <div id="workspace" class="workspace">
-        <!-- LEFT: project sidebar -->
         <aside id="sidebar" class="ws-sidebar">
+            <div class="ws-brand">
+                <div class="ws-brand-mark">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i>
+                </div>
+                <div class="ws-brand-copy">
+                    <div class="ws-brand-title">AI 设计师</div>
+                    <div class="ws-brand-sub">公司团队工作台</div>
+                </div>
+            </div>
             <div class="ws-side-head">
-                <div class="ws-side-title">项目</div>
+                <div class="ws-side-title">项目与画布</div>
                 <button id="newProjectBtn" class="ws-side-add" type="button" title="新建项目" aria-label="新建项目">
                     <i data-lucide="plus" class="w-4 h-4"></i>
                 </button>
@@ -49,10 +57,10 @@
             </div>
         </aside>
 
-        <!-- RIGHT: board -->
         <main class="ws-main">
             <div class="ws-topbar">
                 <div class="ws-topbar-left">
+                    <div class="ws-top-kicker">团队画布</div>
                     <div id="boardProjectName" class="ws-board-name">默认项目</div>
                     <span id="boardCanvasCount" class="ws-board-count">0</span>
                 </div>
@@ -64,7 +72,6 @@
                 </div>
             </div>
 
-            <!-- Board (pan/zoom) -->
             <div id="board" class="ws-board">
                 <div id="boardWorld" class="ws-board-world"></div>
                 <div id="boardEmptyHint" class="ws-board-empty">
@@ -77,7 +84,6 @@
                 </div>
             </div>
 
-            <!-- Trash panel (overlay over the board area) -->
             <div id="trashPanel" class="ws-trash-panel">
                 <div class="ws-trash-head">
                     <div class="ws-trash-head-title"><i data-lucide="trash-2" class="w-4 h-4"></i><span>回收站</span></div>

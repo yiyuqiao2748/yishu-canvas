@@ -1452,3 +1452,181 @@ html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .tool
         margin-left:0;
     }
 }
+
+/* ===== AI designer / team workbench visual skin ===== */
+:root {
+    --page:#07080d;
+    --grid:rgba(255,255,255,.08);
+    --panel:rgba(20,15,18,.82);
+    --card:rgba(25,22,27,.9);
+    --card-solid:#17141a;
+    --soft:rgba(255,255,255,.055);
+    --soft-2:rgba(255,255,255,.08);
+    --line:rgba(255,123,92,.22);
+    --line-2:rgba(255,176,93,.38);
+    --text:#fff7ed;
+    --muted:#c4b3aa;
+    --faint:#87766f;
+    --shadow:rgba(0,0,0,.38);
+    --strong:#ef4444;
+    --strong-text:#fff;
+    --ai-accent:#f97316;
+}
+body,
+.shell {
+    background-color:#07080d;
+}
+.shell {
+    background-image:
+        linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px),
+        radial-gradient(circle at 18% 0%, rgba(220,38,38,.24), transparent 32%),
+        radial-gradient(circle at 84% 10%, rgba(20,83,45,.18), transparent 34%);
+    background-size:42px 42px, 42px 42px, auto, auto;
+}
+.topbar {
+    top:14px;
+    left:96px;
+    right:24px;
+    align-items:flex-start;
+}
+.canvas-nav,
+.toolbar,
+.toolbar.collapsed,
+.toolbar.scale-expanded,
+.library,
+.canvas-asset-panel,
+.workflow-transfer-panel,
+.log-panel,
+.asset-manager-panel,
+.gate-panel,
+.image-edit-panel,
+.canvas-meta-pop {
+    background:rgba(18,13,16,.78);
+    border-color:var(--line);
+    box-shadow:0 24px 72px rgba(0,0,0,.36);
+}
+.canvas-nav,
+.toolbar {
+    border-radius:999px;
+}
+.canvas-nav::before {
+    content:"AI 设计师";
+    height:24px;
+    padding:0 10px;
+    border-radius:999px;
+    display:inline-flex;
+    align-items:center;
+    color:#fecaca;
+    background:rgba(220,38,38,.18);
+    border:1px solid rgba(248,113,113,.24);
+    font-size:11px;
+    font-weight:900;
+    white-space:nowrap;
+}
+.current-canvas-title,
+.canvas-card-title,
+.asset-panel-title,
+.library-title,
+.gate-title {
+    color:var(--text);
+}
+.current-canvas-time,
+.canvas-card-time,
+.asset-panel-subtitle,
+.library-subtitle,
+.gate-subtitle {
+    color:var(--muted);
+}
+.tool-btn,
+.toolbar-toggle,
+.toolbar-log,
+.toolbar-asset,
+.toolbar-workflow,
+.canvas-preview-mark,
+.canvas-asset-button,
+.canvas-category-select,
+.asset-action-btn,
+.preview-icon-btn {
+    background:rgba(255,255,255,.055);
+    border-color:rgba(255,255,255,.09);
+    color:var(--muted);
+}
+.tool-btn:hover,
+.toolbar-toggle:hover,
+.toolbar-log:hover,
+.toolbar-asset:hover,
+.toolbar-workflow:hover,
+.canvas-preview-mark:hover,
+.canvas-asset-button:hover,
+.asset-action-btn:hover,
+.preview-icon-btn:hover {
+    background:rgba(249,115,22,.14);
+    border-color:var(--line-2);
+    color:var(--text);
+}
+.toolbar .tool-btn.active,
+.toolbar-log.active,
+.toolbar-asset.active,
+.toolbar-workflow.active,
+.canvas-item.active,
+.image-edit-btn.primary,
+.asset-dialog-btn.primary {
+    background:linear-gradient(135deg, #dc2626, #f97316);
+    border-color:rgba(255,211,141,.34);
+    color:#fff;
+    box-shadow:0 14px 34px rgba(220,38,38,.25);
+}
+.canvas-item,
+.canvas-open,
+.canvas-asset-item,
+.asset-item,
+.workflow-card,
+.gate-card,
+.composer-card {
+    background:rgba(24,20,25,.88);
+    border-color:rgba(255,123,92,.18);
+}
+.canvas-item:hover,
+.canvas-asset-item:hover,
+.asset-item:hover,
+.workflow-card:hover {
+    border-color:var(--line-2);
+    box-shadow:0 18px 48px rgba(0,0,0,.34);
+}
+.canvas-kind-chip,
+.canvas-asset-kind,
+.asset-kind,
+.node-kind-chip {
+    background:rgba(220,38,38,.18);
+    color:#fecaca;
+    border-color:rgba(248,113,113,.28);
+}
+.canvas-asset-panel {
+    right:22px;
+    top:74px;
+    bottom:112px;
+    border-radius:24px;
+}
+.canvas-asset-drop,
+.asset-drop-zone,
+.workflow-drop-zone {
+    background:rgba(255,255,255,.035);
+    border-color:rgba(255,176,93,.28);
+    color:var(--muted);
+}
+.toast {
+    background:linear-gradient(135deg, rgba(220,38,38,.96), rgba(249,115,22,.94));
+    border-color:rgba(255,211,141,.32);
+    color:#fff;
+}
+@media (max-width:900px) {
+    .topbar {
+        left:14px;
+        right:14px;
+    }
+    .canvas-asset-panel {
+        right:14px;
+        top:86px;
+    }
+}

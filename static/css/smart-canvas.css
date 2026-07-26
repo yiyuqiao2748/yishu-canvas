@@ -1380,3 +1380,177 @@ input[type=range].smart-range::-webkit-slider-thumb { -webkit-appearance:none; w
 .smart-group-summary i,.smart-group-summary svg { width:13px; height:13px; }
 .smart-group-empty { flex:1 1 auto; min-height:74px; display:flex; align-items:center; justify-content:center; gap:6px; color:var(--faint); font-size:10px; font-weight:700; text-align:center; border-radius:10px; border:1px dashed var(--line); background:var(--soft); }
 .smart-group-empty i,.smart-group-empty svg { width:14px; height:14px; }
+
+/* ===== AI designer / team workbench visual skin ===== */
+:root {
+    --page:#07080d;
+    --grid:rgba(255,255,255,.08);
+    --panel:rgba(20,15,18,.82);
+    --card:rgba(25,22,27,.9);
+    --text:#fff7ed;
+    --muted:#c4b3aa;
+    --faint:#87766f;
+    --line:rgba(255,123,92,.22);
+    --soft:rgba(255,255,255,.055);
+    --shadow:rgba(0,0,0,.38);
+    --strong:#ef4444;
+    --strong-text:#fff;
+}
+body,
+.shell {
+    background-color:#07080d;
+}
+.shell {
+    background-image:
+        linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px),
+        radial-gradient(circle at 18% 0%, rgba(220,38,38,.24), transparent 32%),
+        radial-gradient(circle at 84% 10%, rgba(20,83,45,.18), transparent 34%);
+    background-size:42px 42px, 42px 42px, auto, auto;
+}
+.smart-back {
+    left:96px;
+    top:14px;
+    height:40px;
+    border-radius:999px;
+    background:rgba(18,13,16,.78);
+    border-color:var(--line);
+    color:var(--text);
+    box-shadow:0 24px 72px rgba(0,0,0,.36);
+}
+.smart-back::after {
+    content:"AI 设计师";
+    height:24px;
+    margin-left:6px;
+    padding:0 10px;
+    border-radius:999px;
+    display:inline-flex;
+    align-items:center;
+    color:#fecaca;
+    background:rgba(220,38,38,.18);
+    border:1px solid rgba(248,113,113,.24);
+    font-size:11px;
+    font-weight:900;
+}
+.smart-title {
+    left:112px;
+    top:60px;
+    color:var(--muted);
+}
+.smart-toolbar-fixed {
+    left:auto !important;
+    right:22px !important;
+    top:18px !important;
+    border-radius:999px;
+    background:rgba(18,13,16,.78);
+    border-color:var(--line);
+    box-shadow:0 24px 72px rgba(0,0,0,.36);
+}
+.smart-log-toggle,
+.smart-history-toggle,
+.smart-shortcut-toggle,
+.smart-workflow-toggle,
+.asset-toggle {
+    color:var(--muted);
+}
+.smart-log-toggle:hover,
+.smart-history-toggle:hover,
+.smart-shortcut-toggle:hover,
+.smart-workflow-toggle:hover,
+.asset-toggle:hover {
+    background:rgba(249,115,22,.14);
+    border-color:rgba(255,176,93,.38);
+    color:var(--text);
+}
+.smart-log-toggle.active,
+.smart-history-toggle.active,
+.smart-shortcut-toggle.active,
+.smart-workflow-toggle.active,
+.asset-toggle.active,
+.composer-run,
+.image-edit-btn.primary,
+.asset-dialog-btn.primary {
+    background:linear-gradient(135deg, #dc2626, #f97316);
+    border-color:rgba(255,211,141,.34);
+    color:#fff;
+    box-shadow:0 14px 34px rgba(220,38,38,.25);
+}
+.asset-panel,
+.smart-log-panel,
+.shortcut-panel,
+.workflow-panel,
+.asset-dialog,
+.image-edit-panel,
+.preview-modal-panel,
+.composer-card,
+.image-node.empty-node,
+.image-node.prompt-smart-node,
+.image-node.loop-smart-node {
+    background:rgba(18,13,16,.82);
+    border-color:var(--line);
+    box-shadow:0 24px 72px rgba(0,0,0,.36);
+}
+.asset-panel {
+    left:auto !important;
+    right:22px !important;
+    top:74px !important;
+    bottom:110px !important;
+    border-radius:24px;
+}
+.asset-tabs,
+.asset-source-select,
+.asset-category-select,
+.asset-item,
+.asset-drop-zone,
+.workflow-card,
+.node-control,
+.composer-input,
+.composer-select {
+    background:rgba(255,255,255,.055);
+    border-color:rgba(255,255,255,.09);
+    color:var(--text);
+}
+.asset-item:hover,
+.workflow-card:hover,
+.image-node.empty-node:hover,
+.image-node.prompt-smart-node:hover,
+.image-node.loop-smart-node:hover {
+    border-color:rgba(255,176,93,.38);
+    box-shadow:0 18px 48px rgba(0,0,0,.34);
+}
+.asset-tab.active,
+.asset-kind,
+.asset-local-tag,
+.image-resolution-badge {
+    background:rgba(220,38,38,.18);
+    border-color:rgba(248,113,113,.28);
+    color:#fecaca;
+}
+.asset-empty,
+.workflow-empty,
+.smart-group-empty {
+    background:rgba(255,255,255,.035);
+    border-color:rgba(255,176,93,.28);
+    color:var(--muted);
+}
+.toast {
+    background:linear-gradient(135deg, rgba(220,38,38,.96), rgba(249,115,22,.94));
+    border-color:rgba(255,211,141,.32);
+    color:#fff;
+}
+@media (max-width:900px) {
+    .smart-back {
+        left:14px;
+    }
+    .smart-title {
+        left:22px;
+    }
+    .smart-toolbar-fixed {
+        right:14px !important;
+        top:64px !important;
+    }
+    .asset-panel {
+        right:14px !important;
+        top:116px !important;
+    }
+}

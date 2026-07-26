@@ -233,6 +233,10 @@ function mapCloudProject(project, index = 0){
     };
 }
 
+function normalizeCloudCanvasKind(kind){
+    return String(kind || '').toLowerCase() === 'smart' ? 'smart' : 'classic';
+}
+
 function mapCloudCanvas(canvas){
     const data = canvas.data || {};
     return {
@@ -240,7 +244,7 @@ function mapCloudCanvas(canvas){
         id: canvas.id,
         title: canvas.title || L('未命名画布','Untitled canvas'),
         project: canvas.project_id,
-        kind: data.kind || 'smart',
+        kind: normalizeCloudCanvasKind(data.kind),
         icon: data.icon || 'sparkles',
         node_count: Array.isArray(data.nodes) ? data.nodes.length : 0,
         board_x: data.board_x,
@@ -713,6 +717,7 @@ async function createCanvasOnBoard(title, kind, worldPt){
         const nc = data.canvas;
         if(nc){
             if(nc.project == null) nc.project = currentProjectId;
+            nc.kind = normalizeCloudCanvasKind(nc.kind || (isSmart ? 'smart' : 'classic'));
             if(nc.board_x == null) nc.board_x = Math.round(worldPt.x);
             if(nc.board_y == null) nc.board_y = Math.round(worldPt.y);
             canvases.push(nc);

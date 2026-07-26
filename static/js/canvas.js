@@ -1,4 +1,4 @@
-function refreshIcons(){ if(window.lucide) lucide.createIcons(); }
+﻿function refreshIcons(){ if(window.lucide) lucide.createIcons(); }
 refreshIcons();
 function tr(key){ return window.StudioI18n ? StudioI18n.t(key) : key; }
 function trf(key, values={}){
@@ -66,7 +66,7 @@ function canvasPreviewImgHtml(url, size=512, attrs=''){
     const preview = canvasMediaPreviewUrl(original, size);
     // loading=lazy：画布内容多时，视口外的缩略图不加载/不解码，避免一次性解码上百张图卡顿；
     // decoding=async：解码放到主线程外，渲染时不阻塞。
-    return `<img loading="lazy" decoding="async" draggable="false" src="${escapeAttr(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" data-url="${escapeAttr(original)}"${attrs ? ` ${attrs}` : ''}>`;
+    return `<img loading="lazy" decoding="async" draggable="false" data-native-drag-guard="true" src="${escapeAttr(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" data-url="${escapeAttr(original)}"${attrs ? ` ${attrs}` : ''}>`;
 }
 function loadCanvasOriginalImageDimensions(url){
     const src = String(url || '');
@@ -81,7 +81,7 @@ function loadCanvasOriginalImageDimensions(url){
 function canvasVideoPreviewHtml(url, size=512, attrs=''){
     const original = canvasOriginalMediaUrl(url);
     const preview = canvasMediaPreviewUrl(original, size);
-    return `<img loading="lazy" decoding="async" draggable="false" src="${escapeAttr(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" data-url="${escapeAttr(original)}" data-preview-kind="video"${attrs ? ` ${attrs}` : ''}>`;
+    return `<img loading="lazy" decoding="async" draggable="false" data-native-drag-guard="true" src="${escapeAttr(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" data-url="${escapeAttr(original)}" data-preview-kind="video"${attrs ? ` ${attrs}` : ''}>`;
 }
 function canvasVideoFallbackHtml(url, attrs=''){
     const original = canvasOriginalMediaUrl(url);
@@ -6489,7 +6489,6 @@ function bindOutputWrap(wrap, node){
             setOutputDragPreview(e, img);
             e.dataTransfer.effectAllowed = 'copy';
             e.dataTransfer.setData('application/x-canvas-output-image', img.dataset.url);
-            e.dataTransfer.setData('text/uri-list', img.dataset.url);
         };
         img.ondragend = () => setTimeout(() => { delete img.dataset.dragging; }, 0);
         img.onclick = e => {
@@ -7117,6 +7116,7 @@ function renderCanvasAssetLibrary(){
         </div>
     `).join('') : `<div class="canvas-asset-empty">${escapeHtml(localMode ? '暂无本地素材，请在素材库管理中上传' : (teamMode ? '暂无团队素材，可以拖入文件上传' : '当前分组还没有资产'))}</div>`;
     bindCanvasPreviewImageFallbacks(canvasAssetGrid);
+    bindAssetItemDragGuard(canvasAssetGrid, '.canvas-asset-item', card => ({url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || ''}));
     canvasAssetGrid.querySelectorAll('.canvas-asset-item').forEach(card => {
         card.addEventListener('dragstart', event => {
             event.stopPropagation();
@@ -13217,6 +13217,27 @@ function setCanvasAssetDragData(dataTransfer, item){
     dataTransfer.clearData();
     dataTransfer.setData('application/x-canvas-asset', JSON.stringify(payload));
     dataTransfer.setData('text/plain', payload.name || 'asset');
+}
+function bindAssetItemDragGuard(root, selector, readPayload){
+    if(!root || root.dataset.assetDragGuardBound === '1') return;
+    root.dataset.assetDragGuardBound = '1';
+    root.addEventListener('dragstart', event => {
+        const card = event.target?.closest?.(selector);
+        if(!card || !root.contains(card)) return;
+        if(event.target?.closest?.('button,input,select,textarea,a')) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+            return;
+        }
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        setCanvasAssetDragData(event.dataTransfer, readPayload(card, event));
+    }, true);
+    root.addEventListener('mousedown', event => {
+        const guarded = event.target?.closest?.('[data-native-drag-guard="true"]');
+        if(guarded) guarded.draggable = false;
+    }, true);
 }
 async function uploadDropToActiveTeamAssets(dataTransfer){
     if(!canvasAssetLibraryIsTeam()) return false;

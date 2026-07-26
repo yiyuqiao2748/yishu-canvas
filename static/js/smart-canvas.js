@@ -1,4 +1,4 @@
-const params = new URLSearchParams(location.search);
+﻿const params = new URLSearchParams(location.search);
 const canvasId = params.get('id') || '';
 const sourceProjectId = params.get('project') || '';
 const CANVAS_LIST_PROJECT_KEY = 'canvasListCurrentProjectId';
@@ -5663,6 +5663,7 @@ function renderAssetLibrary(){
     if(workflowMode) bindWorkflowAssetItemEvents();
     else bindAssetItemEvents();
     bindSmartPreviewImageFallbacks(assetGrid);
+    bindAssetItemDragGuard(assetGrid, '.asset-item', card => ({url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || ''}));
     refreshIcons();
 }
 function openAssetNameDialog({title='', value='', placeholder='', cancelValue='', multiline=false }={}){
@@ -12522,6 +12523,27 @@ function setSmartAssetDragData(dataTransfer, item){
     dataTransfer.setData('application/x-smart-asset', JSON.stringify(payload));
     dataTransfer.setData('text/plain', payload.name || 'asset');
 }
+function bindAssetItemDragGuard(root, selector, readPayload){
+    if(!root || root.dataset.assetDragGuardBound === '1') return;
+    root.dataset.assetDragGuardBound = '1';
+    root.addEventListener('dragstart', event => {
+        const card = event.target?.closest?.(selector);
+        if(!card || !root.contains(card)) return;
+        if(event.target?.closest?.('button,input,select,textarea,a')) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+            return;
+        }
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        setSmartAssetDragData(event.dataTransfer, readPayload(card, event));
+    }, true);
+    root.addEventListener('mousedown', event => {
+        const guarded = event.target?.closest?.('[data-native-drag-guard="true"]');
+        if(guarded) guarded.draggable = false;
+    }, true);
+}
 function hasMediaDrawerDrag(dataTransfer){
     return smartDropDataTypes(dataTransfer).includes('application/x-smart-asset');
 }
@@ -16909,12 +16931,12 @@ window.addEventListener('dragover', event => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'copy';
     }
-});
+}, {capture:true});
 window.addEventListener('drop', event => {
     if(hasSmartAssetDrag(event.dataTransfer) || hasSmartImageDropData(event.dataTransfer)){
         event.preventDefault();
     }
-});
+}, {capture:true});
 engineSelect.onchange = () => {
     settings.engine = engineSelect.value;
     applyRecentSmartSettingsForCurrentMode();

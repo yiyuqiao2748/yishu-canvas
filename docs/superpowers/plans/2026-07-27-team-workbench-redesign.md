@@ -105,8 +105,10 @@
 **Deliverable:** Current behavior is measured before redesign.
 
 - [ ] Record current Git status and current commit hash.
+- [x] Run targeted team-cloud static regression tests for canvas type and asset drag behavior.
+- [x] Run syntax checks for `static/js/canvas-list.js`, `static/js/canvas.js`, `static/js/smart-canvas.js`, `static/js/team-cloud.js`.
 - [ ] Run `.venv\Scripts\python.exe -m unittest discover -s tests`.
-- [ ] Run syntax checks for `static/js/canvas.js`, `static/js/smart-canvas.js`, `static/js/team-cloud.js`, `static/js/team-assets.js`.
+- [ ] Run final syntax checks for all changed JS files before commit.
 - [ ] Capture screenshots of current home, classic canvas, smart canvas, asset manager, team page.
 - [ ] Remove or ignore `.codex-speedtest-current/` before committing.
 
@@ -263,11 +265,11 @@
 
 - [ ] Create shared top bar component logic.
 - [ ] Align history/workflow/assets/log controls to top-right.
-- [ ] Move smart canvas history out of top-left disorder state.
+- [x] Move smart canvas history/assets/log controls into a top-right layout override.
 - [ ] Create left vertical tool rail for select/text/image/crop/delete where supported.
 - [ ] Keep existing canvas engine and node data model.
 - [ ] Ensure text does not overflow fixed buttons.
-- [ ] Ensure light/dark mode toggles affect team canvas pages consistently.
+- [x] Ensure light/dark mode toggles affect team canvas pages consistently through shared dark workbench CSS overrides.
 
 **Acceptance:**
 
@@ -384,7 +386,7 @@
 - [ ] Verify original opens only on detail/download.
 - [ ] Verify public URL no longer loads 20MB originals in list view.
 - [ ] Push to GitHub.
-- [ ] Sync NAS deployment.
+- [ ] Sync NAS deployment while preserving `.env`.
 - [ ] Rebuild/restart Docker compose.
 - [ ] Verify `https://canvas.yiyuqiaoai.uk/`.
 
@@ -401,17 +403,17 @@
 
 | Milestone | Status | Notes |
 | --- | --- | --- |
-| 0 Safety Baseline | Not started | Start before code changes |
+| 0 Safety Baseline | In progress | Targeted tests and JS syntax checks completed; full test run pending |
 | 1 Role-Aware Team Entry | Not started | Needed before hiding API for members |
 | 2 Private-By-Default Data Model | Not started | Blocks privacy requirements |
 | 3 NAS-Local Media Lifecycle | Not started | Blocks fast media display |
 | 4 Async Save UX | Not started | Prevents NAS save latency from blocking canvas |
-| 5 Workbench Home Redesign | Not started | Main visual change |
-| 6 Canvas Shell Redesign | Not started | Align classic and smart canvas |
+| 5 Workbench Home Redesign | In progress | Project list and main sidebar now use AI designer workbench direction |
+| 6 Canvas Shell Redesign | In progress | Classic and smart canvas have matching dark shell and right-panel overrides |
 | 7 Right-Side Generation Panel | Not started | Main generation workflow |
 | 8 Team API Model Manager | Not started | Admin-only API management |
 | 9 115 Cold Archive And Cleanup | Not started | Storage protection |
-| 10 Deployment And Verification | Not started | Final acceptance |
+| 10 Deployment And Verification | In progress | GitHub/NAS handoff planned for this pass |
 
 ---
 

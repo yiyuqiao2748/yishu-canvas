@@ -597,6 +597,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("window.addEventListener('dragover'", script)
         self.assertIn("window.addEventListener('drop'", script)
         self.assertIn("hasSmartAssetDrag(event.dataTransfer)", script)
+        self.assertIn("bindAssetItemDragGuard(assetGrid, '.asset-item'", script)
+        self.assertIn("window.addEventListener('drop', event => {", script)
+        self.assertIn("}, {capture:true});", script)
 
     def test_canvas_asset_drag_uses_safe_text_payload(self):
         root = Path(__file__).resolve().parents[1]
@@ -607,6 +610,23 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("application/x-canvas-asset", script)
         self.assertIn("text/plain", script)
         self.assertIn("hasCanvasAssetDrag(event.dataTransfer)", script)
+        self.assertIn("bindAssetItemDragGuard(canvasAssetGrid, '.canvas-asset-item'", script)
+
+    def test_cloud_canvas_kind_is_per_canvas_and_defaults_classic(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "canvas-list.js").read_text(encoding="utf-8")
+
+        self.assertIn("function normalizeCloudCanvasKind", script)
+        self.assertIn("kind: normalizeCloudCanvasKind(data.kind)", script)
+        self.assertNotIn("kind: data.kind || 'smart'", script)
+
+    def test_asset_preview_images_do_not_start_native_url_drag(self):
+        root = Path(__file__).resolve().parents[1]
+        canvas_script = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+        smart_script = (root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn('data-native-drag-guard="true"', canvas_script)
+        self.assertIn('data-native-drag-guard="true"', smart_script)
 
 
 if __name__ == "__main__":
