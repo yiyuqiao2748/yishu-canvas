@@ -7,7 +7,7 @@ from fastapi import HTTPException, Response
 from unittest.mock import AsyncMock, patch
 
 import team_cloud
-from team_cloud import AuthPasswordUpdateRequest, CanvasSaveRequest, CurrentUser, LocalTeamStore, TeamApiProviderSaveRequest, current_user_from_supabase_payload
+from team_cloud import AuthPasswordUpdateRequest, CanvasSaveRequest, CurrentUser, LocalTeamStore, TeamApiProviderModelsRequest, TeamApiProviderSaveRequest, current_user_from_supabase_payload
 
 
 class TeamCloudStoreTests(unittest.TestCase):
@@ -318,6 +318,45 @@ class TeamCloudStoreTests(unittest.TestCase):
             self.assertEqual(updated["label"], "OpenAI Team")
             self.assertEqual(self.store.list_api_providers(self.owner, team["id"])[0]["api_key_preview"], "********cret")
 
+    def test_team_api_provider_saves_manual_model_lists(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+
+        with patch.object(team_cloud.settings, "team_api_secret_key", "test-secret"):
+            provider = self.store.upsert_api_provider(
+                self.owner,
+                team["id"],
+                "openai",
+                TeamApiProviderSaveRequest(
+                    label="OpenAI",
+                    base_url="https://api.example.com/v1",
+                    protocol="openai",
+                    api_key="sk-test-secret",
+                    image_models=["gpt-image-1", " gpt-image-1 ", ""],
+                    chat_models=["gpt-4o", "claude-proxy"],
+                    video_models=["wan-video"],
+                ),
+            )
+
+        self.assertEqual(provider["image_models"], ["gpt-image-1"])
+        self.assertEqual(provider["chat_models"], ["gpt-4o", "claude-proxy"])
+        self.assertEqual(provider["video_models"], ["wan-video"])
+
+    def test_parse_openai_models_splits_known_model_types(self):
+        payload = {
+            "data": [
+                {"id": "gpt-image-1"},
+                {"id": "gpt-4o"},
+                {"id": "wan-video"},
+                {"id": ""},
+            ]
+        }
+
+        models = team_cloud.openai_models_from_response(payload)
+
+        self.assertEqual(models["image_models"], ["gpt-image-1"])
+        self.assertEqual(models["chat_models"], ["gpt-4o"])
+        self.assertEqual(models["video_models"], ["wan-video"])
+
     def test_team_api_provider_management_requires_admin(self):
         team = self.store.create_team(self.owner, "Design Lab")
         member = CurrentUser(id="member-1", email="member@example.com", provider="test")
@@ -407,6 +446,16 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
             email = await team_cloud.resolve_auth_identifier_email("YiWei")
 
         self.assertEqual(email, "yiwei@example.com")
+
+    async def test_team_api_model_fetch_requires_key(self):
+        with self.assertRaises(HTTPException) as error:
+            await team_cloud.fetch_team_api_models_from_config({
+                "base_url": "https://api.example.com/v1",
+                "protocol": "openai",
+                "api_key": "",
+            })
+
+        self.assertEqual(error.exception.status_code, 400)
 
     async def test_cloudflare_access_disabled_does_not_accept_header(self):
         with patch.object(team_cloud.settings, "cloudflare_access_enabled", False), \

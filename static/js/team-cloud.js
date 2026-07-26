@@ -134,8 +134,8 @@
         $("inviteForm").querySelectorAll("input,select,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
         $("projectForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
         $("canvasForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedProjectId);
-        $("apiProviderForm").querySelectorAll("input,select,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
-        ["apiProviderAdd", "apiProviderRecommend", "apiProviderDelete", "apiProviderSubmit", "apiProviderClearKey"].forEach((id) => {
+        $("apiProviderForm").querySelectorAll("input,select,textarea,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
+        ["apiProviderAdd", "apiProviderRecommend", "apiProviderDelete", "apiProviderSubmit", "apiProviderClearKey", "apiProviderValidate", "apiProviderFetchModels"].forEach((id) => {
             const item = $(id);
             if(item) item.disabled = !signedIn || !state.selectedTeamId;
         });
@@ -427,14 +427,44 @@
         if($("apiProviderKeyHint")) $("apiProviderKeyHint").textContent = provider?.has_api_key ? `已保存 ${provider.api_key_preview || ""}` : "还没有保存 Key。";
         if($("apiProviderWalletHint")) $("apiProviderWalletHint").textContent = provider?.has_wallet_api_key ? `已保存 ${provider.wallet_api_key_preview || ""}` : "可选。";
         if($("apiProviderDelete")) $("apiProviderDelete").disabled = !signedIn || !provider || !state.apiProviders.some((item) => item.provider_id === provider.provider_id);
+        setModelTextarea("apiImageModels", teamApiModels(provider, "image_models", false));
+        setModelTextarea("apiChatModels", teamApiModels(provider, "chat_models", false));
+        setModelTextarea("apiVideoModels", teamApiModels(provider, "video_models", false));
         renderTeamApiModelLists(provider);
     }
 
     function renderTeamApiModelLists(provider){
+        renderModelChips("apiImageModelList", teamApiModels(provider, "image_models", true));
+        renderModelChips("apiChatModelList", teamApiModels(provider, "chat_models", true));
+        renderModelChips("apiVideoModelList", teamApiModels(provider, "video_models", true));
+    }
+
+    function teamApiModels(provider, key, includeCatalogFallback){
+        const saved = normalizeModelLines(provider?.[key]);
+        if(saved.length || !includeCatalogFallback) return saved;
         const catalog = (state.apiCatalogProviders || []).find((item) => item.id === provider?.provider_id) || {};
-        renderModelChips("apiImageModelList", catalog.image_models || []);
-        renderModelChips("apiChatModelList", catalog.chat_models || []);
-        renderModelChips("apiVideoModelList", catalog.video_models || []);
+        return normalizeModelLines(catalog[key]);
+    }
+
+    function normalizeModelLines(values){
+        const source = Array.isArray(values) ? values : String(values || "").split(/\r?\n/);
+        const seen = new Set();
+        return source.map((item) => String(item || "").trim()).filter((item) => {
+            if(!item || seen.has(item)) return false;
+            seen.add(item);
+            return true;
+        });
+    }
+
+    function setModelTextarea(id, models){
+        const el = $(id);
+        if(!el) return;
+        el.value = normalizeModelLines(models).join("\n");
+    }
+
+    function modelTextareaLines(id){
+        const el = $(id);
+        return normalizeModelLines(el ? el.value : "");
     }
 
     function renderModelChips(id, models){
@@ -902,6 +932,21 @@
         }
     }
 
+    function currentApiProviderPayload(){
+        return {
+            label: $("apiProviderLabel").value.trim(),
+            base_url: $("apiProviderBaseUrl").value.trim(),
+            protocol: $("apiProviderProtocol").value,
+            enabled: true,
+            api_key: $("apiProviderKey").value,
+            wallet_api_key: $("apiProviderWalletKey").value,
+            clear_api_key: $("apiProviderKey").dataset.clearKey === "1",
+            image_models: modelTextareaLines("apiImageModels"),
+            chat_models: modelTextareaLines("apiChatModels"),
+            video_models: modelTextareaLines("apiVideoModels"),
+        };
+    }
+
     async function submitApiProvider(event){
         event.preventDefault();
         if(!state.selectedTeamId) return;
@@ -916,15 +961,7 @@
         try {
             const data = await api(`/teams/${encodeURIComponent(state.selectedTeamId)}/api-providers/${encodeURIComponent(providerId)}`, {
                 method: "PUT",
-                body: JSON.stringify({
-                    label: $("apiProviderLabel").value.trim(),
-                    base_url: $("apiProviderBaseUrl").value.trim(),
-                    protocol: $("apiProviderProtocol").value,
-                    enabled: true,
-                    api_key: $("apiProviderKey").value,
-                    wallet_api_key: $("apiProviderWalletKey").value,
-                    clear_api_key: $("apiProviderKey").dataset.clearKey === "1",
-                }),
+                body: JSON.stringify(currentApiProviderPayload()),
             });
             $("apiProviderKey").value = "";
             $("apiProviderKey").dataset.clearKey = "";
@@ -935,6 +972,59 @@
             state.selectedApiProviderId = data.provider.provider_id;
             renderApiProviders();
             setMessage($("apiMessage"), "\u56e2\u961f API \u5df2\u4fdd\u5b58\uff0c\u6210\u5458\u53ea\u80fd\u770b\u5230\u5bc6\u94a5\u72b6\u6001\u3002", "ok");
+        } catch(e) {
+            setMessage($("apiMessage"), e.message, "error");
+        } finally {
+            setBusy(button, false);
+        }
+    }
+
+    async function validateApiProvider(){
+        if(!state.selectedTeamId) return;
+        const providerId = ($("apiProviderId").value || state.selectedApiProviderId || "").trim();
+        if(!providerId){
+            setMessage($("apiMessage"), "请先选择或新增一个平台。", "error");
+            return;
+        }
+        const button = $("apiProviderValidate");
+        setBusy(button, true);
+        setMessage($("apiMessage"), "", "");
+        try {
+            const data = await api(`/teams/${encodeURIComponent(state.selectedTeamId)}/api-providers/${encodeURIComponent(providerId)}/validate`, {
+                method: "POST",
+                body: JSON.stringify(currentApiProviderPayload()),
+            });
+            setMessage($("apiMessage"), `验证成功，检测到 ${data.model_count || 0} 个模型。`, "ok");
+        } catch(e) {
+            setMessage($("apiMessage"), e.message, "error");
+        } finally {
+            setBusy(button, false);
+        }
+    }
+
+    async function fetchApiProviderModels(){
+        if(!state.selectedTeamId) return;
+        const providerId = ($("apiProviderId").value || state.selectedApiProviderId || "").trim();
+        if(!providerId){
+            setMessage($("apiMessage"), "请先选择或新增一个平台。", "error");
+            return;
+        }
+        const button = $("apiProviderFetchModels");
+        setBusy(button, true);
+        setMessage($("apiMessage"), "", "");
+        try {
+            const data = await api(`/teams/${encodeURIComponent(state.selectedTeamId)}/api-providers/${encodeURIComponent(providerId)}/models`, {
+                method: "POST",
+                body: JSON.stringify(currentApiProviderPayload()),
+            });
+            const models = data.models || {};
+            setModelTextarea("apiImageModels", models.image_models || []);
+            setModelTextarea("apiChatModels", models.chat_models || []);
+            setModelTextarea("apiVideoModels", models.video_models || []);
+            renderModelChips("apiImageModelList", modelTextareaLines("apiImageModels"));
+            renderModelChips("apiChatModelList", modelTextareaLines("apiChatModels"));
+            renderModelChips("apiVideoModelList", modelTextareaLines("apiVideoModels"));
+            setMessage($("apiMessage"), `已拉取 ${data.model_count || 0} 个模型，请确认后点击保存。`, "ok");
         } catch(e) {
             setMessage($("apiMessage"), e.message, "error");
         } finally {
@@ -1110,7 +1200,16 @@
         $("apiProviderAdd").addEventListener("click", addApiProvider);
         $("apiProviderRecommend").addEventListener("click", applyRecommendedApi);
         $("apiProviderDelete").addEventListener("click", () => deleteApiProvider(state.selectedApiProviderId));
+        $("apiProviderValidate").addEventListener("click", validateApiProvider);
+        $("apiProviderFetchModels").addEventListener("click", fetchApiProviderModels);
         $("apiProviderClearKey").addEventListener("click", markApiKeyForClear);
+        [
+            ["apiImageModels", "apiImageModelList"],
+            ["apiChatModels", "apiChatModelList"],
+            ["apiVideoModels", "apiVideoModelList"],
+        ].forEach(([inputId, listId]) => {
+            $(inputId).addEventListener("input", () => renderModelChips(listId, modelTextareaLines(inputId)));
+        });
         $("apiProviderList").addEventListener("click", (event) => {
             const selected = event.target.closest("[data-api-select]");
             if(selected) selectApiProvider(selected.dataset.apiSelect);

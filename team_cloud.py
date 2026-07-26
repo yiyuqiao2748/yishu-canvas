@@ -125,6 +125,17 @@ class TeamApiProviderSaveRequest(BaseModel):
     wallet_api_key: str = Field("", max_length=4096)
     clear_api_key: bool = False
     clear_wallet_api_key: bool = False
+    image_models: List[str] = Field(default_factory=list)
+    chat_models: List[str] = Field(default_factory=list)
+    video_models: List[str] = Field(default_factory=list)
+
+
+class TeamApiProviderModelsRequest(BaseModel):
+    label: str = Field("API", max_length=80)
+    base_url: str = Field("", max_length=500)
+    protocol: str = Field("openai", max_length=40)
+    api_key: str = Field("", max_length=4096)
+    wallet_api_key: str = Field("", max_length=4096)
 
 
 def now_ms() -> int:
@@ -512,6 +523,43 @@ def normalize_team_api_protocol(value: str) -> str:
     return protocol
 
 
+def normalize_model_list(values: Any, limit: int = 200) -> List[str]:
+    result: List[str] = []
+    seen = set()
+    if not isinstance(values, list):
+        return result
+    for value in values:
+        model = str(value or "").strip()
+        if not model or model in seen:
+            continue
+        seen.add(model)
+        result.append(model)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def classify_openai_model(model: str) -> str:
+    value = model.lower()
+    if any(term in value for term in ("image", "dall-e", "flux", "sdxl", "stable-diffusion", "jimeng", "seedream")):
+        return "image_models"
+    if any(term in value for term in ("video", "sora", "wan", "kling", "hailuo", "minimax")):
+        return "video_models"
+    return "chat_models"
+
+
+def openai_models_from_response(payload: Dict[str, Any]) -> Dict[str, List[str]]:
+    models = {"image_models": [], "chat_models": [], "video_models": []}
+    for item in payload.get("data") or []:
+        model = str((item or {}).get("id") if isinstance(item, dict) else item).strip()
+        if not model:
+            continue
+        bucket = classify_openai_model(model)
+        if model not in models[bucket]:
+            models[bucket].append(model)
+    return models
+
+
 def require_api_admin(member: Dict[str, Any]) -> None:
     if member.get("role") not in {"owner", "admin"}:
         raise HTTPException(status_code=403, detail="Only team owners and admins can manage API keys")
@@ -599,6 +647,53 @@ def team_api_config_from_payload(payload: TeamApiProviderSaveRequest, current: D
         "enabled": bool(payload.enabled),
         "api_key": api_key,
         "wallet_api_key": wallet_api_key,
+        "image_models": normalize_model_list(payload.image_models),
+        "chat_models": normalize_model_list(payload.chat_models),
+        "video_models": normalize_model_list(payload.video_models),
+    }
+
+
+def team_api_models_config_from_payload(payload: TeamApiProviderModelsRequest, current: Dict[str, Any] = None) -> Dict[str, Any]:
+    current = current or {}
+    return {
+        "base_url": normalize_team_api_base_url(payload.base_url or current.get("base_url") or ""),
+        "protocol": normalize_team_api_protocol(payload.protocol or current.get("protocol") or "openai"),
+        "api_key": payload.api_key.strip() or str(current.get("api_key") or ""),
+        "wallet_api_key": payload.wallet_api_key.strip() or str(current.get("wallet_api_key") or ""),
+    }
+
+
+async def fetch_team_api_models_from_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    protocol = normalize_team_api_protocol(config.get("protocol") or "openai")
+    if protocol != "openai":
+        raise HTTPException(status_code=400, detail="当前只支持 OpenAI 兼容协议自动拉取模型")
+    base_url = normalize_team_api_base_url(config.get("base_url") or "")
+    if not base_url:
+        raise HTTPException(status_code=400, detail="请先填写请求地址")
+    api_key = str(config.get("api_key") or "").strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="请先填写 API Key")
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(
+                f"{base_url}/models",
+                headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"模型接口请求失败：{exc}") from exc
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"模型接口验证失败：HTTP {response.status_code} {response.text[:200]}")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="模型接口返回的不是 JSON") from exc
+
+    models = openai_models_from_response(payload if isinstance(payload, dict) else {})
+    return {
+        "ok": True,
+        "model_count": sum(len(items) for items in models.values()),
+        "models": models,
     }
 
 
@@ -618,6 +713,9 @@ def public_team_api_provider(record: Dict[str, Any]) -> Dict[str, Any]:
         "api_key_preview": mask_team_secret(api_key),
         "has_wallet_api_key": bool(wallet_api_key),
         "wallet_api_key_preview": mask_team_secret(wallet_api_key),
+        "image_models": normalize_model_list(config.get("image_models")),
+        "chat_models": normalize_model_list(config.get("chat_models")),
+        "video_models": normalize_model_list(config.get("video_models")),
         "created_by": record.get("created_by") or "",
         "updated_by": record.get("updated_by") or "",
         "created_at": record.get("created_at"),
@@ -1021,6 +1119,13 @@ class LocalTeamStore:
                 if record.get("team_id") == team_id
             ]
             return sorted(providers, key=lambda item: item.get("provider_id") or "")
+
+    def require_api_admin_member(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            member = self._require_member(data, user.id, team_id)
+            require_api_admin(member)
+            return member
 
     def upsert_api_provider(self, user: CurrentUser, team_id: str, provider_id: str, payload: TeamApiProviderSaveRequest) -> Dict[str, Any]:
         provider_id = normalize_provider_id(provider_id)
@@ -1518,6 +1623,11 @@ class SupabaseTeamStore:
         await self._require_member(user.id, team_id)
         rows = await self._request("GET", f"/api_providers?team_id=eq.{team_id}&order=provider_id.asc&select=*")
         return [public_team_api_provider(row) for row in rows or []]
+
+    async def require_api_admin_member(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
+        member = await self._require_member(user.id, team_id)
+        require_api_admin(member)
+        return member
 
     async def upsert_api_provider(self, user: CurrentUser, team_id: str, provider_id: str, payload: TeamApiProviderSaveRequest) -> Dict[str, Any]:
         provider_id = normalize_provider_id(provider_id)
@@ -2021,6 +2131,22 @@ async def list_team_api_providers(team_id: str, user: CurrentUser = Depends(requ
     return {"providers": providers}
 
 
+async def team_api_provider_models_config(
+    user: CurrentUser,
+    team_id: str,
+    provider_id: str,
+    payload: TeamApiProviderModelsRequest,
+) -> Dict[str, Any]:
+    await maybe_await(active_store().require_api_admin_member(user, team_id))
+    current: Dict[str, Any] = {}
+    try:
+        current = await maybe_await(active_store().get_api_provider_config(user, team_id, provider_id))
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+    return team_api_models_config_from_payload(payload, current)
+
+
 @router.put("/teams/{team_id}/api-providers/{provider_id}")
 async def save_team_api_provider(
     team_id: str,
@@ -2030,6 +2156,29 @@ async def save_team_api_provider(
 ) -> Dict[str, Any]:
     provider = await maybe_await(active_store().upsert_api_provider(user, team_id, provider_id, payload))
     return {"provider": provider}
+
+
+@router.post("/teams/{team_id}/api-providers/{provider_id}/validate")
+async def validate_team_api_provider(
+    team_id: str,
+    provider_id: str,
+    payload: TeamApiProviderModelsRequest,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    config = await team_api_provider_models_config(user, team_id, provider_id, payload)
+    result = await fetch_team_api_models_from_config(config)
+    return {"ok": True, "model_count": result["model_count"]}
+
+
+@router.post("/teams/{team_id}/api-providers/{provider_id}/models")
+async def fetch_team_api_provider_models(
+    team_id: str,
+    provider_id: str,
+    payload: TeamApiProviderModelsRequest,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    config = await team_api_provider_models_config(user, team_id, provider_id, payload)
+    return await fetch_team_api_models_from_config(config)
 
 
 @router.delete("/teams/{team_id}/api-providers/{provider_id}")
