@@ -66,7 +66,7 @@ function canvasPreviewImgHtml(url, size=512, attrs=''){
     const preview = canvasMediaPreviewUrl(original, size);
     // loading=lazy：画布内容多时，视口外的缩略图不加载/不解码，避免一次性解码上百张图卡顿；
     // decoding=async：解码放到主线程外，渲染时不阻塞。
-    return `<img loading="lazy" decoding="async" src="${escapeAttr(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" data-url="${escapeAttr(original)}"${attrs ? ` ${attrs}` : ''}>`;
+    return `<img loading="lazy" decoding="async" draggable="false" src="${escapeAttr(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" data-url="${escapeAttr(original)}"${attrs ? ` ${attrs}` : ''}>`;
 }
 function loadCanvasOriginalImageDimensions(url){
     const src = String(url || '');
@@ -81,7 +81,7 @@ function loadCanvasOriginalImageDimensions(url){
 function canvasVideoPreviewHtml(url, size=512, attrs=''){
     const original = canvasOriginalMediaUrl(url);
     const preview = canvasMediaPreviewUrl(original, size);
-    return `<img loading="lazy" decoding="async" src="${escapeAttr(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" data-url="${escapeAttr(original)}" data-preview-kind="video"${attrs ? ` ${attrs}` : ''}>`;
+    return `<img loading="lazy" decoding="async" draggable="false" src="${escapeAttr(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" data-url="${escapeAttr(original)}" data-preview-kind="video"${attrs ? ` ${attrs}` : ''}>`;
 }
 function canvasVideoFallbackHtml(url, attrs=''){
     const original = canvasOriginalMediaUrl(url);
@@ -13204,6 +13204,26 @@ workflowTransferModal?.addEventListener('drop', event => {
 function hasCanvasAssetSaveDrop(dataTransfer){
     return hasOutputImageDrag(dataTransfer) || hasImageDropData(dataTransfer);
 }
+function hasCanvasAssetDrag(dataTransfer){
+    return [...(dataTransfer?.types || [])].includes('application/x-canvas-asset');
+}
+async function uploadDropToActiveTeamAssets(dataTransfer){
+    if(!canvasAssetLibraryIsTeam()) return false;
+    if(hasOutputImageDrag(dataTransfer)){
+        await uploadUrlsToTeamCanvasAssets([{url:dataTransfer.getData('application/x-canvas-output-image'), name:'output'}]);
+        return true;
+    }
+    const payload = await resolveImageDropPayload(dataTransfer);
+    if(payload.type === 'files') {
+        await uploadFilesToTeamCanvasAssets(payload.files);
+        return true;
+    }
+    if(payload.type === 'url') {
+        await uploadUrlsToTeamCanvasAssets([{url:payload.url, name:outputImageName(payload.url)}]);
+        return true;
+    }
+    throw new Error('团队素材只支持文件或图片地址');
+}
 canvasAssetDropZone?.addEventListener('dragover', event => {
     if(!hasCanvasAssetSaveDrop(event.dataTransfer)) return;
     event.preventDefault();
@@ -13217,17 +13237,7 @@ canvasAssetDropZone?.addEventListener('drop', async event => {
     event.stopPropagation();
     canvasAssetDropZone.classList.remove('drag-over');
     try {
-        if(canvasAssetLibraryIsTeam()){
-            if(hasOutputImageDrag(event.dataTransfer)){
-                await uploadUrlsToTeamCanvasAssets([{url:event.dataTransfer.getData('application/x-canvas-output-image'), name:'output'}]);
-                return;
-            }
-            const payload = await resolveImageDropPayload(event.dataTransfer);
-            if(payload.type === 'files') await uploadFilesToTeamCanvasAssets(payload.files);
-            else if(payload.type === 'url') await uploadUrlsToTeamCanvasAssets([{url:payload.url, name:outputImageName(payload.url)}]);
-            else throw new Error('团队素材只支持文件或图片地址');
-            return;
-        }
+        if(await uploadDropToActiveTeamAssets(event.dataTransfer)) return;
         if(hasOutputImageDrag(event.dataTransfer)){
             await addUrlToCanvasAssetLibrary(event.dataTransfer.getData('application/x-canvas-output-image'), 'output');
             return;
@@ -14967,8 +14977,9 @@ board.addEventListener('dragover', e => {
         dropOverlay.classList.remove('active');
         return;
     }
-    if(hasImageDropData(e.dataTransfer) || hasOutputImageDrag(e.dataTransfer)){
+    if(hasCanvasAssetDrag(e.dataTransfer) || hasImageDropData(e.dataTransfer) || hasOutputImageDrag(e.dataTransfer)){
         e.preventDefault();
+        e.stopPropagation();
         e.dataTransfer.dropEffect = 'copy';
         dropOverlay.classList.add('active');
     }
@@ -14978,8 +14989,16 @@ board.addEventListener('dragleave', e => {
 });
 board.addEventListener('drop', async e => {
     e.preventDefault();
+    e.stopPropagation();
     dropOverlay.classList.remove('active');
     if(e.target.closest?.('.image-node')) return;
+    try {
+        if(!hasCanvasAssetDrag(e.dataTransfer) && await uploadDropToActiveTeamAssets(e.dataTransfer)) return;
+    } catch(err) {
+        setStatus('Ready');
+        showErrorModal(err.message || '团队素材上传失败', '团队素材上传失败');
+        return;
+    }
     if(hasOutputImageDrag(e.dataTransfer)) {
         createImageCardFromOutput(e.dataTransfer.getData('application/x-canvas-output-image'), screenToWorld(e.clientX, e.clientY));
         return;
@@ -15007,8 +15026,19 @@ board.addEventListener('drop', async e => {
         showErrorModal(err.message || (langIsEn() ? 'Image import failed' : '导入图片失败'), langIsEn() ? 'Image import failed' : '导入图片失败');
     }
 });
+window.addEventListener('dragover', event => {
+    if(hasCanvasAssetDrag(event.dataTransfer) || hasImageDropData(event.dataTransfer) || hasOutputImageDrag(event.dataTransfer)){
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+    }
+}, {capture:true});
 window.addEventListener('dragend', () => dropOverlay.classList.remove('active'));
-window.addEventListener('drop', () => dropOverlay.classList.remove('active'));
+window.addEventListener('drop', event => {
+    if(hasCanvasAssetDrag(event.dataTransfer) || hasImageDropData(event.dataTransfer) || hasOutputImageDrag(event.dataTransfer)){
+        event.preventDefault();
+    }
+    dropOverlay.classList.remove('active');
+}, {capture:true});
 window.addEventListener('paste', e => {
     if(!canvas) return;
     const files = [...(e.clipboardData?.items || [])].filter(x => x.kind === 'file' && /^(image|video|audio)\//.test(String(x.type || ''))).map(x => x.getAsFile());
