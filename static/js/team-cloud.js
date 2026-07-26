@@ -12,14 +12,23 @@
         projects: [],
         canvases: [],
         apiProviders: [],
+        apiCatalogProviders: [],
         generationLogs: [],
         generationSummary: null,
         selectedTeamId: "",
         selectedProjectId: "",
         selectedCanvasId: "",
+        selectedApiProviderId: "",
         canvasVersions: [],
         config: null,
     };
+
+    const TEAM_API_PROVIDER_PRESETS = [
+        { provider_id: "modelscope", label: "ModelScope", protocol: "openai", base_url: "https://api-inference.modelscope.cn/v1" },
+        { provider_id: "runninghub", label: "RunningHub", protocol: "runninghub", base_url: "https://www.runninghub.cn" },
+        { provider_id: "volcengine", label: "火山引擎", protocol: "volcengine", base_url: "https://ark.cn-beijing.volces.com/api/v3" },
+        { provider_id: "openai", label: "API", protocol: "openai", base_url: "" },
+    ];
 
     function iconRefresh(){
         if(window.lucide && typeof window.lucide.createIcons === "function"){
@@ -122,6 +131,10 @@
         $("projectForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
         $("canvasForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedProjectId);
         $("apiProviderForm").querySelectorAll("input,select,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
+        ["apiProviderAdd", "apiProviderRecommend", "apiProviderDelete", "apiProviderSubmit", "apiProviderClearKey"].forEach((id) => {
+            const item = $(id);
+            if(item) item.disabled = !signedIn || !state.selectedTeamId;
+        });
 
         if(signedIn){
             $("userLine").textContent = state.user.email || state.user.id;
@@ -330,37 +343,142 @@
     function renderApiProviders(){
         const list = $("apiProviderList");
         if(!list) return;
-        list.innerHTML = "";
         if(!state.selectedTeamId){
             list.innerHTML = '<div class="empty">选择团队后显示团队 API 配置</div>';
+            renderSelectedApiProvider();
             return;
         }
-        if(!state.apiProviders.length){
-            list.innerHTML = '<div class="empty">还没有团队 API 配置</div>';
-            return;
+        const providers = teamApiProviderCards();
+        if(!state.selectedApiProviderId || !providers.some((item) => item.provider_id === state.selectedApiProviderId)){
+            state.selectedApiProviderId = providers[0]?.provider_id || "";
         }
-        state.apiProviders.forEach((provider) => {
-            const item = document.createElement("div");
-            item.className = "api-item";
-            const keyText = provider.has_api_key ? `已保存 ${provider.api_key_preview || ""}` : "未保存 Key";
-            item.innerHTML = `
-                <span>
-                    <span class="name">${escapeHtml(provider.label || provider.provider_id)}</span>
-                    <span class="meta">${escapeHtml(provider.provider_id)} · ${escapeHtml(provider.protocol || "openai")} · ${escapeHtml(keyText)}</span>
-                </span>
-                <span class="row">
-                    <span class="badge">${provider.enabled === false ? "停用" : "启用"}</span>
-                    <button class="btn ghost" type="button" data-api-edit="${escapeHtml(provider.provider_id)}" title="编辑">
-                        <i data-lucide="pencil" width="16" height="16"></i>
-                    </button>
-                    <button class="btn ghost" type="button" data-api-delete="${escapeHtml(provider.provider_id)}" title="删除">
-                        <i data-lucide="trash-2" width="16" height="16"></i>
-                    </button>
-                </span>
+        list.innerHTML = providers.map((provider) => {
+            const active = provider.provider_id === state.selectedApiProviderId ? "active" : "";
+            const hasKey = provider.has_api_key || provider.has_wallet_api_key;
+            const keyText = provider.has_api_key ? `已配置 ${provider.api_key_preview || ""}` : "未配置 Key";
+            const protocol = provider.provider_id === "runninghub" ? "RH" : (provider.protocol || "openai");
+            return `
+                <button class="team-api-provider-card ${active} ${hasKey ? "has-key" : "missing-key"}" type="button" data-api-select="${escapeHtml(provider.provider_id)}">
+                    <span class="api-mark"><i data-lucide="${hasKey ? "key-round" : "key"}" width="16" height="16"></i></span>
+                    <span>
+                        <span class="api-card-name">${escapeHtml(provider.label || provider.provider_id)}</span>
+                        <span class="api-card-meta">${escapeHtml(provider.base_url || keyText)}</span>
+                    </span>
+                    <span class="api-protocol-pill">${escapeHtml(protocol)}</span>
+                </button>
             `;
-            list.appendChild(item);
-        });
+        }).join("");
+        renderSelectedApiProvider();
         iconRefresh();
+    }
+
+    function teamApiProviderCards(){
+        const saved = new Map((state.apiProviders || []).map((item) => [item.provider_id, item]));
+        const base = TEAM_API_PROVIDER_PRESETS.map((preset) => ({...preset, ...(saved.get(preset.provider_id) || {})}));
+        const presetIds = new Set(TEAM_API_PROVIDER_PRESETS.map((item) => item.provider_id));
+        const extras = (state.apiProviders || []).filter((item) => !presetIds.has(item.provider_id));
+        return [...base, ...extras].sort((a, b) => {
+            const ai = TEAM_API_PROVIDER_PRESETS.findIndex((item) => item.provider_id === a.provider_id);
+            const bi = TEAM_API_PROVIDER_PRESETS.findIndex((item) => item.provider_id === b.provider_id);
+            if(ai >= 0 || bi >= 0) return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+            return String(a.provider_id).localeCompare(String(b.provider_id));
+        });
+    }
+
+    function selectedTeamApiProvider(){
+        const id = state.selectedApiProviderId || "";
+        return teamApiProviderCards().find((item) => item.provider_id === id) || null;
+    }
+
+    function renderSelectedApiProvider(){
+        const provider = selectedTeamApiProvider();
+        const signedIn = !!state.user && !!state.selectedTeamId;
+        if($("apiEditorTitle")) $("apiEditorTitle").textContent = provider ? (provider.label || provider.provider_id || "API") : "API";
+        if($("apiProviderId")) $("apiProviderId").value = provider?.provider_id || "";
+        if($("apiProviderIdPreview")) $("apiProviderIdPreview").textContent = provider?.provider_id || "-";
+        if($("apiProviderLabel")) $("apiProviderLabel").value = provider?.label || "";
+        if($("apiProviderBaseUrl")) $("apiProviderBaseUrl").value = provider?.base_url || "";
+        if($("apiProviderProtocol")) $("apiProviderProtocol").value = provider?.protocol || "openai";
+        if($("apiProviderKey")){
+            $("apiProviderKey").value = "";
+            $("apiProviderKey").placeholder = provider?.has_api_key ? `保留当前 Key ${provider.api_key_preview || ""}` : "输入 API Key";
+            $("apiProviderKey").dataset.clearKey = "";
+        }
+        if($("apiProviderWalletKey")){
+            $("apiProviderWalletKey").value = "";
+            $("apiProviderWalletKey").placeholder = provider?.has_wallet_api_key ? `保留当前钱包 Key ${provider.wallet_api_key_preview || ""}` : "RunningHub 可选";
+        }
+        if($("apiProviderKeyHint")) $("apiProviderKeyHint").textContent = provider?.has_api_key ? `已保存 ${provider.api_key_preview || ""}` : "还没有保存 Key。";
+        if($("apiProviderWalletHint")) $("apiProviderWalletHint").textContent = provider?.has_wallet_api_key ? `已保存 ${provider.wallet_api_key_preview || ""}` : "可选。";
+        if($("apiProviderDelete")) $("apiProviderDelete").disabled = !signedIn || !provider || !state.apiProviders.some((item) => item.provider_id === provider.provider_id);
+        renderTeamApiModelLists(provider);
+    }
+
+    function renderTeamApiModelLists(provider){
+        const catalog = (state.apiCatalogProviders || []).find((item) => item.id === provider?.provider_id) || {};
+        renderModelChips("apiImageModelList", catalog.image_models || []);
+        renderModelChips("apiChatModelList", catalog.chat_models || []);
+        renderModelChips("apiVideoModelList", catalog.video_models || []);
+    }
+
+    function renderModelChips(id, models){
+        const el = $(id);
+        if(!el) return;
+        const items = (models || []).map((model) => String(model || "").trim()).filter(Boolean);
+        el.innerHTML = items.length
+            ? items.slice(0, 30).map((model) => `<span class="model-chip">${escapeHtml(model)}</span>`).join("")
+            : '<div class="empty" style="width:100%;padding:14px 12px">暂无模型</div>';
+    }
+
+    function selectApiProvider(providerId){
+        if(!providerId) return;
+        state.selectedApiProviderId = providerId;
+        renderApiProviders();
+        setMessage($("apiMessage"), "", "");
+    }
+
+    function nextCustomApiProviderId(){
+        const existing = new Set(teamApiProviderCards().map((item) => item.provider_id));
+        let id = "custom-api";
+        let index = 2;
+        while(existing.has(id)){
+            id = `custom-api-${index++}`;
+        }
+        return id;
+    }
+
+    function addApiProvider(){
+        const providerId = nextCustomApiProviderId();
+        state.apiProviders.push({
+            provider_id: providerId,
+            label: "API",
+            protocol: "openai",
+            base_url: "",
+            enabled: true,
+            has_api_key: false,
+            api_key_preview: "",
+            temporary: true,
+        });
+        state.selectedApiProviderId = providerId;
+        renderApiProviders();
+        setMessage($("apiMessage"), "已新增平台，保存前只在当前页面临时显示。", "ok");
+    }
+
+    function applyRecommendedApi(){
+        state.selectedApiProviderId = "openai";
+        renderApiProviders();
+        $("apiProviderLabel").value = "API";
+        $("apiProviderProtocol").value = "openai";
+        if(!$("apiProviderBaseUrl").value) $("apiProviderBaseUrl").value = "https://api.example.com/v1";
+        setMessage($("apiMessage"), "已切换到 OpenAI 兼容配置。把请求地址和 Key 换成你的服务商信息后保存。", "ok");
+    }
+
+    function markApiKeyForClear(){
+        const input = $("apiProviderKey");
+        if(!input) return;
+        input.value = "";
+        input.dataset.clearKey = "1";
+        if($("apiProviderKeyHint")) $("apiProviderKeyHint").textContent = "保存后会清除当前 Key。";
     }
 
     function renderGenerationLogs(){
@@ -470,6 +588,7 @@
             state.selectedTeamId = "";
             state.selectedProjectId = "";
             state.selectedCanvasId = "";
+            state.selectedApiProviderId = "";
             state.canvasVersions = [];
             renderAuth();
             renderTeams();
@@ -485,6 +604,7 @@
 
     async function selectTeam(teamId, silent){
         state.selectedTeamId = teamId;
+        state.selectedApiProviderId = "";
         try {
             localStorage.setItem(TEAM_CLOUD_MODE_KEY, "1");
             localStorage.setItem(TEAM_CLOUD_TEAM_KEY, teamId);
@@ -505,6 +625,7 @@
             state.generationLogs = [];
             state.generationSummary = null;
             state.selectedProjectId = "";
+            state.selectedApiProviderId = "";
             renderProjects();
             renderCanvases();
             renderApiProviders();
@@ -517,7 +638,20 @@
     async function loadApiProviders(teamId){
         const data = await api(`/teams/${encodeURIComponent(teamId)}/api-providers`);
         state.apiProviders = data.providers || [];
+        if(state.selectedApiProviderId && !teamApiProviderCards().some((item) => item.provider_id === state.selectedApiProviderId)){
+            state.selectedApiProviderId = "";
+        }
         renderApiProviders();
+    }
+
+    async function loadApiCatalogProviders(){
+        try {
+            const response = await fetch("/api/config", { credentials: "include" });
+            const data = await response.json();
+            state.apiCatalogProviders = Array.isArray(data.api_providers) ? data.api_providers : [];
+        } catch(e) {
+            state.apiCatalogProviders = [];
+        }
     }
 
     async function loadGenerationLogs(teamId){
@@ -726,7 +860,11 @@
     async function submitApiProvider(event){
         event.preventDefault();
         if(!state.selectedTeamId) return;
-        const providerId = $("apiProviderId").value.trim();
+        const providerId = ($("apiProviderId").value || state.selectedApiProviderId || "").trim();
+        if(!providerId){
+            setMessage($("apiMessage"), "\u8bf7\u5148\u9009\u62e9\u6216\u65b0\u589e\u4e00\u4e2a\u5e73\u53f0\u3002", "error");
+            return;
+        }
         const button = $("apiProviderSubmit");
         setBusy(button, true);
         setMessage($("apiMessage"), "", "");
@@ -740,15 +878,18 @@
                     enabled: true,
                     api_key: $("apiProviderKey").value,
                     wallet_api_key: $("apiProviderWalletKey").value,
+                    clear_api_key: $("apiProviderKey").dataset.clearKey === "1",
                 }),
             });
             $("apiProviderKey").value = "";
+            $("apiProviderKey").dataset.clearKey = "";
             $("apiProviderWalletKey").value = "";
             const next = state.apiProviders.filter((item) => item.provider_id !== data.provider.provider_id);
             next.push(data.provider);
             state.apiProviders = next.sort((a, b) => String(a.provider_id).localeCompare(String(b.provider_id)));
+            state.selectedApiProviderId = data.provider.provider_id;
             renderApiProviders();
-            setMessage($("apiMessage"), "团队 API 已保存，成员只能看到密钥状态", "ok");
+            setMessage($("apiMessage"), "\u56e2\u961f API \u5df2\u4fdd\u5b58\uff0c\u6210\u5458\u53ea\u80fd\u770b\u5230\u5bc6\u94a5\u72b6\u6001\u3002", "ok");
         } catch(e) {
             setMessage($("apiMessage"), e.message, "error");
         } finally {
@@ -758,13 +899,24 @@
 
     async function deleteApiProvider(providerId){
         if(!state.selectedTeamId || !providerId) return;
-        if(!confirm("确认删除这个团队 API 配置？")) return;
+        const localProvider = state.apiProviders.find((item) => item.provider_id === providerId);
+        if(localProvider?.temporary){
+            state.apiProviders = state.apiProviders.filter((item) => item.provider_id !== providerId);
+            state.selectedApiProviderId = teamApiProviderCards()[0]?.provider_id || "";
+            renderApiProviders();
+            setMessage($("apiMessage"), "\u5df2\u79fb\u9664\u672a\u4fdd\u5b58\u7684\u5e73\u53f0\u3002", "ok");
+            return;
+        }
+        if(!confirm("\u786e\u8ba4\u5220\u9664\u8fd9\u4e2a\u56e2\u961f API \u914d\u7f6e\uff1f")) return;
         setMessage($("apiMessage"), "", "");
         try {
             await api(`/teams/${encodeURIComponent(state.selectedTeamId)}/api-providers/${encodeURIComponent(providerId)}`, { method: "DELETE" });
             state.apiProviders = state.apiProviders.filter((item) => item.provider_id !== providerId);
+            state.selectedApiProviderId = TEAM_API_PROVIDER_PRESETS.some((item) => item.provider_id === providerId)
+                ? providerId
+                : (teamApiProviderCards()[0]?.provider_id || "");
             renderApiProviders();
-            setMessage($("apiMessage"), "团队 API 配置已删除", "ok");
+            setMessage($("apiMessage"), "\u56e2\u961f API \u914d\u7f6e\u5df2\u5220\u9664\u3002", "ok");
         } catch(e) {
             setMessage($("apiMessage"), e.message, "error");
         }
@@ -788,6 +940,7 @@
                 state.apiProviders = [];
                 state.generationLogs = [];
                 state.generationSummary = null;
+                state.selectedApiProviderId = "";
                 try {
                     localStorage.removeItem(TEAM_CLOUD_TEAM_KEY);
                     localStorage.removeItem(TEAM_CLOUD_PROJECT_KEY);
@@ -857,6 +1010,7 @@
             state.selectedTeamId = "";
             state.selectedProjectId = "";
             state.selectedCanvasId = "";
+            state.selectedApiProviderId = "";
             state.canvasVersions = [];
             try {
                 localStorage.removeItem(TEAM_CLOUD_MODE_KEY);
@@ -907,40 +1061,13 @@
                 deleteProject(del.dataset.projectDelete);
             }
         });
-        $("apiProviderId").addEventListener("change", () => {
-            const labels = {
-                openai: "OpenAI 兼容",
-                modelscope: "ModelScope",
-                runninghub: "RunningHub",
-                volcengine: "火山引擎",
-            };
-            const protocols = {
-                runninghub: "runninghub",
-                volcengine: "volcengine",
-                modelscope: "openai",
-                openai: "openai",
-            };
-            const id = $("apiProviderId").value;
-            $("apiProviderLabel").value = labels[id] || id;
-            $("apiProviderProtocol").value = protocols[id] || "openai";
-        });
+        $("apiProviderAdd").addEventListener("click", addApiProvider);
+        $("apiProviderRecommend").addEventListener("click", applyRecommendedApi);
+        $("apiProviderDelete").addEventListener("click", () => deleteApiProvider(state.selectedApiProviderId));
+        $("apiProviderClearKey").addEventListener("click", markApiKeyForClear);
         $("apiProviderList").addEventListener("click", (event) => {
-            const edit = event.target.closest("[data-api-edit]");
-            if(edit){
-                const provider = state.apiProviders.find((item) => item.provider_id === edit.dataset.apiEdit);
-                if(provider){
-                    $("apiProviderId").value = provider.provider_id;
-                    $("apiProviderLabel").value = provider.label || provider.provider_id;
-                    $("apiProviderBaseUrl").value = provider.base_url || "";
-                    $("apiProviderProtocol").value = provider.protocol || "openai";
-                    $("apiProviderKey").value = "";
-                    $("apiProviderWalletKey").value = "";
-                    setMessage($("apiMessage"), "已载入配置，留空密钥会保持原值", "ok");
-                }
-                return;
-            }
-            const del = event.target.closest("[data-api-delete]");
-            if(del) deleteApiProvider(del.dataset.apiDelete);
+            const selected = event.target.closest("[data-api-select]");
+            if(selected) selectApiProvider(selected.dataset.apiSelect);
         });
         $("canvasList").addEventListener("click", (event) => {
             const del = event.target.closest("[data-canvas-delete]");
@@ -968,6 +1095,7 @@
             $("systemStatus").innerHTML = '<i data-lucide="badge-alert" width="16" height="16"></i><span>连接失败</span>';
             iconRefresh();
         }
+        await loadApiCatalogProviders();
         renderAuth();
         renderTeams();
         renderMembers([]);
