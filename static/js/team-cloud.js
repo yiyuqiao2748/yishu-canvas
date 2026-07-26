@@ -55,6 +55,10 @@
         button.disabled = !!busy;
     }
 
+    function userDisplayName(user){
+        return user?.display_name || user?.username || user?.email || user?.id || "-";
+    }
+
     function storedAccessToken(){
         try {
             return localStorage.getItem(TEAM_CLOUD_ACCESS_TOKEN_KEY) || "";
@@ -137,12 +141,24 @@
         });
 
         if(signedIn){
-            $("userLine").textContent = state.user.email || state.user.id;
-            $("signedInName").textContent = state.user.email || state.user.id;
-            $("signedInProvider").textContent = state.user.provider === "dev-bypass" ? "本地开发用户" : "Supabase 用户";
+            $("userLine").textContent = userDisplayName(state.user);
+            $("signedInName").textContent = userDisplayName(state.user);
+            $("signedInProvider").textContent = state.user.provider === "dev-bypass"
+                ? "本地开发用户"
+                : (state.user.email ? `Supabase 用户 · ${state.user.email}` : "Supabase 用户");
         } else {
             $("userLine").textContent = "未登录";
         }
+
+        const loginMode = state.mode === "login";
+        $("usernameField").hidden = loginMode;
+        $("username").required = !loginMode;
+        $("authIdentifierLabel").textContent = loginMode ? "账号 / 邮箱" : "邮箱";
+        $("authIdentifier").type = loginMode ? "text" : "email";
+        $("authIdentifier").name = loginMode ? "identifier" : "email";
+        $("authIdentifier").autocomplete = loginMode ? "username" : "email";
+        $("authIdentifier").placeholder = loginMode ? "输入账号名或邮箱" : "输入邮箱";
+        $("recoverPasswordBtn").hidden = !loginMode;
 
         $("loginTab").classList.toggle("active", state.mode === "login");
         $("signupTab").classList.toggle("active", state.mode === "signup");
@@ -736,10 +752,17 @@
         setBusy(button, true);
         setMessage($("authMessage"), "", "");
         try {
-            const payload = {
-                email: $("email").value.trim(),
-                password: $("password").value,
-            };
+            const isLogin = state.mode === "login";
+            const payload = isLogin
+                ? {
+                    identifier: $("authIdentifier").value.trim(),
+                    password: $("password").value,
+                }
+                : {
+                    username: $("username").value.trim(),
+                    email: $("authIdentifier").value.trim(),
+                    password: $("password").value,
+                };
             const path = state.mode === "login" ? "/auth/login" : "/auth/signup";
             const data = await api(path, {
                 method: "POST",
@@ -753,6 +776,28 @@
                 storeAccessToken("");
                 setMessage($("authMessage"), "注册已提交，请检查邮箱验证", "ok");
             }
+        } catch(e) {
+            setMessage($("authMessage"), e.message, "error");
+        } finally {
+            setBusy(button, false);
+        }
+    }
+
+    async function recoverPassword(){
+        const button = $("recoverPasswordBtn");
+        const identifier = $("authIdentifier").value.trim();
+        if(!identifier){
+            setMessage($("authMessage"), "请输入账号名或邮箱。", "error");
+            return;
+        }
+        setBusy(button, true);
+        setMessage($("authMessage"), "", "");
+        try {
+            await api("/auth/recover", {
+                method: "POST",
+                body: JSON.stringify({ identifier }),
+            });
+            setMessage($("authMessage"), "找回密码邮件已发送，请去邮箱查看。", "ok");
         } catch(e) {
             setMessage($("authMessage"), e.message, "error");
         } finally {
@@ -1040,6 +1085,7 @@
             renderAuth();
         });
         $("authForm").addEventListener("submit", submitAuth);
+        $("recoverPasswordBtn").addEventListener("click", recoverPassword);
         $("teamForm").addEventListener("submit", submitTeam);
         $("inviteForm").addEventListener("submit", submitInvite);
         $("projectForm").addEventListener("submit", submitProject);

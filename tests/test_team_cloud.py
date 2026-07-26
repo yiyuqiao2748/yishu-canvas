@@ -393,6 +393,21 @@ class TeamCloudStoreTests(unittest.TestCase):
 
 
 class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_resolve_auth_identifier_accepts_email_without_profile_lookup(self):
+        email = await team_cloud.resolve_auth_identifier_email("User@Example.com")
+
+        self.assertEqual(email, "user@example.com")
+
+    async def test_resolve_auth_identifier_maps_username_to_email(self):
+        async def fake_profile(username):
+            self.assertEqual(username, "yiwei")
+            return {"email": "Yiwei@Example.com", "username": username}
+
+        with patch.object(team_cloud, "get_user_profile_by_username", fake_profile):
+            email = await team_cloud.resolve_auth_identifier_email("YiWei")
+
+        self.assertEqual(email, "yiwei@example.com")
+
     async def test_update_password_requires_recovery_token(self):
         with self.assertRaises(HTTPException) as error:
             await team_cloud.update_password(

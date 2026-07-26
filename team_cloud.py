@@ -8,6 +8,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 import httpx
 import jwt
@@ -53,6 +54,8 @@ router = APIRouter(prefix="/api/team-cloud", tags=["team-cloud"])
 class CurrentUser(BaseModel):
     id: str
     email: str = ""
+    username: str = ""
+    display_name: str = ""
     provider: str = "supabase"
 
 
@@ -77,12 +80,19 @@ class CanvasSaveRequest(BaseModel):
 
 
 class AuthEmailPasswordRequest(BaseModel):
-    email: str = Field(..., min_length=3, max_length=254)
+    email: Optional[str] = Field(None, min_length=3, max_length=254)
+    identifier: Optional[str] = Field(None, min_length=3, max_length=254)
+    username: Optional[str] = Field(None, min_length=3, max_length=32)
     password: str = Field(..., min_length=6, max_length=128)
 
 
 class AuthPasswordUpdateRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=128)
+
+
+class AuthRecoverRequest(BaseModel):
+    identifier: Optional[str] = Field(None, min_length=3, max_length=254)
+    email: Optional[str] = Field(None, min_length=3, max_length=254)
 
 
 class MemberInviteRequest(BaseModel):
@@ -111,6 +121,31 @@ def now_ms() -> int:
 
 def normalize_email(value: str) -> str:
     return value.strip().lower()
+
+
+USERNAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{2,31}$")
+
+
+def normalize_username(value: str) -> str:
+    username = str(value or "").strip().lower()
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise HTTPException(status_code=400, detail="账号名只能使用小写字母、数字、下划线或短横线，长度 3-32 位")
+    return username
+
+
+def auth_identifier(payload: AuthEmailPasswordRequest | AuthRecoverRequest) -> str:
+    return str(payload.identifier or payload.email or "").strip()
+
+
+def auth_email_required(value: Optional[str]) -> str:
+    email = normalize_email(value or "")
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        raise HTTPException(status_code=400, detail="请输入有效邮箱")
+    return email
+
+
+def looks_like_email(value: str) -> bool:
+    return "@" in value
 
 
 def public_config() -> Dict[str, Any]:
@@ -1442,6 +1477,70 @@ def active_store():
     return supabase_store or local_store
 
 
+def require_profile_store() -> SupabaseTeamStore:
+    if not supabase_store:
+        raise HTTPException(status_code=503, detail="Supabase 用户资料表未配置")
+    return supabase_store
+
+
+async def get_user_profile_by_username(username: str) -> Optional[Dict[str, Any]]:
+    store = require_profile_store()
+    rows = await store._request(
+        "GET",
+        f"/user_profiles?username=eq.{quote(username, safe='')}&select=user_id,email,username,display_name&limit=1",
+    )
+    return rows[0] if rows else None
+
+
+async def get_user_profile_by_user_id(user_id: str) -> Optional[Dict[str, Any]]:
+    if not supabase_store:
+        return None
+    rows = await supabase_store._request(
+        "GET",
+        f"/user_profiles?user_id=eq.{quote(user_id, safe='')}&select=user_id,email,username,display_name&limit=1",
+    )
+    return rows[0] if rows else None
+
+
+async def create_user_profile(user_id: str, email: str, username: str) -> Dict[str, Any]:
+    store = require_profile_store()
+    rows = await store._request(
+        "POST",
+        "/user_profiles",
+        json_body=[{
+            "user_id": user_id,
+            "email": email,
+            "username": username,
+            "display_name": username,
+        }],
+    )
+    return rows[0] if rows else {}
+
+
+async def resolve_auth_identifier_email(identifier: str) -> str:
+    identifier = str(identifier or "").strip()
+    if looks_like_email(identifier):
+        return auth_email_required(identifier)
+    username = normalize_username(identifier)
+    profile = await get_user_profile_by_username(username)
+    if not profile or not profile.get("email"):
+        raise HTTPException(status_code=401, detail="账号或密码错误")
+    return normalize_email(profile["email"])
+
+
+async def enrich_user_profile(user: CurrentUser) -> CurrentUser:
+    try:
+        profile = await get_user_profile_by_user_id(user.id)
+    except HTTPException:
+        profile = None
+    if profile:
+        user.username = str(profile.get("username") or "")
+        user.display_name = str(profile.get("display_name") or user.username)
+        if not user.email:
+            user.email = str(profile.get("email") or "")
+    return user
+
+
 async def resolve_team_api_provider_config(user: CurrentUser, team_id: str, provider_id: str) -> Dict[str, Any]:
     return await maybe_await(active_store().get_api_provider_config(user, team_id, provider_id))
 
@@ -1470,25 +1569,50 @@ async def team_cloud_config() -> Dict[str, Any]:
 
 @router.post("/auth/signup")
 async def signup(payload: AuthEmailPasswordRequest, response: Response) -> Dict[str, Any]:
+    email = auth_email_required(payload.email)
+    username = normalize_username(payload.username or "")
+    if await get_user_profile_by_username(username):
+        raise HTTPException(status_code=409, detail="账号名已被使用")
     data = await supabase_auth_request("signup", {
-        "email": normalize_email(payload.email),
+        "email": email,
         "password": payload.password,
     })
+    user = data.get("user") or {}
+    user_id = str(user.get("id") or "")
+    if user_id:
+        await create_user_profile(user_id, email, username)
     if data.get("access_token"):
         set_auth_cookie(response, data["access_token"])
-    return sanitize_auth_payload(data)
+    payload_out = sanitize_auth_payload(data)
+    payload_out["user"]["username"] = username
+    payload_out["user"]["display_name"] = username
+    return payload_out
 
 
 @router.post("/auth/login")
 async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[str, Any]:
+    email = await resolve_auth_identifier_email(auth_identifier(payload))
     data = await supabase_auth_request("token?grant_type=password", {
-        "email": normalize_email(payload.email),
+        "email": email,
         "password": payload.password,
     })
     if not data.get("access_token"):
         raise HTTPException(status_code=401, detail="登录失败")
     set_auth_cookie(response, data["access_token"])
-    return sanitize_auth_payload(data)
+    payload_out = sanitize_auth_payload(data)
+    user = data.get("user") or {}
+    profile = await get_user_profile_by_user_id(str(user.get("id") or ""))
+    if profile:
+        payload_out["user"]["username"] = profile.get("username") or ""
+        payload_out["user"]["display_name"] = profile.get("display_name") or profile.get("username") or ""
+    return payload_out
+
+
+@router.post("/auth/recover")
+async def recover_password(payload: AuthRecoverRequest) -> Dict[str, Any]:
+    email = await resolve_auth_identifier_email(auth_identifier(payload))
+    await supabase_auth_request("recover", {"email": email})
+    return {"ok": True}
 
 
 @router.post("/auth/password")
@@ -1523,6 +1647,7 @@ async def logout(response: Response) -> Dict[str, Any]:
 
 @router.get("/me")
 async def team_cloud_me(user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    user = await enrich_user_profile(user)
     teams = await maybe_await(active_store().list_user_teams(user))
     return {"user": user.model_dump(), "teams": teams}
 

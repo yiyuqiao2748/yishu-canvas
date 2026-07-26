@@ -21,6 +21,15 @@ create table if not exists public.team_members (
   unique (team_id, user_id)
 );
 
+create table if not exists public.user_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
+  username text not null unique check (username ~ '^[a-z0-9][a-z0-9_-]{2,31}$'),
+  display_name text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.invitations (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams(id) on delete cascade,
@@ -117,6 +126,7 @@ create table if not exists public.generation_logs (
 );
 
 create index if not exists idx_team_members_user_id on public.team_members(user_id);
+create index if not exists idx_user_profiles_username on public.user_profiles(username);
 create index if not exists idx_projects_team_id on public.projects(team_id);
 create index if not exists idx_canvases_project_id on public.canvases(project_id);
 create index if not exists idx_assets_team_id on public.assets(team_id);
@@ -128,6 +138,7 @@ alter table public.api_providers add column if not exists updated_by uuid;
 
 alter table public.teams enable row level security;
 alter table public.team_members enable row level security;
+alter table public.user_profiles enable row level security;
 alter table public.invitations enable row level security;
 alter table public.projects enable row level security;
 alter table public.canvases enable row level security;
@@ -138,3 +149,4 @@ alter table public.generation_logs enable row level security;
 
 -- The FastAPI backend uses SUPABASE_SERVICE_ROLE_KEY for server-side access.
 -- Client-side access should go through FastAPI endpoints, not direct table writes.
+grant all on table public.user_profiles to service_role;

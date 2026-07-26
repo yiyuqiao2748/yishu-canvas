@@ -288,6 +288,29 @@
             color: var(--accent-strong);
         }
 
+        .auth-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .link-btn {
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            padding: 0;
+            min-height: auto;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .link-btn:hover {
+            color: var(--accent-strong);
+            text-decoration: underline;
+        }
+
         .empty {
             padding: 28px 18px;
             color: var(--muted);
@@ -650,9 +673,13 @@
                             <button class="tab" id="signupTab" type="button" role="tab" aria-selected="false">注册</button>
                         </div>
                         <form id="authForm">
+                            <div class="field" id="usernameField" hidden>
+                                <label for="username">账号名</label>
+                                <input id="username" name="username" type="text" autocomplete="username" minlength="3" maxlength="32" placeholder="例如 yiwei">
+                            </div>
                             <div class="field">
-                                <label for="email">邮箱</label>
-                                <input id="email" name="email" type="email" autocomplete="email" required>
+                                <label for="authIdentifier" id="authIdentifierLabel">账号 / 邮箱</label>
+                                <input id="authIdentifier" name="identifier" type="text" autocomplete="username" required>
                             </div>
                             <div class="field">
                                 <label for="password">密码</label>
@@ -662,6 +689,9 @@
                                 <i data-lucide="log-in" width="16" height="16"></i>
                                 <span>登录</span>
                             </button>
+                            <div class="auth-actions">
+                                <button class="link-btn" id="recoverPasswordBtn" type="button">忘记密码？</button>
+                            </div>
                         </form>
                     </div>
                     <div id="signedIn" hidden>
@@ -938,6 +968,6 @@
         </div>
     </div>
 
-    <script src="/static/js/team-cloud.js?v=2026.07.26.6"></script>
+    <script src="/static/js/team-cloud.js?v=2026.07.26.9"></script>
 </body>
 </html>
