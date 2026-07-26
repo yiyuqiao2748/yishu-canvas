@@ -539,37 +539,36 @@
             font-size: 12px;
         }
 
-        .model-chip-list {
-            min-height: 58px;
-            display: flex;
-            align-items: center;
-            flex-wrap: wrap;
+        .team-api-model-list {
+            display: grid;
             gap: 8px;
-            padding: 12px;
-            border: 1px dashed var(--line);
+        }
+
+        .team-api-model-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 96px 40px;
+            gap: 8px;
+            align-items: center;
+            padding: 6px;
+            border: 1px solid var(--line);
             border-radius: 8px;
             background: var(--surface-2);
         }
 
-        .model-editor {
-            width: 100%;
-            min-height: 92px;
-            resize: vertical;
-            font-family: inherit;
-            line-height: 1.5;
+        .team-api-model-row input,
+        .team-api-model-row select {
+            min-height: 34px;
+            background: var(--surface);
         }
 
-        .model-chip {
-            display: inline-flex;
-            align-items: center;
-            min-height: 28px;
-            padding: 0 10px;
-            border-radius: 999px;
-            border: 1px solid var(--line);
-            background: var(--surface);
-            color: var(--text);
-            font-size: 12px;
-            font-weight: 650;
+        .team-api-model-row .btn {
+            min-width: 40px;
+            min-height: 34px;
+            padding: 0;
+        }
+
+        .team-api-model-empty {
+            padding: 18px 12px;
         }
 
         .team-item {
@@ -937,28 +936,43 @@
                                 </div>
                                 <div class="model-section-list">
                                     <div class="model-section">
-                                        <div>
-                                            <div class="model-section-title">生图模型</div>
-                                            <div class="model-section-sub">在线生图和无限画布 API 生成使用。</div>
+                                        <div class="model-section-head">
+                                            <div>
+                                                <div class="model-section-title">生图模型</div>
+                                                <div class="model-section-sub">在线生图和无限画布 API 生成使用。</div>
+                                            </div>
+                                            <button class="btn" type="button" data-api-model-add="image">
+                                                <i data-lucide="plus" width="16" height="16"></i>
+                                                <span>模型</span>
+                                            </button>
                                         </div>
-                                        <div class="model-chip-list" id="apiImageModelList"></div>
-                                        <textarea class="model-editor" id="apiImageModels" rows="4" placeholder="一行一个生图模型，例如 gpt-image-1"></textarea>
+                                        <div class="team-api-model-list" id="apiImageModelList"></div>
                                     </div>
                                     <div class="model-section">
-                                        <div>
-                                            <div class="model-section-title">聊天模型</div>
-                                            <div class="model-section-sub">GPT 对话和 LLM 节点使用。</div>
+                                        <div class="model-section-head">
+                                            <div>
+                                                <div class="model-section-title">聊天模型</div>
+                                                <div class="model-section-sub">GPT 对话和 LLM 节点使用。</div>
+                                            </div>
+                                            <button class="btn" type="button" data-api-model-add="chat">
+                                                <i data-lucide="plus" width="16" height="16"></i>
+                                                <span>模型</span>
+                                            </button>
                                         </div>
-                                        <div class="model-chip-list" id="apiChatModelList"></div>
-                                        <textarea class="model-editor" id="apiChatModels" rows="4" placeholder="一行一个聊天模型，例如 gpt-4o"></textarea>
+                                        <div class="team-api-model-list" id="apiChatModelList"></div>
                                     </div>
                                     <div class="model-section">
-                                        <div>
-                                            <div class="model-section-title">视频模型</div>
-                                            <div class="model-section-sub">无限画布视频生成节点使用。</div>
+                                        <div class="model-section-head">
+                                            <div>
+                                                <div class="model-section-title">视频模型</div>
+                                                <div class="model-section-sub">无限画布视频生成节点使用。</div>
+                                            </div>
+                                            <button class="btn" type="button" data-api-model-add="video">
+                                                <i data-lucide="plus" width="16" height="16"></i>
+                                                <span>模型</span>
+                                            </button>
                                         </div>
-                                        <div class="model-chip-list" id="apiVideoModelList"></div>
-                                        <textarea class="model-editor" id="apiVideoModels" rows="4" placeholder="一行一个视频模型，例如 wan-video"></textarea>
+                                        <div class="team-api-model-list" id="apiVideoModelList"></div>
                                     </div>
                                 </div>
                             </section>
@@ -983,6 +997,6 @@
         </div>
     </div>
 
-    <script src="/static/js/team-cloud.js?v=2026.07.26.11"></script>
+    <script src="/static/js/team-cloud.js?v=2026.07.26.12"></script>
 </body>
 </html>

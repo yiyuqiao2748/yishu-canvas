@@ -550,5 +550,20 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user.email, "person@example.com")
 
 
+class TeamCloudStaticUiTests(unittest.TestCase):
+    def test_team_api_page_exposes_row_model_management(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "static" / "team-cloud.html").read_text(encoding="utf-8")
+        script = (root / "static" / "js" / "team-cloud.js").read_text(encoding="utf-8")
+
+        self.assertIn('data-api-model-add="image"', html)
+        self.assertIn('data-api-model-add="chat"', html)
+        self.assertIn('data-api-model-add="video"', html)
+        self.assertIn("function addTeamApiModel", script)
+        self.assertIn("function updateTeamApiModel", script)
+        self.assertIn("function removeTeamApiModel", script)
+        self.assertIn("function renderTeamApiModelRows", script)
+
+
 if __name__ == "__main__":
     unittest.main()

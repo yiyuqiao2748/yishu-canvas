@@ -30,6 +30,12 @@
         { provider_id: "openai", label: "API", protocol: "openai", base_url: "" },
     ];
 
+    const TEAM_API_MODEL_KINDS = {
+        image: { key: "image_models", listId: "apiImageModelList" },
+        chat: { key: "chat_models", listId: "apiChatModelList" },
+        video: { key: "video_models", listId: "apiVideoModelList" },
+    };
+
     function iconRefresh(){
         if(window.lucide && typeof window.lucide.createIcons === "function"){
             window.lucide.createIcons();
@@ -135,6 +141,9 @@
         $("projectForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
         $("canvasForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedProjectId);
         $("apiProviderForm").querySelectorAll("input,select,textarea,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
+        document.querySelectorAll("[data-api-model-add], [data-api-model-input], [data-api-model-role], [data-api-model-remove]").forEach((item) => {
+            item.disabled = !signedIn || !state.selectedTeamId;
+        });
         ["apiProviderAdd", "apiProviderRecommend", "apiProviderDelete", "apiProviderSubmit", "apiProviderClearKey", "apiProviderValidate", "apiProviderFetchModels"].forEach((id) => {
             const item = $(id);
             if(item) item.disabled = !signedIn || !state.selectedTeamId;
@@ -427,16 +436,14 @@
         if($("apiProviderKeyHint")) $("apiProviderKeyHint").textContent = provider?.has_api_key ? `已保存 ${provider.api_key_preview || ""}` : "还没有保存 Key。";
         if($("apiProviderWalletHint")) $("apiProviderWalletHint").textContent = provider?.has_wallet_api_key ? `已保存 ${provider.wallet_api_key_preview || ""}` : "可选。";
         if($("apiProviderDelete")) $("apiProviderDelete").disabled = !signedIn || !provider || !state.apiProviders.some((item) => item.provider_id === provider.provider_id);
-        setModelTextarea("apiImageModels", teamApiModels(provider, "image_models", false));
-        setModelTextarea("apiChatModels", teamApiModels(provider, "chat_models", false));
-        setModelTextarea("apiVideoModels", teamApiModels(provider, "video_models", false));
+        ensureTeamApiModelArrays(provider, true);
         renderTeamApiModelLists(provider);
     }
 
     function renderTeamApiModelLists(provider){
-        renderModelChips("apiImageModelList", teamApiModels(provider, "image_models", true));
-        renderModelChips("apiChatModelList", teamApiModels(provider, "chat_models", true));
-        renderModelChips("apiVideoModelList", teamApiModels(provider, "video_models", true));
+        renderTeamApiModelRows("image", provider);
+        renderTeamApiModelRows("chat", provider);
+        renderTeamApiModelRows("video", provider);
     }
 
     function teamApiModels(provider, key, includeCatalogFallback){
@@ -444,6 +451,16 @@
         if(saved.length || !includeCatalogFallback) return saved;
         const catalog = (state.apiCatalogProviders || []).find((item) => item.id === provider?.provider_id) || {};
         return normalizeModelLines(catalog[key]);
+    }
+
+    function ensureTeamApiModelArrays(provider, includeCatalogFallback){
+        if(!provider) return;
+        Object.values(TEAM_API_MODEL_KINDS).forEach((config) => {
+            const saved = normalizeModelLines(provider[config.key]);
+            provider[config.key] = saved.length
+                ? saved
+                : teamApiModels(provider, config.key, includeCatalogFallback);
+        });
     }
 
     function normalizeModelLines(values){
@@ -456,26 +473,71 @@
         });
     }
 
-    function setModelTextarea(id, models){
-        const el = $(id);
-        if(!el) return;
-        el.value = normalizeModelLines(models).join("\n");
+    function teamApiModelRows(kind){
+        const config = TEAM_API_MODEL_KINDS[kind];
+        const el = config ? $(config.listId) : null;
+        if(!el) return [];
+        return Array.from(el.querySelectorAll(`[data-api-model-input="${kind}"]`)).map((input) => input.value);
     }
 
-    function modelTextareaLines(id){
-        const el = $(id);
-        return normalizeModelLines(el ? el.value : "");
+    function renderTeamApiModelRows(kind, provider){
+        const config = TEAM_API_MODEL_KINDS[kind];
+        renderTeamApiModelRowsFromItems(kind, config ? teamApiModels(provider, config.key, true) : []);
     }
 
-    function renderModelChips(id, models){
-        const el = $(id);
+    function renderTeamApiModelRowsFromItems(kind, models){
+        const config = TEAM_API_MODEL_KINDS[kind];
+        const el = config ? $(config.listId) : null;
         if(!el) return;
-        const items = (models || []).map((model) => String(model || "").trim()).filter(Boolean);
+        const items = Array.isArray(models)
+            ? models.map((model) => String(model || ""))
+            : String(models || "").split(/\r?\n/);
+        const disabled = !state.user || !state.selectedTeamId ? "disabled" : "";
         el.innerHTML = items.length
-            ? items.slice(0, 30).map((model) => `<span class="model-chip">${escapeHtml(model)}</span>`).join("")
-            : '<div class="empty" style="width:100%;padding:14px 12px">暂无模型</div>';
+            ? items.map((model, index) => `
+                <div class="team-api-model-row">
+                    <input type="text" value="${escapeHtml(model)}" data-api-model-input="${kind}" data-api-model-index="${index}" ${disabled}>
+                    <select data-api-model-role="${kind}" data-api-model-index="${index}" ${disabled}>
+                        <option value="default" ${index === 0 ? "selected" : ""}>默认</option>
+                        <option value="normal" ${index === 0 ? "" : "selected"}>普通</option>
+                    </select>
+                    <button class="btn ghost danger" type="button" title="删除模型" data-api-model-remove="${kind}" data-api-model-index="${index}" ${disabled}>
+                        <i data-lucide="trash-2" width="16" height="16"></i>
+                    </button>
+                </div>
+            `).join("")
+            : '<div class="empty team-api-model-empty">暂无模型</div>';
+        iconRefresh();
     }
 
+    function addTeamApiModel(kind){
+        const models = teamApiModelRows(kind);
+        models.push("");
+        renderTeamApiModelRowsFromItems(kind, models);
+        const config = TEAM_API_MODEL_KINDS[kind];
+        const input = config ? $(config.listId)?.querySelector(`[data-api-model-input="${kind}"][data-api-model-index="${models.length - 1}"]`) : null;
+        if(input) input.focus();
+    }
+
+    function updateTeamApiModel(kind, index, value){
+        const input = document.querySelector(`[data-api-model-input="${kind}"][data-api-model-index="${index}"]`);
+        if(input && input !== document.activeElement) input.value = value;
+    }
+
+    function removeTeamApiModel(kind, index){
+        const models = teamApiModelRows(kind);
+        models.splice(Number(index), 1);
+        renderTeamApiModelRowsFromItems(kind, models);
+    }
+
+    function setTeamApiDefaultModel(kind, index){
+        const models = teamApiModelRows(kind);
+        const targetIndex = Number(index);
+        if(targetIndex <= 0 || targetIndex >= models.length) return;
+        const [model] = models.splice(targetIndex, 1);
+        models.unshift(model);
+        renderTeamApiModelRowsFromItems(kind, models);
+    }
     function selectApiProvider(providerId){
         if(!providerId) return;
         state.selectedApiProviderId = providerId;
@@ -941,9 +1003,9 @@
             api_key: $("apiProviderKey").value,
             wallet_api_key: $("apiProviderWalletKey").value,
             clear_api_key: $("apiProviderKey").dataset.clearKey === "1",
-            image_models: modelTextareaLines("apiImageModels"),
-            chat_models: modelTextareaLines("apiChatModels"),
-            video_models: modelTextareaLines("apiVideoModels"),
+            image_models: normalizeModelLines(teamApiModelRows("image")),
+            chat_models: normalizeModelLines(teamApiModelRows("chat")),
+            video_models: normalizeModelLines(teamApiModelRows("video")),
         };
     }
 
@@ -1018,12 +1080,9 @@
                 body: JSON.stringify(currentApiProviderPayload()),
             });
             const models = data.models || {};
-            setModelTextarea("apiImageModels", models.image_models || []);
-            setModelTextarea("apiChatModels", models.chat_models || []);
-            setModelTextarea("apiVideoModels", models.video_models || []);
-            renderModelChips("apiImageModelList", modelTextareaLines("apiImageModels"));
-            renderModelChips("apiChatModelList", modelTextareaLines("apiChatModels"));
-            renderModelChips("apiVideoModelList", modelTextareaLines("apiVideoModels"));
+            renderTeamApiModelRowsFromItems("image", models.image_models || []);
+            renderTeamApiModelRowsFromItems("chat", models.chat_models || []);
+            renderTeamApiModelRowsFromItems("video", models.video_models || []);
             setMessage($("apiMessage"), `已拉取 ${data.model_count || 0} 个模型，请确认后点击保存。`, "ok");
         } catch(e) {
             setMessage($("apiMessage"), e.message, "error");
@@ -1203,12 +1262,24 @@
         $("apiProviderValidate").addEventListener("click", validateApiProvider);
         $("apiProviderFetchModels").addEventListener("click", fetchApiProviderModels);
         $("apiProviderClearKey").addEventListener("click", markApiKeyForClear);
-        [
-            ["apiImageModels", "apiImageModelList"],
-            ["apiChatModels", "apiChatModelList"],
-            ["apiVideoModels", "apiVideoModelList"],
-        ].forEach(([inputId, listId]) => {
-            $(inputId).addEventListener("input", () => renderModelChips(listId, modelTextareaLines(inputId)));
+        document.querySelectorAll("[data-api-model-add]").forEach((button) => {
+            button.addEventListener("click", () => addTeamApiModel(button.dataset.apiModelAdd));
+        });
+        Object.entries(TEAM_API_MODEL_KINDS).forEach(([kind, config]) => {
+            const list = $(config.listId);
+            if(!list) return;
+            list.addEventListener("input", (event) => {
+                const input = event.target.closest("[data-api-model-input]");
+                if(input) updateTeamApiModel(kind, input.dataset.apiModelIndex, input.value);
+            });
+            list.addEventListener("change", (event) => {
+                const select = event.target.closest("[data-api-model-role]");
+                if(select && select.value === "default") setTeamApiDefaultModel(kind, select.dataset.apiModelIndex);
+            });
+            list.addEventListener("click", (event) => {
+                const button = event.target.closest("[data-api-model-remove]");
+                if(button) removeTeamApiModel(kind, button.dataset.apiModelIndex);
+            });
         });
         $("apiProviderList").addEventListener("click", (event) => {
             const selected = event.target.closest("[data-api-select]");
