@@ -17,7 +17,6 @@ function teamCloudFetch(url, options={}){
     return fetch(url, {...options, credentials:'include', headers});
 }
 function currentTeamCloudTeamId(){
-    if(!TEAM_CLOUD_CANVAS) return '';
     try { return localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || ''; } catch(e){ return ''; }
 }
 function teamCloudRequestMeta(){
@@ -138,7 +137,9 @@ let activeAssetCategoryId = '';
 let activeAssetLibraryId = '';
 let activeWorkflowAssetCategoryId = '';
 const LOCAL_ASSET_LIBRARY_ID = '__local_assets__';
+const TEAM_ASSET_LIBRARY_ID = '__team_assets__';
 let localAssetLibrary = {items:[], tree:null};
+let teamAssetLibraryItems = [];
 let activeLocalAssetFolderId = '__root__';
 let mentionSource = 'input';
 let mentionAssetCategoryId = '';
@@ -500,11 +501,20 @@ function smartOriginalMediaUrl(itemOrUrl){
     } catch(e) {}
     return text;
 }
+function smartTeamAssetAuthedUrl(url){
+    const raw = String(url || '');
+    if(!raw.startsWith('/api/team-cloud/') || raw.includes('access_token=')) return raw;
+    let token = '';
+    try { token = localStorage.getItem(TEAM_CLOUD_ACCESS_TOKEN_KEY) || ''; } catch(e) {}
+    if(!token) return raw;
+    return `${raw}${raw.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`;
+}
 function smartMediaPreviewUrl(itemOrUrl, size=512){
     const raw = smartOriginalMediaUrl(itemOrUrl);
     const displayItem = typeof itemOrUrl === 'object' && itemOrUrl ? {...itemOrUrl, url:raw} : raw;
     const displayUrl = displayMediaUrl(displayItem);
     if(!raw || raw.startsWith('data:') || raw.startsWith('blob:')) return displayUrl;
+    if(raw.startsWith('/api/team-cloud/')) return smartTeamAssetAuthedUrl(raw);
     if(!raw.startsWith('/output/') && !raw.startsWith('/assets/')) return displayUrl;
     if(!/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|mp4|webm|mov|m4v|avi|mkv)(\?|#|$)/i.test(raw)) return displayUrl;
     const width = Math.max(64, Math.min(2048, Math.round(Number(size) || 512)));
@@ -513,7 +523,7 @@ function smartMediaPreviewUrl(itemOrUrl, size=512){
 function smartPreviewImgHtml(itemOrUrl, size=512, attrs=''){
     const original = smartOriginalMediaUrl(itemOrUrl);
     const preview = smartMediaPreviewUrl(itemOrUrl, size);
-    return `<img src="${escapeHtml(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}"${attrs ? ` ${attrs}` : ''}>`;
+    return `<img src="${escapeHtml(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" draggable="false"${attrs ? ` ${attrs}` : ''}>`;
 }
 function loadSmartOriginalImageDimensions(url){
     const src = displayMediaUrl({url:smartOriginalMediaUrl(url)});
@@ -5088,14 +5098,40 @@ function localAssetFolderCategories(){
 function assetLibraryIsLocal(){
     return activeAssetLibraryId === LOCAL_ASSET_LIBRARY_ID;
 }
+function assetLibraryIsTeam(){
+    return activeAssetLibraryId === TEAM_ASSET_LIBRARY_ID;
+}
+function normalizedTeamAssetLibraryItems(){
+    const normalizer = window.TeamAssets?.normalizeTeamAsset || (item => item || {});
+    return (teamAssetLibraryItems || []).map(normalizer).filter(item => item.id);
+}
+function teamAssetLibrary(){
+    const teamId = currentTeamCloudTeamId();
+    return {
+        id: TEAM_ASSET_LIBRARY_ID,
+        name: '团队素材',
+        readonly: true,
+        source: 'team',
+        categories: [{
+            id: teamId || '__team_assets__',
+            name: teamId ? '全部团队素材' : '未选择团队',
+            type: 'image',
+            readonly: true,
+            source: 'team',
+            items: teamId ? normalizedTeamAssetLibraryItems() : [],
+        }],
+    };
+}
 function currentAssetSourceLibraries(){
     return [
         ...assetLibraries(),
+        teamAssetLibrary(),
         {id:LOCAL_ASSET_LIBRARY_ID, name:'本地素材', categories:localAssetFolderCategories(), readonly:true, source:'local'}
     ];
 }
 function activeAssetLibrary(){
     if(assetLibraryIsLocal()) return currentAssetSourceLibraries().find(lib => lib.id === LOCAL_ASSET_LIBRARY_ID);
+    if(assetLibraryIsTeam()) return teamAssetLibrary();
     const libs = assetLibraries();
     return libs.find(lib => lib.id === activeAssetLibraryId) || libs[0] || null;
 }
@@ -5127,13 +5163,31 @@ async function loadAssetLibrary(){
     try {
         const [data, localData] = await Promise.all([
             fetch('/api/asset-library').then(r => r.json()),
-            fetch('/api/local-assets').then(r => r.ok ? r.json() : {items:[], tree:null}).catch(() => ({items:[], tree:null}))
+            fetch('/api/local-assets').then(r => r.ok ? r.json() : {items:[], tree:null}).catch(() => ({items:[], tree:null})),
+            loadTeamAssetLibraryItems()
         ]);
         localAssetLibrary = {items:Array.isArray(localData.items) ? localData.items : [], tree:localData.tree || null};
         setAssetLibraryFromResponse(data, {render:false});
         renderAssetLibrary();
     } catch(e) {
         toast(tr('smart.assetLoadFail'));
+    }
+}
+async function loadTeamAssetLibraryItems(){
+    const teamId = currentTeamCloudTeamId();
+    if(!teamId){
+        teamAssetLibraryItems = [];
+        return [];
+    }
+    try {
+        const res = await teamCloudFetch(`/api/team-cloud/teams/${encodeURIComponent(teamId)}/assets`);
+        if(!res.ok) throw new Error('团队素材加载失败');
+        const data = await res.json();
+        teamAssetLibraryItems = Array.isArray(data.assets) ? data.assets : [];
+        return teamAssetLibraryItems;
+    } catch(e) {
+        teamAssetLibraryItems = [];
+        return [];
     }
 }
 function refreshAssetLibrarySoon(delay=120){
@@ -5482,7 +5536,12 @@ function setAssetLibraryFromResponse(data, options={}){
     assetLibraryUpdatedAt = Number(assetLibrary.updated_at || assetLibraryUpdatedAt || 0);
     const libs = assetLibraries();
     if(!activeAssetLibraryId) activeAssetLibraryId = assetLibrary.active_library_id || libs[0]?.id || '';
-    if(activeAssetLibraryId && activeAssetLibraryId !== LOCAL_ASSET_LIBRARY_ID && !libs.some(lib => lib.id === activeAssetLibraryId)) activeAssetLibraryId = libs[0]?.id || '';
+    if(
+        activeAssetLibraryId
+        && activeAssetLibraryId !== LOCAL_ASSET_LIBRARY_ID
+        && activeAssetLibraryId !== TEAM_ASSET_LIBRARY_ID
+        && !libs.some(lib => lib.id === activeAssetLibraryId)
+    ) activeAssetLibraryId = libs[0]?.id || '';
     const cats = assetCategories('image');
     if(activeAssetCategoryId && !cats.some(cat => cat.id === activeAssetCategoryId)) activeAssetCategoryId = '';
     if(!activeAssetCategoryId) activeAssetCategoryId = activeAssetCategory()?.id || '';
@@ -5536,7 +5595,7 @@ function assetNodeImageFromItem(item, fallbackName='asset'){
 }
 function assetThumbHtml(item){
     const url = escapeAttr(item.url || '');
-    const thumb = item.thumbnail || item.thumb || item.preview || item.url || '';
+    const thumb = item.thumbnailPreviewUrl || item.thumbnailUrl || item.thumbnail || item.thumb || item.preview || item.url || '';
     const kind = assetMediaKind(item);
     if(kind === 'video'){
         return `<div class="asset-thumb-wrap">${smartVideoPreviewHtml(item, 256, 'class="asset-thumb" loading="lazy" decoding="async" alt=""')}<span class="asset-video-badge"><i data-lucide="film"></i>VIDEO</span></div>`;
@@ -5562,12 +5621,13 @@ function renderAssetLibrary(){
     const workflowMode = assetTab === 'workflow';
     assetImageControls.style.display = (imageMode || workflowMode) ? 'block' : 'none';
     const localMode = assetLibraryIsLocal();
+    const teamMode = assetLibraryIsTeam();
     assetDropZone.style.display = imageMode ? 'flex' : 'none';
     assetGrid.style.display = (imageMode || workflowMode) ? 'grid' : 'none';
     workflowEmpty.style.display = 'none';
     if(!imageMode && !workflowMode){ refreshIcons(); return; }
     const baseCats = workflowMode ? workflowAssetCategories() : assetCategories('image');
-    const smartClassCats = imageMode && !localMode ? assetSmartClassEntries().map(entry => ({
+    const smartClassCats = imageMode && !localMode && !teamMode ? assetSmartClassEntries().map(entry => ({
         ...entry,
         id:entry.id,
         name:`${entry.label} / ${entry.tag} (${entry.count})`,
@@ -5583,8 +5643,8 @@ function renderAssetLibrary(){
     const cat = workflowMode ? activeWorkflowAssetCategory() : activeAssetCategory();
     const smartClass = imageMode ? parseAssetSmartClassId(activeAssetCategoryId) : null;
     const items = smartClass ? itemsForAssetSmartClass(activeAssetCategoryId) : (cat?.items || []);
-    if(assetAddCategoryBtn) assetAddCategoryBtn.disabled = Boolean(smartClass);
-    if(assetRenameCategoryBtn) assetRenameCategoryBtn.disabled = !cat || Boolean(smartClass) || (localMode && (cat.id === '__root__' || !cat.id));
+    if(assetAddCategoryBtn) assetAddCategoryBtn.disabled = Boolean(smartClass) || teamMode;
+    if(assetRenameCategoryBtn) assetRenameCategoryBtn.disabled = !cat || Boolean(smartClass) || teamMode || (localMode && (cat.id === '__root__' || !cat.id));
     assetGrid.innerHTML = items.length ? items.map(item => `
         <div class="asset-item ${workflowMode ? 'workflow-asset-item' : ''}" draggable="${workflowMode ? 'false' : 'true'}" data-asset-id="${escapeHtml(item.id)}" data-url="${escapeHtml(item.url)}" data-name="${escapeHtml(item.name || 'asset')}" data-kind="${escapeHtml(assetMediaKind(item))}">
             ${assetThumbHtml(item)}
@@ -5593,12 +5653,13 @@ function renderAssetLibrary(){
                 ${workflowMode
                     ? `<button class="asset-mini-btn" type="button" data-rename-workflow-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('smart.assetRename'))}"><i data-lucide="pencil"></i></button>
                        <button class="asset-mini-btn" type="button" data-delete-workflow-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('common.delete'))}"><i data-lucide="trash-2"></i></button>`
+                    : teamMode ? `<span class="asset-local-tag">团队</span>`
                     : localMode ? `<button class="asset-mini-btn" type="button" data-rename-local-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('smart.assetRename'))}"><i data-lucide="pencil"></i></button>
                        <button class="asset-mini-btn" type="button" data-delete-local-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('common.delete'))}"><i data-lucide="trash-2"></i></button>` : `<button class="asset-mini-btn" type="button" data-rename-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('smart.assetRename'))}"><i data-lucide="pencil"></i></button>
                        <button class="asset-mini-btn" type="button" data-delete-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('common.delete'))}"><i data-lucide="trash-2"></i></button>`}
             </div>
         </div>
-    `).join('') : `<div class="asset-empty">${escapeHtml(localMode ? '暂无本地素材，拖入图片即可保存' : (smartClass ? '这个智能分类下暂无素材' : (workflowMode ? '暂无工作流资产' : tr('smart.assetEmpty'))))}</div>`;
+    `).join('') : `<div class="asset-empty">${escapeHtml(localMode ? '暂无本地素材，拖入图片即可保存' : (teamMode ? '暂无团队素材' : (smartClass ? '这个智能分类下暂无素材' : (workflowMode ? '暂无工作流资产' : tr('smart.assetEmpty')))))}</div>`;
     if(workflowMode) bindWorkflowAssetItemEvents();
     else bindAssetItemEvents();
     bindSmartPreviewImageFallbacks(assetGrid);
@@ -5791,11 +5852,12 @@ function bindAssetItemEvents(){
         thumb?.addEventListener('mousemove', e => positionAssetHoverPreview(e));
         thumb?.addEventListener('mouseleave', () => { clearTimeout(assetHoverTimer); hideAssetHoverPreview(); });
         el.addEventListener('dragstart', e => {
+            e.stopPropagation();
             hideAssetHoverPreview();
             e.dataTransfer.effectAllowed = 'copy';
+            e.dataTransfer.clearData();
             const item = (activeAssetCategory()?.items || []).find(x => x.id === el.dataset.assetId);
             e.dataTransfer.setData('application/x-smart-asset', JSON.stringify(assetNodeImageFromItem(item || {url:el.dataset.url, name:el.dataset.name, kind:el.dataset.kind})));
-            e.dataTransfer.setData('text/plain', el.dataset.url || '');
         });
     });
     assetGrid.querySelectorAll('[data-rename-asset]').forEach(btn => {
@@ -5857,6 +5919,7 @@ function bindWorkflowAssetItemEvents(){
     });
 }
 async function addUrlToAssetLibrary(url, name=''){
+    if(assetLibraryIsTeam()) return addUrlItemsToTeamAssetLibrary([{url, name:name || smartImageNameFromUrl(url)}]);
     if(assetLibraryIsLocal()) return addUrlToLocalAssetLibrary(url, name);
     const cat = activeAssetCategory();
     if(!cat){ toast(tr('smart.assetNoFolder')); return; }
@@ -5866,6 +5929,38 @@ async function addUrlToAssetLibrary(url, name=''){
     });
     setAssetLibraryFromResponse(data);
     toast(tr('smart.assetSaved'));
+}
+async function addFilesToTeamAssetLibrary(files=[]){
+    const teamId = currentTeamCloudTeamId();
+    if(!teamId) throw new Error('请先在团队页选择团队');
+    const supported = [...(files || [])].filter(isSupportedUploadFile);
+    if(!supported.length) return [];
+    const uploaded = [];
+    for(const file of supported){
+        const form = new FormData();
+        form.append('file', file, file.name || 'media');
+        const res = await teamCloudFetch(`/api/team-cloud/teams/${encodeURIComponent(teamId)}/assets`, {method:'POST', body:form});
+        if(!res.ok) throw new Error(await responseErrorMessage(res, '团队素材上传失败'));
+        const data = await res.json();
+        if(data.asset) uploaded.push(data.asset);
+    }
+    await loadTeamAssetLibraryItems();
+    renderAssetLibrary();
+    toast(`已上传 ${uploaded.length} 个团队素材`);
+    return uploaded;
+}
+async function addUrlItemsToTeamAssetLibrary(items=[]){
+    const files = [];
+    for(const item of items || []){
+        const url = displayMediaUrl(item?.url || '');
+        if(!url) continue;
+        const res = await fetch(url);
+        if(!res.ok) throw new Error(await responseErrorMessage(res, '团队素材上传失败'));
+        const blob = await res.blob();
+        const name = item?.name || smartImageNameFromUrl(item?.url || url) || 'asset';
+        files.push(new File([blob], name, {type:blob.type || 'application/octet-stream'}));
+    }
+    return addFilesToTeamAssetLibrary(files);
 }
 function localAssetFolderPath(){
     const cat = activeAssetCategory();
@@ -6974,6 +7069,7 @@ function proxiedMediaUrl(itemOrUrl, name=''){
 }
 function displayMediaUrl(itemOrUrl, name=''){
     const url = smartOriginalMediaUrl(itemOrUrl);
+    if(String(url || '').startsWith('/api/team-cloud/')) return smartTeamAssetAuthedUrl(url);
     if(/^https?:\/\//i.test(String(url || ''))) return proxiedMediaUrl(itemOrUrl, name);
     return url;
 }
@@ -17186,7 +17282,8 @@ async function handleAssetPanelDrop(e){
     try {
         const payload = await resolveSmartImageDropPayload(e.dataTransfer);
         if(payload.type === 'files') {
-            if(assetLibraryIsLocal()) await addFilesToLocalAssetLibrary(payload.files);
+            if(assetLibraryIsTeam()) await addFilesToTeamAssetLibrary(payload.files);
+            else if(assetLibraryIsLocal()) await addFilesToLocalAssetLibrary(payload.files);
             else {
                 const uploaded = await uploadFiles(payload.files);
                 for(const file of uploaded) if(file?.url) await addUrlToAssetLibrary(file.url, file.name || '');

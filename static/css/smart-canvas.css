@@ -21,6 +21,7 @@ html[data-studio-scale="off"].studio-scale-managed .smart-history-toggle,
 html[data-studio-scale="off"].studio-scale-managed .smart-shortcut-toggle,
 html[data-studio-scale="off"].studio-scale-managed .smart-workflow-toggle,
 html[data-studio-scale="off"].studio-scale-managed .asset-toggle,
+html[data-studio-scale="off"].studio-scale-managed .smart-toolbar-fixed,
 /* 注意：.composer 不能加进这份 zoom 列表——它在 .world 内用世界坐标定位，
    单独 zoom 会让坐标按 scale 重算，离原点越远偏移越大（小屏下直接飞出屏幕外） */
 html[data-studio-scale="off"].studio-scale-managed .smart-minimap,
@@ -48,13 +49,11 @@ html[data-studio-scale="off"].studio-scale-managed .preview-modal {
 .smart-back:hover { transform:translateY(-1px); }
 .smart-back i { width:16px; height:16px; }
 .smart-title { position:absolute; left:22px; top:72px; z-index:10; max-width:min(420px, calc(100vw - 44px)); color:var(--muted); font-size:12px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none; }
-.smart-log-toggle,.smart-shortcut-toggle,.smart-workflow-toggle { position:absolute; top:22px; z-index:56; width:96px; height:40px; padding:0 15px; border-radius:999px; background:var(--panel); color:var(--text); border:1px solid var(--line); box-shadow:0 14px 34px var(--shadow); backdrop-filter:blur(16px); display:flex; align-items:center; justify-content:center; gap:8px; font-size:12px; font-weight:750; white-space:nowrap; transition:transform .14s ease, border-color .14s ease; }
-.smart-log-toggle { right:130px; }
-.smart-history-toggle { right:238px; }
-.smart-shortcut-toggle { right:346px; }
-.smart-workflow-toggle { right:454px; }
-.smart-log-toggle:hover,.smart-shortcut-toggle:hover,.smart-workflow-toggle:hover { transform:translateY(-1px); border-color:var(--text); }
-.smart-log-toggle.active,.smart-shortcut-toggle.active,.smart-workflow-toggle.active { background:var(--strong); color:var(--strong-text); border-color:var(--strong); box-shadow:0 16px 38px var(--shadow); }
+.smart-toolbar-fixed { position:absolute; right:22px; top:22px; z-index:56; display:flex; gap:6px; align-items:center; padding:4px; border-radius:999px; background:rgba(255,255,255,.72); border:1px solid var(--line); box-shadow:0 14px 34px var(--shadow); backdrop-filter:blur(16px); }
+.theme-dark .smart-toolbar-fixed { background:rgba(15,23,42,.72); }
+.smart-log-toggle,.smart-history-toggle,.smart-shortcut-toggle,.smart-workflow-toggle,.asset-toggle { position:static; width:auto; min-width:72px; height:32px; padding:0 12px; border-radius:999px; background:transparent; color:var(--text); border:1px solid transparent; box-shadow:none; backdrop-filter:none; display:flex; align-items:center; justify-content:center; gap:7px; font-size:12px; font-weight:750; white-space:nowrap; transition:transform .14s ease, border-color .14s ease, background .14s ease, color .14s ease; }
+.smart-log-toggle:hover,.smart-history-toggle:hover,.smart-shortcut-toggle:hover,.smart-workflow-toggle:hover,.asset-toggle:hover { transform:translateY(-1px); border-color:var(--line); background:var(--soft); }
+.smart-log-toggle.active,.smart-history-toggle.active,.smart-shortcut-toggle.active,.smart-workflow-toggle.active,.asset-toggle.active { background:var(--strong); color:var(--strong-text); border-color:var(--strong); box-shadow:0 6px 18px var(--shadow); }
 .smart-log-toggle i,.smart-log-toggle svg,.smart-history-toggle i,.smart-history-toggle svg,.smart-shortcut-toggle i,.smart-shortcut-toggle svg,.smart-workflow-toggle i,.smart-workflow-toggle svg { width:16px; height:16px; }
 .image-node { position:absolute; width:260px; min-height:178px; border-radius:16px; background:transparent; border:0; box-shadow:none; overflow:visible; user-select:none; cursor:move; }
 body.smart-node-drag * { user-select:none !important; }
@@ -1060,9 +1059,6 @@ input[type=range].smart-range::-webkit-slider-thumb { -webkit-appearance:none; w
 .smart-minimap-content { position:absolute; inset:10px; border-radius:12px; overflow:hidden; background-image:radial-gradient(var(--grid) 1px, transparent 1px); background-size:12px 12px; opacity:.95; }
 .minimap-node { position:absolute; min-width:4px; min-height:4px; border-radius:3px; background:var(--strong); opacity:.8; }
 .smart-minimap-viewport { position:absolute; border-radius:8px; border:2px solid var(--strong); background:rgba(255,255,255,.12); }
-.asset-toggle { position:absolute; right:22px; top:22px; z-index:56; width:96px; height:40px; padding:0 16px; border-radius:999px; background:var(--panel); color:var(--text); border:1px solid var(--line); box-shadow:0 14px 34px var(--shadow); backdrop-filter:blur(16px); display:flex; align-items:center; justify-content:center; gap:8px; font-size:12px; font-weight:750; white-space:nowrap; }
-.asset-toggle:hover { border-color:var(--text); transform:translateY(-1px); }
-.asset-toggle.active { background:var(--strong); color:var(--strong-text); border-color:var(--strong); box-shadow:0 16px 38px var(--shadow); }
 .asset-toggle i,.asset-toggle svg { width:16px; height:16px; }
 .workflow-transfer-panel { position:absolute; right:22px; top:66px; z-index:57; width:390px; max-width:calc(100vw - 44px); max-height:min(430px, calc(100vh - 96px)); min-height:0; display:flex; flex-direction:column; border:1px solid var(--line); border-radius:18px; background:var(--panel); color:var(--text); box-shadow:0 22px 58px var(--shadow); backdrop-filter:blur(20px); overflow:hidden; opacity:0; visibility:hidden; pointer-events:none; transform:translateY(-8px); transition:opacity .16s ease, transform .16s ease, visibility .16s ease; }
 .workflow-transfer-panel.open { opacity:1; visibility:visible; pointer-events:auto; transform:translateY(0); }
@@ -1161,11 +1157,9 @@ input[type=range].smart-range::-webkit-slider-thumb { -webkit-appearance:none; w
 .asset-panel.drag-over { border-color:var(--strong); box-shadow:0 24px 64px var(--shadow), 0 0 0 3px rgba(15,23,42,.08); }
 .theme-dark .asset-panel.drag-over { box-shadow:0 24px 64px var(--shadow), 0 0 0 3px rgba(248,250,252,.08); }
 @media (max-width: 900px){
-    .asset-toggle { right:14px; width:40px; padding:0; }
-    .smart-log-toggle { right:62px; width:40px; padding:0; }
-    .smart-history-toggle { right:110px; width:40px; padding:0; }
-    .smart-shortcut-toggle { right:158px; width:40px; padding:0; }
-    .smart-workflow-toggle { right:206px; width:40px; padding:0; }
+    .smart-toolbar-fixed { right:14px; top:14px; max-width:calc(100vw - 28px); overflow-x:auto; scrollbar-width:none; }
+    .smart-toolbar-fixed::-webkit-scrollbar { display:none; }
+    .asset-toggle,.smart-log-toggle,.smart-history-toggle,.smart-shortcut-toggle,.smart-workflow-toggle { width:40px; min-width:40px; padding:0; }
     .smart-log-toggle span,.smart-history-toggle span,.smart-shortcut-toggle span,.smart-workflow-toggle span,.asset-toggle span { display:none; }
     .shortcut-modal { right:14px; top:118px; width:calc(100vw - 28px); max-height:calc(100vh - 132px); }
     .workflow-transfer-panel { right:14px; top:118px; width:calc(100vw - 28px); max-height:calc(100vh - 132px); }
