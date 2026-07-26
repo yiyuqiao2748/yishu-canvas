@@ -761,10 +761,10 @@ function assetThumb(item){
     const previewUrl = item?.previewUrl || item?.url || '';
     const thumbPreviewUrl = item?.thumbnailPreviewUrl || thumbUrl || '';
     // 视频用 poster（服务端生成的一帧）+ preload=none：不再为每个视频加载元数据，素材多时滚动顺畅。
-    if(kind === 'video') return `<video src="${escapeAttr(previewUrl)}" poster="${escapeAttr(thumbPreviewUrl || assetPreviewUrl(previewUrl, 256))}" muted preload="none" playsinline></video>`;
+    if(kind === 'video') return `<video src="${escapeAttr(previewUrl)}" poster="${escapeAttr(thumbPreviewUrl || assetPreviewUrl(previewUrl, 256))}" muted preload="none" playsinline draggable="false"></video>`;
     if(kind === 'audio') return `<div class="asset-file-icon"><i data-lucide="file-audio"></i><span>音频</span></div>`;
     if(kind === 'text') return `<div class="asset-file-icon"><i data-lucide="file-text"></i><span>文本</span></div>`;
-    return `<img src="${escapeAttr(thumbPreviewUrl || assetPreviewUrl(previewUrl, 256))}" alt="${escapeAttr(item.name || 'asset')}" loading="lazy" decoding="async">`;
+    return `<img src="${escapeAttr(thumbPreviewUrl || assetPreviewUrl(previewUrl, 256))}" alt="${escapeAttr(item.name || 'asset')}" loading="lazy" decoding="async" draggable="false">`;
 }
 function workflowThumb(item){
     return `<div class="asset-file-icon workflow-file-icon"><i data-lucide="workflow"></i><span>${escapeHtml(workflowKindLabel(item))}</span></div>`;

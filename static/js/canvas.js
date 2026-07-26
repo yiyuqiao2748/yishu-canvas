@@ -7119,9 +7119,10 @@ function renderCanvasAssetLibrary(){
     bindCanvasPreviewImageFallbacks(canvasAssetGrid);
     canvasAssetGrid.querySelectorAll('.canvas-asset-item').forEach(card => {
         card.addEventListener('dragstart', event => {
+            event.stopPropagation();
             event.dataTransfer.effectAllowed = 'copy';
+            event.dataTransfer.clearData();
             event.dataTransfer.setData('application/x-canvas-asset', JSON.stringify({url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || ''}));
-            event.dataTransfer.setData('text/plain', card.dataset.url || '');
         });
         card.addEventListener('dblclick', () => {
             if(card.dataset.kind === 'workflow') importWorkflowAssetUrl(card.dataset.url, card.dataset.name || 'workflow');
