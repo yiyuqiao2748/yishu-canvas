@@ -36,6 +36,11 @@ class TeamCloudSettings:
     dev_bypass: bool = os.getenv("TEAM_AUTH_DEV_BYPASS", "").lower() in {"1", "true", "yes", "on"}
     cookie_secure: bool = os.getenv("TEAM_AUTH_COOKIE_SECURE", "").lower() in {"1", "true", "yes", "on"}
     cookie_name: str = os.getenv("TEAM_AUTH_COOKIE_NAME", "team_cloud_access_token")
+    cloudflare_access_enabled: bool = os.getenv("TEAM_AUTH_CLOUDFLARE_ACCESS_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+    cloudflare_access_team_domain: str = os.getenv("TEAM_AUTH_CLOUDFLARE_ACCESS_TEAM_DOMAIN", "").rstrip("/")
+    cloudflare_access_audience: str = os.getenv("TEAM_AUTH_CLOUDFLARE_ACCESS_AUD", "")
+    cloudflare_access_default_team_id: str = os.getenv("TEAM_AUTH_CLOUDFLARE_ACCESS_DEFAULT_TEAM_ID", "")
+    cloudflare_access_default_role: str = os.getenv("TEAM_AUTH_CLOUDFLARE_ACCESS_DEFAULT_ROLE", "member")
     team_api_secret_key: str = os.getenv("TEAM_API_SECRET_KEY", "")
 
     @property
@@ -44,11 +49,18 @@ class TeamCloudSettings:
 
     @property
     def auth_ready(self) -> bool:
-        return bool(self.supabase_jwt_secret or (self.supabase_url and self.supabase_anon_key)) or self.dev_bypass
+        cloudflare_ready = bool(
+            self.cloudflare_access_enabled
+            and self.cloudflare_access_team_domain
+            and self.cloudflare_access_audience
+        )
+        return bool(self.supabase_jwt_secret or (self.supabase_url and self.supabase_anon_key)) or self.dev_bypass or cloudflare_ready
 
 
 settings = TeamCloudSettings()
 router = APIRouter(prefix="/api/team-cloud", tags=["team-cloud"])
+CF_ACCESS_CERTS_CACHE_TTL = 60 * 60
+_cf_access_certs_cache: Dict[str, Any] = {"expires_at": 0.0, "keys": []}
 
 
 class CurrentUser(BaseModel):
@@ -157,6 +169,7 @@ def public_config() -> Dict[str, Any]:
         "supabase_ready": settings.supabase_ready,
         "dev_bypass": settings.dev_bypass,
         "cookie_auth": True,
+        "cloudflare_access_auth": bool(settings.cloudflare_access_enabled),
     }
 
 
@@ -226,14 +239,108 @@ async def authenticate_supabase_token(token: str) -> CurrentUser:
     return await fetch_supabase_user(token)
 
 
-async def require_user(
-    authorization: Optional[str] = Header(default=None),
-    team_cloud_access_token: Optional[str] = Cookie(default=None, alias=settings.cookie_name),
+def cloudflare_access_issuer() -> str:
+    issuer = settings.cloudflare_access_team_domain.rstrip("/")
+    if not issuer:
+        raise HTTPException(status_code=503, detail="Cloudflare Access 团队域名未配置")
+    if not issuer.startswith(("https://", "http://")):
+        issuer = f"https://{issuer}"
+    return issuer
+
+
+async def fetch_cloudflare_access_keys() -> List[Dict[str, Any]]:
+    now = time.time()
+    if _cf_access_certs_cache["keys"] and float(_cf_access_certs_cache["expires_at"]) > now:
+        return list(_cf_access_certs_cache["keys"])
+    issuer = cloudflare_access_issuer()
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.get(f"{issuer}/cdn-cgi/access/certs")
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail="Cloudflare Access 证书读取失败")
+    data = response.json()
+    keys = data.get("keys") if isinstance(data, dict) else None
+    if not keys:
+        raise HTTPException(status_code=502, detail="Cloudflare Access 证书为空")
+    _cf_access_certs_cache["keys"] = keys
+    _cf_access_certs_cache["expires_at"] = now + CF_ACCESS_CERTS_CACHE_TTL
+    return list(keys)
+
+
+def decode_cloudflare_access_token(token: str, keys: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not settings.cloudflare_access_audience:
+        raise HTTPException(status_code=503, detail="Cloudflare Access AUD 未配置")
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.PyJWTError as exc:
+        raise HTTPException(status_code=401, detail="Cloudflare Access 登录凭证无效") from exc
+    kid = str(header.get("kid") or "")
+    issuer = cloudflare_access_issuer()
+    errors: List[Exception] = []
+    for jwk in keys:
+        if kid and str(jwk.get("kid") or "") != kid:
+            continue
+        try:
+            key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
+            return jwt.decode(
+                token,
+                key=key,
+                algorithms=["RS256"],
+                audience=settings.cloudflare_access_audience,
+                issuer=issuer,
+            )
+        except jwt.PyJWTError as exc:
+            errors.append(exc)
+    if errors:
+        raise HTTPException(status_code=401, detail="Cloudflare Access 登录凭证校验失败") from errors[-1]
+    raise HTTPException(status_code=401, detail="Cloudflare Access 登录凭证证书不匹配")
+
+
+def cloudflare_user_id(payload: Dict[str, Any]) -> str:
+    subject = str(payload.get("sub") or payload.get("email") or "")
+    if not subject:
+        raise HTTPException(status_code=401, detail="Cloudflare Access 登录凭证缺少用户 ID")
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"cloudflare-access:{cloudflare_access_issuer()}:{subject}"))
+
+
+async def authenticate_cloudflare_access_token(token: Optional[str]) -> Optional[CurrentUser]:
+    if not (settings.cloudflare_access_enabled and token):
+        return None
+    keys = await fetch_cloudflare_access_keys()
+    payload = decode_cloudflare_access_token(token.strip(), keys)
+    email = auth_email_required(str(payload.get("email") or ""))
+    return CurrentUser(
+        id=cloudflare_user_id(payload),
+        email=email,
+        username=email.split("@", 1)[0].lower(),
+        display_name=email,
+        provider="cloudflare-access",
+    )
+
+
+async def ensure_default_team_membership(user: CurrentUser) -> None:
+    team_id = settings.cloudflare_access_default_team_id.strip()
+    if not team_id or user.provider != "cloudflare-access":
+        return
+    role = settings.cloudflare_access_default_role if settings.cloudflare_access_default_role in TEAM_ROLES else "member"
+    store = active_store()
+    ensure = getattr(store, "ensure_team_member", None)
+    if ensure:
+        await maybe_await(ensure(user, team_id, role))
+
+
+async def resolve_current_user(
+    authorization: Optional[str] = None,
+    team_cloud_access_token: Optional[str] = None,
+    cf_access_jwt_assertion: Optional[str] = None,
 ) -> CurrentUser:
     if authorization and authorization.lower().startswith("bearer "):
         return await authenticate_supabase_token(authorization[7:].strip())
     if team_cloud_access_token:
         return await authenticate_supabase_token(team_cloud_access_token)
+    cf_user = await authenticate_cloudflare_access_token(cf_access_jwt_assertion)
+    if cf_user:
+        await ensure_default_team_membership(cf_user)
+        return cf_user
     if settings.dev_bypass:
         return CurrentUser(
             id=os.getenv("TEAM_AUTH_DEV_USER_ID", "local-dev-user"),
@@ -243,14 +350,23 @@ async def require_user(
     raise HTTPException(status_code=401, detail="请先登录")
 
 
+async def require_user(
+    authorization: Optional[str] = Header(default=None),
+    team_cloud_access_token: Optional[str] = Cookie(default=None, alias=settings.cookie_name),
+    cf_access_jwt_assertion: Optional[str] = Header(default=None, alias="Cf-Access-Jwt-Assertion"),
+) -> CurrentUser:
+    return await resolve_current_user(authorization, team_cloud_access_token, cf_access_jwt_assertion)
+
+
 async def require_user_or_query_token(
     authorization: Optional[str] = Header(default=None),
     team_cloud_access_token: Optional[str] = Cookie(default=None, alias=settings.cookie_name),
+    cf_access_jwt_assertion: Optional[str] = Header(default=None, alias="Cf-Access-Jwt-Assertion"),
     access_token: Optional[str] = Query(default=None),
 ) -> CurrentUser:
     if access_token:
         return await authenticate_supabase_token(access_token.strip())
-    return await require_user(authorization, team_cloud_access_token)
+    return await resolve_current_user(authorization, team_cloud_access_token, cf_access_jwt_assertion)
 
 
 def set_auth_cookie(response: Response, access_token: str) -> None:
@@ -552,6 +668,29 @@ class LocalTeamStore:
                 if team:
                     result.append({**team, "role": member.get("role", "member")})
             return result
+
+    def ensure_team_member(self, user: CurrentUser, team_id: str, role: str) -> Dict[str, Any]:
+        if role not in TEAM_ROLES:
+            role = "member"
+        with self.lock:
+            data = self._read()
+            team = next((item for item in data["teams"] if item.get("id") == team_id), None)
+            if not team:
+                raise HTTPException(status_code=404, detail="默认团队不存在")
+            member = next((item for item in data["members"] if item.get("team_id") == team_id and item.get("user_id") == user.id), None)
+            if member:
+                return member
+            member = {
+                "id": str(uuid.uuid4()),
+                "team_id": team_id,
+                "user_id": user.id,
+                "email": user.email,
+                "role": role,
+                "created_at": now_ms(),
+            }
+            data["members"].append(member)
+            self._write(data)
+            return member
 
     def create_team(self, user: CurrentUser, name: str) -> Dict[str, Any]:
         clean_name = name.strip()
@@ -1076,6 +1215,30 @@ class SupabaseTeamStore:
             f"/team_members?select=role,teams(id,name,owner_id,created_at,updated_at)&user_id=eq.{user.id}",
         )
         return [{**row["teams"], "role": row["role"]} for row in rows if row.get("teams")]
+
+    async def ensure_team_member(self, user: CurrentUser, team_id: str, role: str) -> Dict[str, Any]:
+        if role not in TEAM_ROLES:
+            role = "member"
+        teams = await self._request("GET", f"/teams?id=eq.{quote(team_id, safe='')}&select=id")
+        if not teams:
+            raise HTTPException(status_code=404, detail="默认团队不存在")
+        rows = await self._request(
+            "GET",
+            f"/team_members?team_id=eq.{quote(team_id, safe='')}&user_id=eq.{quote(user.id, safe='')}&select=*",
+        )
+        if rows:
+            return rows[0]
+        created = await self._request(
+            "POST",
+            "/team_members",
+            json_body=[{
+                "team_id": team_id,
+                "user_id": user.id,
+                "email": user.email,
+                "role": role,
+            }],
+        )
+        return created[0] if created else {}
 
     async def create_team(self, user: CurrentUser, name: str) -> Dict[str, Any]:
         team_rows = await self._request(

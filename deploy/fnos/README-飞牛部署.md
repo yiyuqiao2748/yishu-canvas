@@ -37,6 +37,12 @@
 
 这样即使应用登录页有 bug，外层也有 Cloudflare Access 保护。
 
+如果希望同事通过 Cloudflare Access 后不再单独注册应用账号，可以开启 Cloudflare Access 自动登录。具体配置见：
+
+```text
+docs/cloudflare-access-auto-login.md
+```
+
 ## 第三步：在 NAS 上准备文件
 
 在飞牛 NAS 上准备一个目录，例如：

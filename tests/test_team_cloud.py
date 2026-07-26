@@ -408,6 +408,54 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(email, "yiwei@example.com")
 
+    async def test_cloudflare_access_disabled_does_not_accept_header(self):
+        with patch.object(team_cloud.settings, "cloudflare_access_enabled", False), \
+             patch.object(team_cloud.settings, "dev_bypass", False):
+            with self.assertRaises(HTTPException) as error:
+                await team_cloud.resolve_current_user(cf_access_jwt_assertion="token")
+
+        self.assertEqual(error.exception.status_code, 401)
+
+    async def test_cloudflare_access_token_maps_to_current_user(self):
+        with patch.object(team_cloud.settings, "cloudflare_access_enabled", True), \
+             patch.object(team_cloud.settings, "cloudflare_access_team_domain", "https://tight-king-c7fe.cloudflareaccess.com"), \
+             patch.object(team_cloud.settings, "cloudflare_access_audience", "app-aud"), \
+             patch.object(team_cloud, "fetch_cloudflare_access_keys", AsyncMock(return_value=[{"kid": "test"}])), \
+             patch.object(team_cloud, "decode_cloudflare_access_token", return_value={
+                 "sub": "cf-user-1",
+                 "email": "Person@Example.com",
+             }):
+            user = await team_cloud.authenticate_cloudflare_access_token("access-token")
+
+        self.assertIsNotNone(user)
+        self.assertEqual(user.email, "person@example.com")
+        self.assertEqual(user.provider, "cloudflare-access")
+        self.assertEqual(len(user.id), 36)
+
+    async def test_cloudflare_access_user_auto_joins_default_team(self):
+        temp = tempfile.TemporaryDirectory()
+        try:
+            store = LocalTeamStore(str(Path(temp.name) / "team_cloud.json"))
+            owner = CurrentUser(id="owner-1", email="owner@example.com", provider="test")
+            team = store.create_team(owner, "Design Lab")
+            user = CurrentUser(
+                id="59670b3e-7f42-52e6-9b87-7f9f2f87c68c",
+                email="person@example.com",
+                provider="cloudflare-access",
+            )
+
+            with patch.object(team_cloud.settings, "cloudflare_access_default_team_id", team["id"]), \
+                 patch.object(team_cloud.settings, "cloudflare_access_default_role", "member"), \
+                 patch.object(team_cloud, "active_store", return_value=store):
+                await team_cloud.ensure_default_team_membership(user)
+
+            teams = store.list_user_teams(user)
+            self.assertEqual(len(teams), 1)
+            self.assertEqual(teams[0]["id"], team["id"])
+            self.assertEqual(teams[0]["role"], "member")
+        finally:
+            temp.cleanup()
+
     async def test_update_password_requires_recovery_token(self):
         with self.assertRaises(HTTPException) as error:
             await team_cloud.update_password(
