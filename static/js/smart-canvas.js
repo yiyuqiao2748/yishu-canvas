@@ -5854,10 +5854,8 @@ function bindAssetItemEvents(){
         el.addEventListener('dragstart', e => {
             e.stopPropagation();
             hideAssetHoverPreview();
-            e.dataTransfer.effectAllowed = 'copy';
-            e.dataTransfer.clearData();
             const item = (activeAssetCategory()?.items || []).find(x => x.id === el.dataset.assetId);
-            e.dataTransfer.setData('application/x-smart-asset', JSON.stringify(assetNodeImageFromItem(item || {url:el.dataset.url, name:el.dataset.name, kind:el.dataset.kind})));
+            setSmartAssetDragData(e.dataTransfer, item || {url:el.dataset.url, name:el.dataset.name, kind:el.dataset.kind});
         });
     });
     assetGrid.querySelectorAll('[data-rename-asset]').forEach(btn => {
@@ -12516,6 +12514,14 @@ function hasSmartImageDropData(dataTransfer){
 function hasSmartAssetDrag(dataTransfer){
     return smartDropDataTypes(dataTransfer).includes('application/x-smart-asset');
 }
+function setSmartAssetDragData(dataTransfer, item){
+    if(!dataTransfer) return;
+    const payload = assetNodeImageFromItem(item || {});
+    dataTransfer.effectAllowed = 'copy';
+    dataTransfer.clearData();
+    dataTransfer.setData('application/x-smart-asset', JSON.stringify(payload));
+    dataTransfer.setData('text/plain', payload.name || 'asset');
+}
 function hasMediaDrawerDrag(dataTransfer){
     return smartDropDataTypes(dataTransfer).includes('application/x-smart-asset');
 }
@@ -16897,6 +16903,17 @@ window.addEventListener('keyup', e => {
 });
 window.addEventListener('blur', () => {
     isRKeyDown = false;
+});
+window.addEventListener('dragover', event => {
+    if(hasSmartAssetDrag(event.dataTransfer) || hasSmartImageDropData(event.dataTransfer)){
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+    }
+});
+window.addEventListener('drop', event => {
+    if(hasSmartAssetDrag(event.dataTransfer) || hasSmartImageDropData(event.dataTransfer)){
+        event.preventDefault();
+    }
 });
 engineSelect.onchange = () => {
     settings.engine = engineSelect.value;

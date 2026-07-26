@@ -833,7 +833,7 @@
                 </div>
             </section>
 
-            <section class="panel wide">
+            <section class="panel wide" id="teamApiPanel" data-admin-only="team-api">
                 <div class="panel-head">
                     <div class="panel-title">
                         <i data-lucide="key-round" width="18" height="18"></i>
@@ -841,7 +841,8 @@
                     </div>
                 </div>
                 <div class="panel-body">
-                    <div class="team-api-layout">
+                    <div class="empty" id="teamApiMemberNotice" hidden>团队 API 由管理员统一配置，普通成员进入画布后会自动使用团队配置。</div>
+                    <div class="team-api-layout" id="teamApiAdminControls">
                         <aside class="team-api-sidebar">
                             <div class="team-api-section-title">平台列表</div>
                             <div class="team-api-provider-list" id="apiProviderList"></div>

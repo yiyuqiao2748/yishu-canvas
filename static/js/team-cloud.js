@@ -133,6 +133,7 @@
 
     function renderAuth(){
         const signedIn = !!state.user;
+        const canManageApi = canManageTeamApi();
         $("signedOut").hidden = signedIn;
         $("signedIn").hidden = !signedIn;
         $("logoutBtn").hidden = !signedIn;
@@ -140,14 +141,15 @@
         $("inviteForm").querySelectorAll("input,select,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
         $("projectForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
         $("canvasForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedProjectId);
-        $("apiProviderForm").querySelectorAll("input,select,textarea,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
+        $("apiProviderForm").querySelectorAll("input,select,textarea,button").forEach((item) => item.disabled = !canManageApi);
         document.querySelectorAll("[data-api-model-add], [data-api-model-input], [data-api-model-role], [data-api-model-remove]").forEach((item) => {
-            item.disabled = !signedIn || !state.selectedTeamId;
+            item.disabled = !canManageApi;
         });
         ["apiProviderAdd", "apiProviderRecommend", "apiProviderDelete", "apiProviderSubmit", "apiProviderClearKey", "apiProviderValidate", "apiProviderFetchModels"].forEach((id) => {
             const item = $(id);
-            if(item) item.disabled = !signedIn || !state.selectedTeamId;
+            if(item) item.disabled = !canManageApi;
         });
+        renderTeamApiAccess();
 
         if(signedIn){
             $("userLine").textContent = userDisplayName(state.user);
@@ -492,11 +494,11 @@
         const items = Array.isArray(models)
             ? models.map((model) => String(model || ""))
             : String(models || "").split(/\r?\n/);
-        const disabled = !state.user || !state.selectedTeamId ? "disabled" : "";
+        const disabled = !canManageTeamApi() ? "disabled" : "";
         el.innerHTML = items.length
             ? items.map((model, index) => `
                 <div class="team-api-model-row">
-                    <input type="text" value="${escapeHtml(model)}" data-api-model-input="${kind}" data-api-model-index="${index}" ${disabled}>
+                    <input type="text" value="${escapeAttr(model)}" data-api-model-input="${kind}" data-api-model-index="${index}" ${disabled}>
                     <select data-api-model-role="${kind}" data-api-model-index="${index}" ${disabled}>
                         <option value="default" ${index === 0 ? "selected" : ""}>默认</option>
                         <option value="normal" ${index === 0 ? "" : "selected"}>普通</option>
@@ -508,6 +510,14 @@
             `).join("")
             : '<div class="empty team-api-model-empty">暂无模型</div>';
         iconRefresh();
+    }
+
+    function mergeTeamApiModelRows(kind, fetchedModels){
+        const existing = normalizeModelLines(teamApiModelRows(kind));
+        const incoming = normalizeModelLines(fetchedModels);
+        const merged = normalizeModelLines([...existing, ...incoming]);
+        renderTeamApiModelRowsFromItems(kind, merged);
+        return merged.length - existing.length;
     }
 
     function addTeamApiModel(kind){
@@ -658,6 +668,34 @@
         }[role] || "成员";
     }
 
+    function currentTeam(){
+        return (state.teams || []).find((team) => team.id === state.selectedTeamId) || null;
+    }
+
+    function currentTeamRole(){
+        return currentTeam()?.role || "";
+    }
+
+    function canManageTeamApi(){
+        return !!state.user && !!state.selectedTeamId && ["owner", "admin"].includes(currentTeamRole());
+    }
+
+    function renderTeamApiAccess(){
+        const panel = $("teamApiPanel");
+        const controls = $("teamApiAdminControls");
+        const notice = $("teamApiMemberNotice");
+        const signedIn = !!state.user;
+        const hasTeam = !!state.selectedTeamId;
+        const canManage = canManageTeamApi();
+        if(panel) panel.hidden = signedIn && hasTeam && !canManage;
+        if(controls) controls.hidden = !canManage;
+        if(notice) notice.hidden = !signedIn || !hasTeam || canManage;
+        if(!canManage){
+            state.apiProviders = [];
+            state.selectedApiProviderId = "";
+        }
+    }
+
     function escapeHtml(value){
         return String(value || "")
             .replace(/&/g, "&amp;")
@@ -722,7 +760,12 @@
             const data = await api(`/teams/${encodeURIComponent(teamId)}/members`);
             renderMembers(data.members || []);
             await loadProjects(teamId);
-            await loadApiProviders(teamId);
+            if(canManageTeamApi()){
+                await loadApiProviders(teamId);
+            } else {
+                state.apiProviders = [];
+                renderApiProviders();
+            }
             await loadGenerationLogs(teamId);
             setMessage($("teamMessage"), silent ? "" : "团队已选择", silent ? "" : "ok");
         } catch(e) {
@@ -744,6 +787,11 @@
     }
 
     async function loadApiProviders(teamId){
+        if(!canManageTeamApi()){
+            state.apiProviders = [];
+            renderApiProviders();
+            return;
+        }
         const data = await api(`/teams/${encodeURIComponent(teamId)}/api-providers`);
         state.apiProviders = data.providers || [];
         if(state.selectedApiProviderId && !teamApiProviderCards().some((item) => item.provider_id === state.selectedApiProviderId)){
@@ -1080,10 +1128,12 @@
                 body: JSON.stringify(currentApiProviderPayload()),
             });
             const models = data.models || {};
-            renderTeamApiModelRowsFromItems("image", models.image_models || []);
-            renderTeamApiModelRowsFromItems("chat", models.chat_models || []);
-            renderTeamApiModelRowsFromItems("video", models.video_models || []);
-            setMessage($("apiMessage"), `已拉取 ${data.model_count || 0} 个模型，请确认后点击保存。`, "ok");
+            const added = (
+                mergeTeamApiModelRows("image", models.image_models || []) +
+                mergeTeamApiModelRows("chat", models.chat_models || []) +
+                mergeTeamApiModelRows("video", models.video_models || [])
+            );
+            setMessage($("apiMessage"), `已拉取 ${data.model_count || 0} 个模型，新增 ${added} 个，请确认后点击保存。`, "ok");
         } catch(e) {
             setMessage($("apiMessage"), e.message, "error");
         } finally {

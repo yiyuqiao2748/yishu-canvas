@@ -7120,9 +7120,7 @@ function renderCanvasAssetLibrary(){
     canvasAssetGrid.querySelectorAll('.canvas-asset-item').forEach(card => {
         card.addEventListener('dragstart', event => {
             event.stopPropagation();
-            event.dataTransfer.effectAllowed = 'copy';
-            event.dataTransfer.clearData();
-            event.dataTransfer.setData('application/x-canvas-asset', JSON.stringify({url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || ''}));
+            setCanvasAssetDragData(event.dataTransfer, {url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || ''});
         });
         card.addEventListener('dblclick', () => {
             if(card.dataset.kind === 'workflow') importWorkflowAssetUrl(card.dataset.url, card.dataset.name || 'workflow');
@@ -13207,6 +13205,18 @@ function hasCanvasAssetSaveDrop(dataTransfer){
 }
 function hasCanvasAssetDrag(dataTransfer){
     return [...(dataTransfer?.types || [])].includes('application/x-canvas-asset');
+}
+function setCanvasAssetDragData(dataTransfer, item){
+    if(!dataTransfer) return;
+    const payload = {
+        url: String(item?.url || ''),
+        name: String(item?.name || ''),
+        kind: String(item?.kind || '')
+    };
+    dataTransfer.effectAllowed = 'copy';
+    dataTransfer.clearData();
+    dataTransfer.setData('application/x-canvas-asset', JSON.stringify(payload));
+    dataTransfer.setData('text/plain', payload.name || 'asset');
 }
 async function uploadDropToActiveTeamAssets(dataTransfer){
     if(!canvasAssetLibraryIsTeam()) return false;

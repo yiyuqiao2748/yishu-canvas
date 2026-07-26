@@ -564,6 +564,50 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function removeTeamApiModel", script)
         self.assertIn("function renderTeamApiModelRows", script)
 
+    def test_team_api_fetch_models_merges_with_manual_rows(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "team-cloud.js").read_text(encoding="utf-8")
+
+        self.assertIn("function mergeTeamApiModelRows", script)
+        self.assertIn('mergeTeamApiModelRows("image"', script)
+        self.assertIn('mergeTeamApiModelRows("chat"', script)
+        self.assertIn('mergeTeamApiModelRows("video"', script)
+
+    def test_team_api_page_is_admin_only_in_the_ui(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "static" / "team-cloud.html").read_text(encoding="utf-8")
+        script = (root / "static" / "js" / "team-cloud.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="teamApiPanel"', html)
+        self.assertIn('id="teamApiMemberNotice"', html)
+        self.assertIn('function currentTeamRole', script)
+        self.assertIn('function canManageTeamApi', script)
+        self.assertIn('function renderTeamApiAccess', script)
+        self.assertIn('teamApiPanel', script)
+        self.assertIn('teamApiMemberNotice', script)
+
+    def test_smart_canvas_asset_drag_is_captured_by_window(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("function hasSmartAssetDrag", script)
+        self.assertIn("function setSmartAssetDragData", script)
+        self.assertIn("application/x-smart-asset", script)
+        self.assertIn("text/plain", script)
+        self.assertIn("window.addEventListener('dragover'", script)
+        self.assertIn("window.addEventListener('drop'", script)
+        self.assertIn("hasSmartAssetDrag(event.dataTransfer)", script)
+
+    def test_canvas_asset_drag_uses_safe_text_payload(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("function hasCanvasAssetDrag", script)
+        self.assertIn("function setCanvasAssetDragData", script)
+        self.assertIn("application/x-canvas-asset", script)
+        self.assertIn("text/plain", script)
+        self.assertIn("hasCanvasAssetDrag(event.dataTransfer)", script)
+
 
 if __name__ == "__main__":
     unittest.main()
