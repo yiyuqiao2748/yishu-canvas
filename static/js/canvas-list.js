@@ -88,6 +88,7 @@ const boardResetViewBtn = document.getElementById('boardResetView');
 const pasteCanvasBtn = document.getElementById('pasteCanvasBtn');
 const emptyCreateCanvasBtn = document.getElementById('emptyCreateCanvasBtn');
 const statusEl = document.getElementById('boardStatus');
+const visibilityFilterButtons = Array.from(document.querySelectorAll('[data-visibility-filter]'));
 
 /* ===== State ===== */
 let projects = [];
@@ -97,6 +98,7 @@ let currentProjectId = rememberedProjectId();
 let pendingDeleteProjectId = null;
 let statusTimer = null;
 let clipboardCanvasId = null;   // 剪切的画布（切到别的项目后粘贴）
+let canvasVisibilityFilter = 'all';
 
 // board viewport (mirrors smart-canvas math)
 const viewport = { x: 0, y: 0, scale: 1 };
@@ -199,7 +201,14 @@ function onBoardWheel(e){
 
 /* ===== Data loading ===== */
 function currentProject(){ return projects.find(p => p.id === currentProjectId) || projects[0] || null; }
-function canvasesInProject(pid){ return canvases.filter(c => (c.project || 'default') === pid); }
+function allCanvasesInProject(pid){ return canvases.filter(c => (c.project || 'default') === pid); }
+function canvasesInProject(pid){
+    const items = allCanvasesInProject(pid);
+    if(canvasVisibilityFilter === 'private' || canvasVisibilityFilter === 'team'){
+        return items.filter(c => normalizeCloudCanvasVisibility(c.visibility) === canvasVisibilityFilter);
+    }
+    return items;
+}
 
 async function cloudApi(path, options){
     let token = '';
@@ -236,6 +245,14 @@ function mapCloudProject(project, index = 0){
 function normalizeCloudCanvasKind(kind){
     return String(kind || '').toLowerCase() === 'smart' ? 'smart' : 'classic';
 }
+function normalizeCloudCanvasVisibility(visibility){
+    return String(visibility || '').toLowerCase() === 'team' ? 'team' : 'private';
+}
+function canvasVisibilityLabel(canvas, compact = false){
+    const visibility = normalizeCloudCanvasVisibility(canvas?.visibility);
+    if(visibility === 'team') return compact ? L('团队','Team') : L('团队共享','Team shared');
+    return compact ? L('私有','Private') : L('我的私有','Private');
+}
 
 function mapCloudCanvas(canvas){
     const data = canvas.data || {};
@@ -245,6 +262,7 @@ function mapCloudCanvas(canvas){
         title: canvas.title || L('未命名画布','Untitled canvas'),
         project: canvas.project_id,
         kind: normalizeCloudCanvasKind(data.kind),
+        visibility: normalizeCloudCanvasVisibility(canvas.visibility || data.visibility),
         icon: data.icon || 'sparkles',
         node_count: Array.isArray(data.nodes) ? data.nodes.length : 0,
         board_x: data.board_x,
@@ -339,7 +357,7 @@ async function loadAll(){
 function projectCanvasCount(pid){
     const p = projects.find(x => x.id === pid);
     // prefer live count from canvases array; fall back to server count
-    const live = canvasesInProject(pid).length;
+    const live = allCanvasesInProject(pid).length;
     return canvases.length ? live : (p?.canvas_count || 0);
 }
 
@@ -505,6 +523,9 @@ function updateBoardHeader(){
     const p = currentProject();
     boardProjectName.textContent = p ? p.name : L('默认项目','Default');
     boardCanvasCount.textContent = String(canvasesInProject(currentProjectId).length);
+    visibilityFilterButtons.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.visibilityFilter === canvasVisibilityFilter);
+    });
 }
 
 function autoLayoutNulls(items){
@@ -536,6 +557,7 @@ function renderBoard(){
 
 function buildCard(c){
     const isSmart = (c.kind || 'classic') === 'smart';
+    const visibility = normalizeCloudCanvasVisibility(c.visibility);
     const card = document.createElement('div');
     card.className = 'ws-card'
         + (String(c.color || '').trim() ? ' cc-marked' : '')
@@ -547,6 +569,7 @@ function buildCard(c){
     card.innerHTML = `
         <div class="ws-card-top">
             <span class="ws-card-kind ${isSmart ? 'smart' : 'classic'}">${isSmart ? compactLabel('智能画布','智能','Smart') : compactLabel('普通画布','普通','Classic')}</span>
+            <span class="ws-card-visibility ${visibility}">${canvasVisibilityLabel(c, true)}</span>
             <button class="ws-card-menu" type="button" title="${L('更多','More')}" aria-label="${L('更多','More')}"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
         </div>
         <div class="ws-card-title">${escapeHtml(c.title)}</div>
@@ -680,6 +703,7 @@ async function createCanvasOnBoard(title, kind, worldPt){
                 method: 'POST',
                 body: JSON.stringify({
                     title: name,
+                    visibility: 'private',
                     data: {
                         kind: isSmart ? 'smart' : 'classic',
                         icon: isSmart ? 'sparkles' : 'layers',
@@ -692,6 +716,7 @@ async function createCanvasOnBoard(title, kind, worldPt){
                 })
             });
             const nc = mapCloudCanvas(data.canvas);
+            nc.visibility = normalizeCloudCanvasVisibility(nc.visibility);
             canvases.push(nc);
             const p = projects.find(item => item.id === currentProjectId);
             if(p) p.canvas_count = (p.canvas_count || 0) + 1;
@@ -718,6 +743,7 @@ async function createCanvasOnBoard(title, kind, worldPt){
         if(nc){
             if(nc.project == null) nc.project = currentProjectId;
             nc.kind = normalizeCloudCanvasKind(nc.kind || (isSmart ? 'smart' : 'classic'));
+            nc.visibility = normalizeCloudCanvasVisibility(nc.visibility);
             if(nc.board_x == null) nc.board_x = Math.round(worldPt.x);
             if(nc.board_y == null) nc.board_y = Math.round(worldPt.y);
             canvases.push(nc);
@@ -735,8 +761,10 @@ function openCardMenu(canvasId, anchorBtn){
     if(!c) return;
     const pop = document.createElement('div');
     pop.className = 'ws-card-pop';
+    const isPrivateCloudCanvas = (teamCloud.enabled || c.is_cloud) && normalizeCloudCanvasVisibility(c.visibility) === 'private';
     pop.innerHTML = (teamCloud.enabled || c.is_cloud) ? `
         <button class="ws-pop-item" data-act="rename"><i data-lucide="pencil" class="w-4 h-4"></i><span>${L('重命名','Rename')}</span></button>
+        ${isPrivateCloudCanvas ? `<button class="ws-pop-item" data-act="publish"><i data-lucide="share-2" class="w-4 h-4"></i><span>${L('发布到团队','Publish to team')}</span></button>` : ''}
         <button class="ws-pop-item" data-act="export"><i data-lucide="download" class="w-4 h-4"></i><span>${L('导出画布','Export canvas')}</span></button>` : `
         <button class="ws-pop-item" data-act="rename"><i data-lucide="pencil" class="w-4 h-4"></i><span>${L('重命名','Rename')}</span></button>
         <button class="ws-pop-item" data-act="export"><i data-lucide="download" class="w-4 h-4"></i><span>${L('导出画布','Export canvas')}</span></button>
@@ -754,6 +782,8 @@ function openCardMenu(canvasId, anchorBtn){
     pop.style.top = Math.round(Math.max(12, top)) + 'px';
     pop.querySelector('[data-act="rename"]').onclick = () => { closeCardMenu(); startCardRename(canvasId); };
     pop.querySelector('[data-act="export"]').onclick = () => { closeCardMenu(); exportCanvas(canvasId); };
+    const publishBtn = pop.querySelector('[data-act="publish"]');
+    if(publishBtn) publishBtn.onclick = () => { closeCardMenu(); publishCanvasToTeam(canvasId); };
     const exportAssetsBtn = pop.querySelector('[data-act="export-assets"]');
     if(exportAssetsBtn) exportAssetsBtn.onclick = () => { closeCardMenu(); exportCanvasWithResources(canvasId); };
     const cutBtn = pop.querySelector('[data-act="cut"]');
@@ -761,6 +791,27 @@ function openCardMenu(canvasId, anchorBtn){
     const deleteBtn = pop.querySelector('[data-act="delete"]');
     if(deleteBtn) deleteBtn.onclick = () => { closeCardMenu(); showCardDeleteConfirm(canvasId); };
     refreshIcons();
+}
+
+async function publishCanvasToTeam(canvasId){
+    const canvas = canvases.find(item => item.id === canvasId);
+    if(!canvas) return;
+    if(!confirm(L('发布后团队成员都可以看到这块画布，继续吗？','Publish this canvas so team members can see it?'))) return;
+    setStatus(L('正在发布到团队...','Publishing to team...'));
+    try {
+        const data = await cloudApi(`/canvases/${encodeURIComponent(canvasId)}/publish`, {
+            method: 'POST',
+            body: '{}',
+        });
+        const updated = mapCloudCanvas(data.canvas || {});
+        canvases = canvases.map(item => item.id === canvasId ? {...item, ...updated, visibility:'team'} : item);
+        renderBoard();
+        renderProjects();
+        setStatus(L('已发布到团队','Published to team'));
+    } catch(e){
+        console.error(e);
+        setStatus(L('发布失败','Publish failed'));
+    }
 }
 
 function showCardDeleteConfirm(canvasId){
@@ -1214,6 +1265,12 @@ emptyCreateCanvasBtn?.addEventListener('click', e => {
 boardRefreshBtn.addEventListener('click', loadAll);
 boardResetViewBtn.addEventListener('click', resetView);
 pasteCanvasBtn?.addEventListener('click', pasteCanvas);
+visibilityFilterButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+        canvasVisibilityFilter = btn.dataset.visibilityFilter || 'all';
+        renderBoard();
+    });
+});
 
 newProjectBtn.addEventListener('click', openNewProject);
 newProjectConfirm.addEventListener('click', createProject);

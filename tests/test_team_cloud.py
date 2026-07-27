@@ -637,6 +637,26 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("alter table public.assets add constraint assets_visibility_check", schema)
         self.assertIn("visibility in ('private', 'team')", schema)
 
+    def test_canvas_list_exposes_private_canvas_visibility_controls(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "static" / "canvas-list.html").read_text(encoding="utf-8")
+        script = (root / "static" / "js" / "canvas-list.js").read_text(encoding="utf-8")
+
+        self.assertIn('data-visibility-filter="private"', html)
+        self.assertIn('data-visibility-filter="team"', html)
+        self.assertIn("function normalizeCloudCanvasVisibility", script)
+        self.assertIn("visibility: normalizeCloudCanvasVisibility", script)
+        self.assertIn("function publishCanvasToTeam", script)
+        self.assertIn("/publish", script)
+
+    def test_canvas_list_visibility_filter_stays_responsive_when_scale_is_disabled(self):
+        root = Path(__file__).resolve().parents[1]
+        css = (root / "static" / "css" / "canvas-list.css").read_text(encoding="utf-8")
+
+        self.assertIn("html[data-studio-scale=\"off\"].studio-scale-managed .workspace {\n        flex-direction:column;", css)
+        self.assertIn("html[data-studio-scale=\"off\"].studio-scale-managed .ws-sidebar {\n        flex:0 0 auto;\n        width:auto;", css)
+        self.assertIn("html[data-studio-scale=\"off\"].studio-scale-managed .ws-board-empty .ws-primary-btn span {\n        display:inline;", css)
+
 
 if __name__ == "__main__":
     unittest.main()

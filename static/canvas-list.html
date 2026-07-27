@@ -60,15 +60,20 @@
         <main class="ws-main">
             <div class="ws-topbar">
                 <div class="ws-topbar-left">
-                    <div class="ws-top-kicker">团队画布</div>
+                    <div class="ws-top-kicker">项目画布</div>
                     <div id="boardProjectName" class="ws-board-name">默认项目</div>
                     <span id="boardCanvasCount" class="ws-board-count">0</span>
+                    <div class="ws-visibility-filter" aria-label="画布可见性筛选">
+                        <button class="ws-filter-btn active" type="button" data-visibility-filter="all">全部</button>
+                        <button class="ws-filter-btn" type="button" data-visibility-filter="private">我的私有</button>
+                        <button class="ws-filter-btn" type="button" data-visibility-filter="team">团队共享</button>
+                    </div>
                 </div>
                 <div class="ws-topbar-right">
                     <button id="pasteCanvasBtn" class="ws-paste-btn" type="button" title="粘贴到此项目" style="display:none"><i data-lucide="clipboard-paste" class="w-4 h-4"></i><span>粘贴到此项目</span></button>
                     <button id="boardResetView" class="ws-icon-btn" type="button" title="重置视图" aria-label="重置视图"><i data-lucide="locate-fixed" class="w-4 h-4"></i></button>
                     <button id="boardRefresh" class="ws-icon-btn" type="button" title="刷新" aria-label="刷新"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
-                    <button id="newCanvasBtn" class="ws-primary-btn" type="button"><i data-lucide="plus" class="w-4 h-4"></i><span>新建画布</span></button>
+                    <button id="newCanvasBtn" class="ws-primary-btn" type="button"><i data-lucide="plus" class="w-4 h-4"></i><span>新建私有画布</span></button>
                 </div>
             </div>
 
@@ -77,9 +82,9 @@
                 <div id="boardEmptyHint" class="ws-board-empty">
                     <div class="ws-board-empty-icon"><i data-lucide="mouse-pointer-click" class="w-7 h-7"></i></div>
                     <div class="ws-board-empty-text">暂无画布</div>
-                    <div class="ws-board-empty-sub">为当前项目创建第一块画布</div>
+                    <div class="ws-board-empty-sub">新建内容默认只有你可见，需要共享时再发布到团队。</div>
                     <div class="ws-board-empty-actions">
-                        <button id="emptyCreateCanvasBtn" class="ws-primary-btn" type="button"><i data-lucide="plus" class="w-4 h-4"></i><span>新建画布</span></button>
+                        <button id="emptyCreateCanvasBtn" class="ws-primary-btn" type="button"><i data-lucide="plus" class="w-4 h-4"></i><span>新建私有画布</span></button>
                     </div>
                 </div>
             </div>
