@@ -1475,8 +1475,17 @@
                     <span class="nav-text" data-i18n="nav.localTools">本地功能</span>
                 </button>
 
+                <div class="nav-item active" onclick="switchUI(this, 'workbench')">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 11.5 12 4l9 7.5"></path>
+                        <path d="M5 10v9h14v-9"></path>
+                        <path d="M9 19v-5h6v5"></path>
+                    </svg>
+                    <span class="nav-text">主页</span>
+                </div>
+
                 <div class="nav-fold-group" id="local-nav-group">
-                    <div class="nav-item active" onclick="switchUI(this, 'zimage')">
+                    <div class="nav-item" onclick="switchUI(this, 'zimage')">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.587-1.587a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
                         </svg>
@@ -1641,7 +1650,8 @@
         </script>
 
         <main class="stage">
-            <iframe id="frame-zimage" data-src="/static/zimage.html?v=2026.07.17.1784772497" class="active" scrolling="yes"></iframe>
+            <iframe id="frame-workbench" data-src="/static/workbench.html?v=2026.07.27.1" class="active" scrolling="yes"></iframe>
+            <iframe id="frame-zimage" data-src="/static/zimage.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
             <iframe id="frame-enhance" data-src="/static/enhance.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
             <iframe id="frame-klein" data-src="/static/klein.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
             <iframe id="frame-angle" data-src="/static/angle.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
@@ -1758,8 +1768,8 @@
         const LOCAL_NAV_COLLAPSED_KEY = 'studio_local_nav_collapsed';
         const SIDEBAR_SETTINGS_COLLAPSED_KEY = 'studio_sidebar_settings_collapsed';
         const SIDEBAR_PINNED_KEY = 'studio_sidebar_pinned';
-        const DEFAULT_PAGE_ID = 'zimage';
-        const PAGE_IDS = ['zimage','enhance','klein','angle','online','gpt-chat','canvas','team-cloud','asset-manager','api-settings','comfyui-settings'];
+        const DEFAULT_PAGE_ID = 'workbench';
+        const PAGE_IDS = ['workbench','zimage','enhance','klein','angle','online','gpt-chat','canvas','team-cloud','asset-manager','api-settings','comfyui-settings'];
         const LOCAL_PAGE_IDS = ['zimage','enhance','klein','angle'];
         const PROJECT_URL = 'https://github.com/hero8152/Infinite-Canvas';
         let appInfo = { version:'', repo_url:PROJECT_URL, version_url:'https://raw.githubusercontent.com/hero8152/Infinite-Canvas/main/VERSION' };
@@ -1906,6 +1916,14 @@
 
         window.addEventListener('message', event => {
             if (event.origin && event.origin !== location.origin) return;
+            if(event.data?.type === 'studio-open-page') {
+                const id = event.data.page;
+                if(PAGE_IDS.includes(id)) {
+                    const trigger = document.querySelector(`[onclick*="'${id}'"],[onclick*='"${id}"']`);
+                    switchUI(trigger, id);
+                }
+                return;
+            }
             forwardStudioApiChange(event.data);
         });
 

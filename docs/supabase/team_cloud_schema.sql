@@ -60,6 +60,7 @@ create table if not exists public.canvases (
   title text not null default 'Untitled canvas',
   data jsonb not null default '{}'::jsonb,
   version integer not null default 1,
+  visibility text not null default 'team' check (visibility in ('private', 'team')),
   created_by uuid not null,
   updated_by uuid not null,
   created_at timestamptz not null default now(),
@@ -92,6 +93,7 @@ create table if not exists public.assets (
   byte_size bigint not null default 0,
   width integer,
   height integer,
+  visibility text not null default 'team' check (visibility in ('private', 'team')),
   created_by uuid not null,
   created_at timestamptz not null default now()
 );
@@ -135,6 +137,8 @@ create index if not exists idx_generation_logs_team_id on public.generation_logs
 alter table public.assets add column if not exists thumbnail_url text not null default '';
 alter table public.assets add column if not exists thumbnail_storage_key text not null default '';
 alter table public.api_providers add column if not exists updated_by uuid;
+alter table public.canvases add column if not exists visibility text not null default 'team';
+alter table public.assets add column if not exists visibility text not null default 'team';
 
 alter table public.teams enable row level security;
 alter table public.team_members enable row level security;

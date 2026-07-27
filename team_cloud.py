@@ -23,6 +23,7 @@ DATA_DIR = os.getenv("YISHU_DATA_DIR", os.path.join(BASE_DIR, "data"))
 LOCAL_TEAM_STORE = os.path.join(DATA_DIR, "team_cloud.json")
 
 TEAM_ROLES = {"owner", "admin", "member"}
+VISIBILITY_VALUES = {"private", "team"}
 TEAM_ASSET_MAX_BYTES = int(os.getenv("TEAM_ASSET_MAX_BYTES", str(50 * 1024 * 1024)))
 
 
@@ -575,6 +576,32 @@ def require_team_owner(member: Dict[str, Any]) -> None:
         raise HTTPException(status_code=403, detail="Only the team owner can delete this team")
 
 
+def normalize_visibility(value: Any, default: str = "private") -> str:
+    visibility = str(value or default).strip().lower()
+    return visibility if visibility in VISIBILITY_VALUES else default
+
+
+def record_is_visible_to_user(record: Dict[str, Any], user: CurrentUser, member: Dict[str, Any]) -> bool:
+    if member.get("role") in {"owner", "admin"}:
+        return True
+    if normalize_visibility(record.get("visibility")) == "team":
+        return True
+    return record.get("created_by") == user.id
+
+
+def require_visible_record(record: Dict[str, Any], user: CurrentUser, member: Dict[str, Any], detail: str) -> None:
+    if not record_is_visible_to_user(record, user, member):
+        raise HTTPException(status_code=404, detail=detail)
+
+
+def require_publish_permission(record: Dict[str, Any], user: CurrentUser, member: Dict[str, Any]) -> None:
+    if member.get("role") in {"owner", "admin"}:
+        return
+    if record.get("created_by") == user.id:
+        return
+    raise HTTPException(status_code=403, detail="Only the owner or a team admin can publish this item")
+
+
 def team_api_secret_material() -> str:
     if settings.team_api_secret_key:
         return settings.team_api_secret_key
@@ -928,10 +955,12 @@ class LocalTeamStore:
         with self.lock:
             data = self._read()
             project = self._require_project_member(data, user.id, project_id)
+            member = self._require_member(data, user.id, project["team_id"])
             return [
                 self._canvas_summary(canvas)
                 for canvas in data["canvases"]
                 if canvas.get("project_id") == project["id"]
+                and record_is_visible_to_user(canvas, user, member)
             ]
 
     def create_canvas(self, user: CurrentUser, project_id: str, title: str, canvas_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -946,6 +975,7 @@ class LocalTeamStore:
                 "title": clean_title,
                 "data": canvas_data or {},
                 "version": 1,
+                "visibility": "private",
                 "created_by": user.id,
                 "updated_by": user.id,
                 "created_at": now_ms(),
@@ -983,7 +1013,8 @@ class LocalTeamStore:
             canvas = self._find_canvas(data, canvas_id)
             if not canvas:
                 raise HTTPException(status_code=404, detail="画布不存在")
-            self._require_member(data, user.id, canvas["team_id"])
+            member = self._require_member(data, user.id, canvas["team_id"])
+            require_visible_record(canvas, user, member, "Canvas not found")
             return canvas
 
     def save_canvas(self, user: CurrentUser, canvas_id: str, payload: CanvasSaveRequest) -> Dict[str, Any]:
@@ -992,7 +1023,8 @@ class LocalTeamStore:
             canvas = self._find_canvas(data, canvas_id)
             if not canvas:
                 raise HTTPException(status_code=404, detail="画布不存在")
-            self._require_member(data, user.id, canvas["team_id"])
+            member = self._require_member(data, user.id, canvas["team_id"])
+            require_visible_record(canvas, user, member, "Canvas not found")
             if payload.base_version is not None and payload.base_version != canvas.get("version"):
                 raise HTTPException(status_code=409, detail={"message": "画布已被更新，请刷新后再保存", "canvas": canvas})
             canvas["data"] = payload.data or {}
@@ -1011,7 +1043,8 @@ class LocalTeamStore:
             canvas = self._find_canvas(data, canvas_id)
             if not canvas:
                 raise HTTPException(status_code=404, detail="Canvas not found")
-            self._require_member(data, user.id, canvas["team_id"])
+            member = self._require_member(data, user.id, canvas["team_id"])
+            require_visible_record(canvas, user, member, "Canvas not found")
             versions = [
                 self._canvas_version_summary(row)
                 for row in data["canvas_versions"]
@@ -1025,7 +1058,8 @@ class LocalTeamStore:
             canvas = self._find_canvas(data, canvas_id)
             if not canvas:
                 raise HTTPException(status_code=404, detail="Canvas not found")
-            self._require_member(data, user.id, canvas["team_id"])
+            member = self._require_member(data, user.id, canvas["team_id"])
+            require_visible_record(canvas, user, member, "Canvas not found")
             source = next(
                 (
                     row
@@ -1046,11 +1080,31 @@ class LocalTeamStore:
             self._write(data)
             return {"canvas": canvas, "restored_version": self._canvas_version_summary(source)}
 
+    def publish_canvas(self, user: CurrentUser, canvas_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            canvas = self._find_canvas(data, canvas_id)
+            if not canvas:
+                raise HTTPException(status_code=404, detail="Canvas not found")
+            member = self._require_member(data, user.id, canvas["team_id"])
+            require_visible_record(canvas, user, member, "Canvas not found")
+            require_publish_permission(canvas, user, member)
+            canvas["visibility"] = "team"
+            canvas["updated_by"] = user.id
+            canvas["updated_at"] = now_ms()
+            self._write(data)
+            return {"canvas": canvas}
+
     def list_assets(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
         with self.lock:
             data = self._read()
-            self._require_member(data, user.id, team_id)
-            return [asset for asset in data["assets"] if asset.get("team_id") == team_id]
+            member = self._require_member(data, user.id, team_id)
+            return [
+                asset
+                for asset in data["assets"]
+                if asset.get("team_id") == team_id
+                and record_is_visible_to_user(asset, user, member)
+            ]
 
     def create_asset(self, user: CurrentUser, team_id: str, asset: Dict[str, Any]) -> Dict[str, Any]:
         with self.lock:
@@ -1072,6 +1126,7 @@ class LocalTeamStore:
                 "width": asset.get("width"),
                 "height": asset.get("height"),
                 "storage_provider": asset.get("storage_provider") or "local",
+                "visibility": normalize_visibility(asset.get("visibility")),
                 "created_by": user.id,
                 "created_at": now_ms(),
             }
@@ -1086,6 +1141,7 @@ class LocalTeamStore:
             asset = self._find_asset(data, team_id, asset_id)
             if not asset:
                 raise HTTPException(status_code=404, detail="团队素材不存在")
+            require_visible_record(asset, user, member, "Team asset not found")
             require_asset_delete_permission(member, user, asset)
             references = canvas_asset_references(
                 [canvas for canvas in data["canvases"] if canvas.get("team_id") == team_id],
@@ -1108,6 +1164,19 @@ class LocalTeamStore:
             if key and delete_team_asset_file(str(key))
         ]
         return {"asset": asset, "removed_files": removed_files, "references": []}
+
+    def publish_asset(self, user: CurrentUser, team_id: str, asset_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            member = self._require_member(data, user.id, team_id)
+            asset = self._find_asset(data, team_id, asset_id)
+            if not asset:
+                raise HTTPException(status_code=404, detail="Team asset not found")
+            require_visible_record(asset, user, member, "Team asset not found")
+            require_publish_permission(asset, user, member)
+            asset["visibility"] = "team"
+            self._write(data)
+            return {"asset": asset}
 
     def list_api_providers(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
         with self.lock:
@@ -1261,6 +1330,7 @@ class LocalTeamStore:
             "project_id",
             "title",
             "version",
+            "visibility",
             "created_by",
             "updated_by",
             "created_at",
@@ -1434,9 +1504,13 @@ class SupabaseTeamStore:
 
     async def list_canvases(self, user: CurrentUser, project_id: str) -> List[Dict[str, Any]]:
         project = await self._require_project_member(user.id, project_id)
+        member = await self._require_member(user.id, project["team_id"])
+        visibility_filter = ""
+        if member.get("role") not in {"owner", "admin"}:
+            visibility_filter = f"&or=(visibility.eq.team,created_by.eq.{quote(user.id, safe='')})"
         return await self._request(
             "GET",
-            f"/canvases?team_id=eq.{project['team_id']}&project_id=eq.{project_id}&order=updated_at.desc&select=id,team_id,project_id,title,version,created_by,updated_by,created_at,updated_at",
+            f"/canvases?team_id=eq.{project['team_id']}&project_id=eq.{project_id}{visibility_filter}&order=updated_at.desc&select=id,team_id,project_id,title,version,visibility,created_by,updated_by,created_at,updated_at",
         )
 
     async def create_canvas(self, user: CurrentUser, project_id: str, title: str, canvas_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1450,6 +1524,7 @@ class SupabaseTeamStore:
                 "title": title.strip() or "未命名画布",
                 "data": canvas_data or {},
                 "version": 1,
+                "visibility": "private",
                 "created_by": user.id,
                 "updated_by": user.id,
             }],
@@ -1479,7 +1554,8 @@ class SupabaseTeamStore:
         if not rows:
             raise HTTPException(status_code=404, detail="画布不存在")
         canvas = rows[0]
-        await self._require_member(user.id, canvas["team_id"])
+        member = await self._require_member(user.id, canvas["team_id"])
+        require_visible_record(canvas, user, member, "Canvas not found")
         return canvas
 
     async def save_canvas(self, user: CurrentUser, canvas_id: str, payload: CanvasSaveRequest) -> Dict[str, Any]:
@@ -1552,11 +1628,29 @@ class SupabaseTeamStore:
         )
         return {"canvas": updated, "restored_version": self._canvas_version_summary(source)}
 
+    async def publish_canvas(self, user: CurrentUser, canvas_id: str) -> Dict[str, Any]:
+        canvas = await self.get_canvas(user, canvas_id)
+        member = await self._require_member(user.id, canvas["team_id"])
+        require_publish_permission(canvas, user, member)
+        rows = await self._request(
+            "PATCH",
+            f"/canvases?id=eq.{canvas_id}",
+            json_body={
+                "visibility": "team",
+                "updated_by": user.id,
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            },
+        )
+        return {"canvas": (rows or [canvas])[0]}
+
     async def list_assets(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
-        await self._require_member(user.id, team_id)
+        member = await self._require_member(user.id, team_id)
+        visibility_filter = ""
+        if member.get("role") not in {"owner", "admin"}:
+            visibility_filter = f"&or=(visibility.eq.team,created_by.eq.{quote(user.id, safe='')})"
         return await self._request(
             "GET",
-            f"/assets?team_id=eq.{team_id}&order=created_at.desc&select=*",
+            f"/assets?team_id=eq.{team_id}{visibility_filter}&order=created_at.desc&select=*",
         )
 
     async def create_asset(self, user: CurrentUser, team_id: str, asset: Dict[str, Any]) -> Dict[str, Any]:
@@ -1575,6 +1669,7 @@ class SupabaseTeamStore:
             "byte_size": int(asset.get("byte_size") or 0),
             "width": asset.get("width"),
             "height": asset.get("height"),
+            "visibility": normalize_visibility(asset.get("visibility")),
             "created_by": user.id,
         }
         if asset.get("thumbnail_storage_key"):
@@ -1600,6 +1695,7 @@ class SupabaseTeamStore:
         if not assets:
             raise HTTPException(status_code=404, detail="团队素材不存在")
         asset = assets[0]
+        require_visible_record(asset, user, member, "Team asset not found")
         require_asset_delete_permission(member, user, asset)
         canvases = await self._request(
             "GET",
@@ -1618,6 +1714,24 @@ class SupabaseTeamStore:
             if key and delete_team_asset_file(str(key))
         ]
         return {"asset": asset, "removed_files": removed_files, "references": []}
+
+    async def publish_asset(self, user: CurrentUser, team_id: str, asset_id: str) -> Dict[str, Any]:
+        member = await self._require_member(user.id, team_id)
+        assets = await self._request(
+            "GET",
+            f"/assets?team_id=eq.{team_id}&id=eq.{asset_id}&select=*",
+        )
+        if not assets:
+            raise HTTPException(status_code=404, detail="Team asset not found")
+        asset = assets[0]
+        require_visible_record(asset, user, member, "Team asset not found")
+        require_publish_permission(asset, user, member)
+        rows = await self._request(
+            "PATCH",
+            f"/assets?team_id=eq.{team_id}&id=eq.{asset_id}",
+            json_body={"visibility": "team"},
+        )
+        return {"asset": (rows or [asset])[0]}
 
     async def list_api_providers(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
         await self._require_member(user.id, team_id)
@@ -2031,6 +2145,11 @@ async def restore_team_canvas_version(
     return await maybe_await(active_store().restore_canvas_version(user, canvas_id, version))
 
 
+@router.post("/canvases/{canvas_id}/publish")
+async def publish_team_canvas(canvas_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    return await maybe_await(active_store().publish_canvas(user, canvas_id))
+
+
 @router.get("/teams/{team_id}/assets")
 async def list_team_assets(team_id: str, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
     assets = await maybe_await(active_store().list_assets(user, team_id))
@@ -2082,6 +2201,7 @@ async def upload_team_asset(
         "byte_size": len(content),
         "thumbnail_url": thumbnail_url,
         "thumbnail_storage_key": thumbnail_storage_key,
+        "visibility": "team",
         "width": image_meta.get("width"),
         "height": image_meta.get("height"),
         **stored,
@@ -2123,6 +2243,15 @@ async def delete_team_asset(
     user: CurrentUser = Depends(require_user),
 ) -> Dict[str, Any]:
     return await maybe_await(active_store().delete_asset(user, team_id, asset_id))
+
+
+@router.post("/teams/{team_id}/assets/{asset_id}/publish")
+async def publish_team_asset(
+    team_id: str,
+    asset_id: str,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    return await maybe_await(active_store().publish_asset(user, team_id, asset_id))
 
 
 @router.get("/teams/{team_id}/api-providers")

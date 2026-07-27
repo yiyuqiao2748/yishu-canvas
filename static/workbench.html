@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI设计师工作台</title>
+    <link rel="icon" href="/static/images/logo.png" type="image/png">
+    <script src="/static/vendor/js/lucide.js?v=2026.07.17.1782696749"></script>
+    <link rel="stylesheet" href="/static/css/workbench.css?v=2026.07.27.1">
+</head>
+<body>
+    <div class="workbench-shell">
+        <header class="top-dock" aria-label="工作台导航">
+            <button class="brand-pill" type="button" data-open-page="workbench">
+                <img src="/static/images/logo.png" alt="" class="brand-avatar">
+                <span>
+                    <strong>AI设计师</strong>
+                    <small>Creative Workbench</small>
+                </span>
+            </button>
+            <nav class="dock-actions">
+                <button class="dock-btn primary" type="button" data-open-page="workbench">
+                    <i data-lucide="home" class="icon"></i>
+                    <span>用户主页</span>
+                </button>
+                <button class="dock-btn" type="button" data-open-page="canvas">
+                    <i data-lucide="layout-grid" class="icon"></i>
+                    <span>AI画布</span>
+                </button>
+                <button class="dock-btn" type="button" data-open-page="team-cloud">
+                    <i data-lucide="users" class="icon"></i>
+                    <span>团队</span>
+                </button>
+                <button class="dock-btn" type="button" data-open-page="asset-manager">
+                    <i data-lucide="folder-open" class="icon"></i>
+                    <span>素材库</span>
+                </button>
+            </nav>
+        </header>
+
+        <aside class="quick-rail" aria-label="快捷入口">
+            <button type="button" data-open-page="asset-manager" title="灵感库">
+                <i data-lucide="folder" class="icon"></i>
+                <span>灵感库</span>
+            </button>
+            <button type="button" data-open-page="team-cloud" title="历史创作">
+                <i data-lucide="history" class="icon"></i>
+                <span>历史创作</span>
+            </button>
+        </aside>
+
+        <main class="hero">
+            <section class="hero-head">
+                <img src="/static/images/logo.png" alt="" class="hero-avatar">
+                <div class="scope-pill">团队内容专用</div>
+                <h1>AI设计师</h1>
+                <p>上传参考图，输入需求，进入团队画布继续创作。</p>
+            </section>
+
+            <section class="composer" aria-label="创作输入区">
+                <div class="composer-top">
+                    <div>
+                        <span class="eyebrow">创意输入区</span>
+                        <h2>描述你想生成的设计画面</h2>
+                    </div>
+                    <button class="icon-btn" type="button" data-clear-prompt title="清空输入" aria-label="清空输入">
+                        <i data-lucide="rotate-cw" class="icon"></i>
+                    </button>
+                </div>
+                <textarea id="promptInput" placeholder="例如：为高端护肤品品牌设计一张商业海报，金红色调，产品居中，玻璃质感，高级摄影光影，背景有柔和高光。"></textarea>
+                <div class="composer-tools">
+                    <button class="tool-btn" type="button" data-upload-placeholder>
+                        <i data-lucide="plus" class="icon"></i>
+                        <span>上传参考图</span>
+                    </button>
+                    <button class="tool-btn" type="button" data-url-placeholder>
+                        <i data-lucide="link" class="icon"></i>
+                        <span>上传 URL</span>
+                    </button>
+                    <label class="select-chip">
+                        <span>尺寸</span>
+                        <select id="sizeSelect">
+                            <option>智能比例</option>
+                            <option>1:1</option>
+                            <option>16:9</option>
+                            <option>9:16</option>
+                        </select>
+                    </label>
+                    <label class="select-chip">
+                        <span>分辨率</span>
+                        <select id="resolutionSelect">
+                            <option>2K</option>
+                            <option>1K</option>
+                            <option>4K</option>
+                        </select>
+                    </label>
+                    <label class="select-chip grow">
+                        <span>生成模型</span>
+                        <select id="modelSelect">
+                            <option>gpt-image-2</option>
+                            <option>团队默认模型</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="composer-actions">
+                    <span id="composerStatus" class="status-text">准备就绪</span>
+                    <button class="action-btn subtle" type="button" data-open-page="gpt-chat">
+                        <i data-lucide="sparkles" class="icon"></i>
+                        <span>优化提示词</span>
+                    </button>
+                    <button class="action-btn primary" type="button" data-open-page="canvas">
+                        <i data-lucide="wand-sparkles" class="icon"></i>
+                        <span>生成视觉设计</span>
+                    </button>
+                </div>
+            </section>
+
+            <section class="library-strip" aria-label="作品入口">
+                <div class="section-head">
+                    <div>
+                        <span class="eyebrow">最近作品与项目</span>
+                        <h2>作品资产库</h2>
+                    </div>
+                    <button class="plain-btn" type="button" data-open-page="canvas">
+                        <i data-lucide="eye" class="icon"></i>
+                        <span>查看全部</span>
+                    </button>
+                </div>
+                <div class="work-grid">
+                    <button class="work-card card-red" type="button" data-open-page="canvas">
+                        <span class="card-kicker">Canvas</span>
+                        <strong>团队云端画布</strong>
+                        <small>打开项目列表</small>
+                    </button>
+                    <button class="work-card card-gold" type="button" data-open-page="asset-manager">
+                        <span class="card-kicker">Assets</span>
+                        <strong>素材与参考图</strong>
+                        <small>管理团队素材</small>
+                    </button>
+                    <button class="work-card card-dark" type="button" data-open-page="team-cloud">
+                        <span class="card-kicker">Team</span>
+                        <strong>团队与版本历史</strong>
+                        <small>查看成员和恢复版本</small>
+                    </button>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="/static/js/workbench.js?v=2026.07.27.1"></script>
+</body>
+</html>

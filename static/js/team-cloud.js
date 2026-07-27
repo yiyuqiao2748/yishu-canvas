@@ -705,6 +705,10 @@
             .replace(/'/g, "&#039;");
     }
 
+    function escapeAttr(value){
+        return escapeHtml(value);
+    }
+
     async function loadMe(showAuthError){
         try {
             const data = await api("/me");

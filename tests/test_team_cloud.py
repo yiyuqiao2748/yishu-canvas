@@ -563,6 +563,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function updateTeamApiModel", script)
         self.assertIn("function removeTeamApiModel", script)
         self.assertIn("function renderTeamApiModelRows", script)
+        self.assertIn("function escapeAttr", script)
 
     def test_team_api_fetch_models_merges_with_manual_rows(self):
         root = Path(__file__).resolve().parents[1]

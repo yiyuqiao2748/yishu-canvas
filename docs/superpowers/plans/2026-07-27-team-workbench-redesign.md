@@ -100,6 +100,20 @@
 
 ## Milestones
 
+### Milestone 1A: Workbench Home UI Shell
+
+**Deliverable:** The app opens into a dark red/gold AI design workbench home page while preserving existing tools.
+
+- [x] Create `static/workbench.html` as a focused workbench home page.
+- [x] Create `static/css/workbench.css` with the dark grid, floating top dock, central prompt composer, and project cards.
+- [x] Create `static/js/workbench.js` for shell navigation actions.
+- [x] Add `workbench` to `static/index.html` iframe routing and make it the default route.
+- [x] Support iframe-to-shell page switching through `studio-open-page` messages.
+- [ ] Connect the composer primary action to real canvas creation/generation.
+- [ ] Capture browser screenshots for desktop and mobile once a browser runtime is available.
+
+**Trade-off:** This keeps the first UI pass low risk by adding a new home shell instead of rewriting the canvas editor. The downside is that the composer is a guided entry point for now; full generation wiring remains the next slice.
+
 ### Milestone 0: Safety Baseline
 
 **Deliverable:** Current behavior is measured before redesign.
@@ -156,12 +170,12 @@
 
 **Tasks:**
 
-- [ ] Add ownership checks to canvas list/detail endpoints.
-- [ ] Add visibility field handling: `private`, `team`.
-- [ ] Add publish endpoint for private canvas to team canvas.
-- [ ] Add ownership checks to asset list/content endpoints.
-- [ ] Add publish endpoint for private asset to team asset.
-- [ ] Block guessed private asset/canvas URLs from other members.
+- [x] Add ownership checks to canvas list/detail endpoints.
+- [x] Add visibility field handling: `private`, `team`.
+- [x] Add publish endpoint for private canvas to team canvas.
+- [x] Add ownership checks to asset list/content endpoints.
+- [x] Add publish endpoint for private asset to team asset.
+- [x] Block guessed private asset/canvas URLs from other members.
 
 **Acceptance:**
 
@@ -405,7 +419,7 @@
 | --- | --- | --- |
 | 0 Safety Baseline | In progress | Targeted tests and JS syntax checks completed; full test run pending |
 | 1 Role-Aware Team Entry | Not started | Needed before hiding API for members |
-| 2 Private-By-Default Data Model | Not started | Blocks privacy requirements |
+| 2 Private-By-Default Data Model | In progress | Backend visibility rules and publish endpoints added; production Supabase schema still needs applying and browser verification |
 | 3 NAS-Local Media Lifecycle | Not started | Blocks fast media display |
 | 4 Async Save UX | Not started | Prevents NAS save latency from blocking canvas |
 | 5 Workbench Home Redesign | In progress | Project list and main sidebar now use AI designer workbench direction |
