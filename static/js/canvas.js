@@ -2673,6 +2673,18 @@ function addPromptNode(point, text=''){
     return addNode({id:uid('prompt'), type:'prompt', x:p.x, y:p.y, text:String(text || '')});
 }
 
+function seedWorkbenchGeneratorFromDraft(promptNode, draft){
+    if(!promptNode) return null;
+    const generator = addGeneratorNode({x:promptNode.x + 360, y:promptNode.y});
+    if(!generator) return null;
+    generator.workbenchDraftId = draft?.id || '';
+    connections.push({id:uid('c'), from:promptNode.id, to:generator.id});
+    syncGeneratorInputs();
+    render();
+    scheduleSave();
+    return generator;
+}
+
 function consumeWorkbenchDraft(){
     const draftId = CANVAS_URL_PARAMS.get('workbenchDraft') || '';
     if(!draftId) return null;
@@ -2697,8 +2709,9 @@ function applyWorkbenchDraftToCanvas(){
     const node = addPromptNode(defaultPoint(0, 0), prompt);
     if(node){
         node.workbenchDraftId = draft.id || '';
+        const generator = seedWorkbenchGeneratorFromDraft(node, draft);
         selected.clear();
-        selected.add(node.id);
+        selected.add((generator || node).id);
         render();
         setSaveNotice('已导入工作台提示词', 'Workbench prompt added');
     }

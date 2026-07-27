@@ -680,6 +680,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("workbenchDraft=", list_script)
         self.assertIn("function applyWorkbenchDraftToCanvas", canvas_script)
         self.assertIn("addPromptNode(defaultPoint(0, 0), prompt)", canvas_script)
+        self.assertIn("function seedWorkbenchGeneratorFromDraft", canvas_script)
+        self.assertIn("addGeneratorNode({x:promptNode.x + 360, y:promptNode.y})", canvas_script)
+        self.assertIn("connections.push({id:uid('c'), from:promptNode.id, to:generator.id});", canvas_script)
 
 
 if __name__ == "__main__":
