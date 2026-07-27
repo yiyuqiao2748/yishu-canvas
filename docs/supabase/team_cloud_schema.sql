@@ -139,6 +139,10 @@ alter table public.assets add column if not exists thumbnail_storage_key text no
 alter table public.api_providers add column if not exists updated_by uuid;
 alter table public.canvases add column if not exists visibility text not null default 'team';
 alter table public.assets add column if not exists visibility text not null default 'team';
+alter table public.canvases drop constraint if exists canvases_visibility_check;
+alter table public.canvases add constraint canvases_visibility_check check (visibility in ('private', 'team'));
+alter table public.assets drop constraint if exists assets_visibility_check;
+alter table public.assets add constraint assets_visibility_check check (visibility in ('private', 'team'));
 
 alter table public.teams enable row level security;
 alter table public.team_members enable row level security;

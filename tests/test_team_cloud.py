@@ -629,6 +629,14 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn('data-native-drag-guard="true"', canvas_script)
         self.assertIn('data-native-drag-guard="true"', smart_script)
 
+    def test_supabase_visibility_migration_adds_constraints_for_existing_tables(self):
+        root = Path(__file__).resolve().parents[1]
+        schema = (root / "docs" / "supabase" / "team_cloud_schema.sql").read_text(encoding="utf-8")
+
+        self.assertIn("alter table public.canvases add constraint canvases_visibility_check", schema)
+        self.assertIn("alter table public.assets add constraint assets_visibility_check", schema)
+        self.assertIn("visibility in ('private', 'team')", schema)
+
 
 if __name__ == "__main__":
     unittest.main()
