@@ -561,6 +561,22 @@ select option {
         gap: 10px;
     }
 
+    .composer-tools {
+        display: grid;
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .tool-btn,
+    .select-chip {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .select-chip.grow {
+        flex: 0 0 auto;
+    }
+
     .action-btn,
     .plain-btn {
         width: 100%;

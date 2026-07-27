@@ -657,6 +657,14 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("html[data-studio-scale=\"off\"].studio-scale-managed .ws-sidebar {\n        flex:0 0 auto;\n        width:auto;", css)
         self.assertIn("html[data-studio-scale=\"off\"].studio-scale-managed .ws-board-empty .ws-primary-btn span {\n        display:inline;", css)
 
+    def test_workbench_composer_controls_fit_mobile_viewports(self):
+        root = Path(__file__).resolve().parents[1]
+        css = (root / "static" / "css" / "workbench.css").read_text(encoding="utf-8")
+
+        self.assertIn(".composer-tools {\n        display: grid;", css)
+        self.assertIn("grid-template-columns: 1fr;", css)
+        self.assertIn(".tool-btn,\n    .select-chip {\n        width: 100%;\n        min-width: 0;", css)
+
 
 if __name__ == "__main__":
     unittest.main()
