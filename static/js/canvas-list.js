@@ -15,6 +15,8 @@ const TEAM_CLOUD_MODE_KEY = 'teamCloudMode';
 const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
 const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
 const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
+const WORKBENCH_DRAFTS_KEY = 'workbenchCanvasDrafts:v1';
+const WORKBENCH_PENDING_DRAFT_KEY = 'workbenchCanvasDraftPending:v1';
 
 const teamCloud = {
     enabled: false,
@@ -99,6 +101,7 @@ let pendingDeleteProjectId = null;
 let statusTimer = null;
 let clipboardCanvasId = null;   // 剪切的画布（切到别的项目后粘贴）
 let canvasVisibilityFilter = 'all';
+let workbenchDraftCreateBusy = false;
 
 // board viewport (mirrors smart-canvas math)
 const viewport = { x: 0, y: 0, scale: 1 };
@@ -254,6 +257,64 @@ function canvasVisibilityLabel(canvas, compact = false){
     return compact ? L('私有','Private') : L('我的私有','Private');
 }
 
+function workbenchDraftRequest(){
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const urlDraft = params.get('workbenchDraft') || '';
+        const pendingDraft = localStorage.getItem(WORKBENCH_PENDING_DRAFT_KEY) || '';
+        const id = urlDraft || pendingDraft;
+        return id ? { id } : null;
+    } catch(e){
+        return null;
+    }
+}
+
+function readWorkbenchDraft(id){
+    if(!id) return null;
+    try {
+        const drafts = JSON.parse(localStorage.getItem(WORKBENCH_DRAFTS_KEY) || '{}');
+        const draft = drafts && typeof drafts === 'object' ? drafts[id] : null;
+        return draft && typeof draft === 'object' ? draft : null;
+    } catch(e){
+        return null;
+    }
+}
+
+function clearPendingWorkbenchDraft(id){
+    try {
+        if(!id || localStorage.getItem(WORKBENCH_PENDING_DRAFT_KEY) === id){
+            localStorage.removeItem(WORKBENCH_PENDING_DRAFT_KEY);
+        }
+    } catch(e){}
+}
+
+function workbenchDraftCanvasTitle(draft){
+    const title = String(draft?.title || '').trim();
+    if(title) return title.slice(0, 80);
+    const prompt = String(draft?.prompt || '').trim().split(/\r?\n/)[0] || L('视觉设计','Visual design');
+    return prompt.slice(0, 80);
+}
+
+async function maybeAutoCreateWorkbenchCanvas(){
+    if(workbenchDraftCreateBusy) return;
+    const request = workbenchDraftRequest();
+    if(!request?.id) return;
+    const draft = readWorkbenchDraft(request.id);
+    if(!String(draft?.prompt || '').trim()){
+        clearPendingWorkbenchDraft(request.id);
+        setStatus(L('工作台提示词为空','Workbench prompt is empty'));
+        return;
+    }
+    workbenchDraftCreateBusy = true;
+    clearPendingWorkbenchDraft(request.id);
+    setStatus(L('正在创建画布','Creating canvas'));
+    try {
+        await createCanvasOnBoard(workbenchDraftCanvasTitle(draft), 'classic', boardCenterWorld(), request.id);
+    } finally {
+        workbenchDraftCreateBusy = false;
+    }
+}
+
 function mapCloudCanvas(canvas){
     const data = canvas.data || {};
     return {
@@ -317,6 +378,7 @@ async function loadCloudAll(){
         renderBoard();
         resetView();
         refreshTrashCount();
+        await maybeAutoCreateWorkbenchCanvas();
         return true;
     } catch(e){
         console.error(e);
@@ -348,6 +410,7 @@ async function loadAll(){
         renderBoard();
         resetView();
         refreshTrashCount();
+        await maybeAutoCreateWorkbenchCanvas();
     } catch(e){
         console.error(e);
         setStatus(L('加载失败','Load failed'));
@@ -634,14 +697,15 @@ function attachCardDrag(card, c){
     });
 }
 
-function openCanvas(c){
+function openCanvas(c, workbenchDraftId=''){
     const enc = encodeURIComponent(c.id);
     const project = encodeURIComponent(c.project || currentProjectId || 'default');
     rememberProjectId(c.project || currentProjectId || 'default');
     const cloud = (teamCloud.enabled || c.is_cloud) ? '&cloud=1' : '';
+    const draft = workbenchDraftId ? `&workbenchDraft=${encodeURIComponent(workbenchDraftId)}` : '';
     window.location.href = (c.kind === 'smart')
-        ? `/static/smart-canvas.html?id=${enc}&project=${project}${cloud}&v=2026.07.03.4`
-        : `/static/canvas.html?id=${enc}&project=${project}${cloud}&v=2026.07.03.4`;
+        ? `/static/smart-canvas.html?id=${enc}&project=${project}${cloud}${draft}&v=2026.07.03.4`
+        : `/static/canvas.html?id=${enc}&project=${project}${cloud}${draft}&v=2026.07.03.4`;
 }
 
 /* ===== Card create flow ===== */
@@ -688,7 +752,7 @@ function openCreateCard(worldPt){
     };
 }
 
-async function createCanvasOnBoard(title, kind, worldPt){
+async function createCanvasOnBoard(title, kind, worldPt, workbenchDraftId=''){
     const isSmart = kind === 'smart';
     const base = isSmart ? L('智能画布','Smart canvas') : L('画布','Canvas');
     const name = title || `${base} ${new Date().toLocaleTimeString(langIsEn() ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
@@ -722,6 +786,10 @@ async function createCanvasOnBoard(title, kind, worldPt){
             if(p) p.canvas_count = (p.canvas_count || 0) + 1;
             renderBoard();
             renderProjects();
+            if(workbenchDraftId){
+                openCanvas(nc, workbenchDraftId);
+                return;
+            }
             setStatus(L('云端画布已创建','Cloud canvas created'));
             return;
         }
@@ -747,6 +815,10 @@ async function createCanvasOnBoard(title, kind, worldPt){
             if(nc.board_x == null) nc.board_x = Math.round(worldPt.x);
             if(nc.board_y == null) nc.board_y = Math.round(worldPt.y);
             canvases.push(nc);
+            if(workbenchDraftId){
+                openCanvas(nc, workbenchDraftId);
+                return;
+            }
             renderBoard();
             renderProjects();
         }
@@ -1314,6 +1386,9 @@ window.addEventListener('message', event => {
         renderBoard();
         if(trashPanel.classList.contains('active')) renderTrash();
         refreshIcons();
+    }
+    if(event.data?.type === 'canvas-focus'){
+        maybeAutoCreateWorkbenchCanvas();
     }
 });
 

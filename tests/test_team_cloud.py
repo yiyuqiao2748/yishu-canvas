@@ -665,6 +665,22 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("grid-template-columns: 1fr;", css)
         self.assertIn(".tool-btn,\n    .select-chip {\n        width: 100%;\n        min-width: 0;", css)
 
+    def test_workbench_prompt_composer_seeds_new_canvas_flow(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "static" / "workbench.html").read_text(encoding="utf-8")
+        workbench_script = (root / "static" / "js" / "workbench.js").read_text(encoding="utf-8")
+        list_script = (root / "static" / "js" / "canvas-list.js").read_text(encoding="utf-8")
+        canvas_script = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("data-workbench-generate", html)
+        self.assertIn("WORKBENCH_DRAFTS_KEY", workbench_script)
+        self.assertIn("WORKBENCH_PENDING_DRAFT_KEY", workbench_script)
+        self.assertIn("function startWorkbenchGeneration", workbench_script)
+        self.assertIn("function maybeAutoCreateWorkbenchCanvas", list_script)
+        self.assertIn("workbenchDraft=", list_script)
+        self.assertIn("function applyWorkbenchDraftToCanvas", canvas_script)
+        self.assertIn("addPromptNode(defaultPoint(0, 0), prompt)", canvas_script)
+
 
 if __name__ == "__main__":
     unittest.main()

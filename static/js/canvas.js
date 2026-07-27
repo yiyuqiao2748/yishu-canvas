@@ -412,6 +412,7 @@ const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
 const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
 const CANVAS_URL_PARAMS = new URLSearchParams(window.location.search);
 const TEAM_CLOUD_CANVAS = CANVAS_URL_PARAMS.get('cloud') === '1';
+const WORKBENCH_DRAFTS_KEY = 'workbenchCanvasDrafts:v1';
 const CANVAS_COLOR_OPTIONS = ['red','orange','amber','green','teal','blue','violet','pink','slate'];
 function teamCloudFetch(url, options={}){
     let token = '';
@@ -2180,6 +2181,7 @@ async function openCanvas(id){
         resumeCanvasImageTasks();
         if(!TEAM_CLOUD_CANVAS) startCanvasRemotePolling();
         setStatus('Ready');
+        applyWorkbenchDraftToCanvas();
     } catch(e) {
         setStatus(tr('canvas.openFailed'));
         console.error(e);
@@ -2666,9 +2668,40 @@ function addImageNode(point){
     const p = point || defaultPoint(-120, 0);
     return addNode({id:uid('img'), type:'image', x:p.x, y:p.y, url:'', name:'空白图片'});
 }
-function addPromptNode(point){
+function addPromptNode(point, text=''){
     const p = point || defaultPoint(0, 0);
-    return addNode({id:uid('prompt'), type:'prompt', x:p.x, y:p.y, text:''});
+    return addNode({id:uid('prompt'), type:'prompt', x:p.x, y:p.y, text:String(text || '')});
+}
+
+function consumeWorkbenchDraft(){
+    const draftId = CANVAS_URL_PARAMS.get('workbenchDraft') || '';
+    if(!draftId) return null;
+    try {
+        const drafts = JSON.parse(localStorage.getItem(WORKBENCH_DRAFTS_KEY) || '{}');
+        const draft = drafts && typeof drafts === 'object' ? drafts[draftId] : null;
+        if(drafts && typeof drafts === 'object'){
+            delete drafts[draftId];
+            localStorage.setItem(WORKBENCH_DRAFTS_KEY, JSON.stringify(drafts));
+        }
+        return draft && typeof draft === 'object' ? {...draft, id:draftId} : null;
+    } catch(e){
+        return null;
+    }
+}
+
+function applyWorkbenchDraftToCanvas(){
+    if(!canvas) return;
+    const draft = consumeWorkbenchDraft();
+    const prompt = String(draft?.prompt || '').trim().slice(0, PROMPT_TEXT_MAX_LENGTH);
+    if(!prompt) return;
+    const node = addPromptNode(defaultPoint(0, 0), prompt);
+    if(node){
+        node.workbenchDraftId = draft.id || '';
+        selected.clear();
+        selected.add(node.id);
+        render();
+        setSaveNotice('已导入工作台提示词', 'Workbench prompt added');
+    }
 }
 function addLoopNode(point){
     const p = point || defaultPoint(40, 0);
