@@ -90,6 +90,15 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("r2-secret", json.dumps(payload))
         self.assertNotIn("service-secret", json.dumps(payload))
 
+    def test_deployment_installs_websocket_runtime(self):
+        requirements = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text(encoding="utf-8")
+        packages = {line.strip().split("==", 1)[0].lower() for line in requirements.splitlines() if line.strip()}
+
+        self.assertTrue(
+            {"uvicorn[standard]", "websockets", "wsproto"} & packages,
+            "Uvicorn needs a WebSocket runtime for /ws/stats instead of returning 404 on upgrade.",
+        )
+
     def test_output_public_url_uses_local_url_without_r2(self):
         path, url = self.generated_file()
         with patch.object(main.team_storage_settings, "r2_endpoint_url", ""), \
