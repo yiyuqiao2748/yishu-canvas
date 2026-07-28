@@ -767,9 +767,13 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn('onclick="addLoopNode()"', canvas_html)
         self.assertIn('content:"CANVAS"', canvas_css)
         self.assertIn(".canvas-asset-panel,\n.workflow-transfer-panel", canvas_css)
+        self.assertIn(".canvas-asset-panel,\n    .workflow-transfer-panel {\n        right:12px;\n        left:12px;", canvas_css)
+        self.assertIn("width:auto;\n        max-width:none;", canvas_css)
         self.assertIn('content:"SMART CANVAS"', smart_css)
         self.assertIn(".smart-toolbar-fixed", smart_css)
         self.assertIn(".asset-panel,\n.workflow-transfer-panel", smart_css)
+        self.assertIn(".asset-panel,\n    .workflow-transfer-panel {\n        left:12px !important;\n        right:12px !important;", smart_css)
+        self.assertIn("width:auto;\n        max-width:none;", smart_css)
 
     def test_workbench_preview_exposes_reference_home_shell(self):
         root = Path(__file__).resolve().parents[1]
