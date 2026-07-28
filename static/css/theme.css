@@ -1649,3 +1649,385 @@ body.studio-theme-dark .shell .comfy-random-btn.active svg {
     fill: none !important;
     stroke: #0f172a !important;
 }
+
+/* AI designer secondary-page skin. */
+:root {
+    --ai-bg:#08090d;
+    --ai-panel:rgba(25,18,20,.86);
+    --ai-panel-2:rgba(35,26,28,.92);
+    --ai-soft:rgba(255,255,255,.06);
+    --ai-line:rgba(255,119,92,.22);
+    --ai-line-strong:rgba(255,159,97,.42);
+    --ai-text:#fff7ed;
+    --ai-muted:#b8aaa2;
+    --ai-faint:#7e716c;
+    --ai-red:#dc2626;
+    --ai-orange:#fb6b3d;
+    --ai-gold:#f4c979;
+}
+
+body:has(.container-box) {
+    min-height:100vh;
+    background:
+        linear-gradient(110deg, rgba(84,7,18,.82) 0%, rgba(30,10,14,.68) 32%, rgba(5,13,11,.98) 72%),
+        var(--ai-bg) !important;
+    color:var(--ai-text) !important;
+}
+
+body:has(.layout-container) {
+    min-height:100vh;
+    background:
+        linear-gradient(110deg, rgba(84,7,18,.82) 0%, rgba(30,10,14,.68) 32%, rgba(5,13,11,.98) 72%),
+        var(--ai-bg) !important;
+    color:var(--ai-text) !important;
+}
+
+body:has(.container-box)::before {
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    z-index:-1;
+    background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+        radial-gradient(circle at 56% 0%, rgba(249,115,22,.14), transparent 36%);
+    background-size:40px 40px, 40px 40px, auto;
+}
+
+body:has(.layout-container)::before {
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    z-index:-1;
+    background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+        radial-gradient(circle at 56% 0%, rgba(249,115,22,.14), transparent 36%);
+    background-size:40px 40px, 40px 40px, auto;
+}
+
+body:has(.container-box) .container-box,
+body:has(.container-box) .layout-container {
+    max-width:min(1280px, calc(100vw - 80px));
+    padding:0 28px;
+}
+
+body:has(.layout-container) .layout-container {
+    max-width:min(1280px, calc(100vw - 80px));
+    padding:0 28px;
+}
+
+body:has(.layout-container) header,
+body:has(.layout-container) .console-card,
+body:has(.layout-container) .nano-input,
+body:has(.layout-container) .upload-item,
+body:has(.layout-container) .result-frame,
+body:has(.layout-container) .engine-panel,
+body:has(.layout-container) .tool-panel,
+body:has(.layout-container) .control-panel,
+body:has(.layout-container) .masonry-item,
+body:has(.layout-container) input,
+body:has(.layout-container) textarea,
+body:has(.layout-container) select {
+    border-color:var(--ai-line) !important;
+}
+
+body:has(.container-box) header {
+    margin:18px 0 28px !important;
+}
+
+body:has(.container-box) header > div:first-child,
+body:has(.container-box) header .space-y-1 {
+    min-width:0;
+}
+
+body:has(.container-box) h1 {
+    color:var(--ai-text) !important;
+    font-size:clamp(28px, 3.2rem, 44px) !important;
+    letter-spacing:0 !important;
+    text-shadow:0 18px 44px rgba(0,0,0,.32);
+}
+
+body:has(.container-box) header p,
+body:has(.container-box) header nav,
+body:has(.container-box) .text-gray-400,
+body:has(.container-box) .text-gray-500,
+body:has(.container-box) .text-gray-600,
+body:has(.container-box) .text-gray-700,
+body:has(.container-box) .text-gray-800 {
+    color:var(--ai-muted) !important;
+}
+
+body:has(.container-box) header nav span {
+    height:34px;
+    padding:0 13px 0 !important;
+    border:1px solid var(--ai-line) !important;
+    border-radius:999px;
+    display:inline-flex;
+    align-items:center;
+    color:var(--ai-text) !important;
+    background:rgba(255,255,255,.05);
+}
+
+body:has(.container-box) .console-card,
+body:has(.container-box) .nano-input,
+body:has(.container-box) .upload-item,
+body:has(.container-box) .result-frame,
+body:has(.container-box) .engine-panel,
+body:has(.container-box) .tool-panel,
+body:has(.container-box) .control-panel,
+body:has(.container-box) .masonry-item,
+body:has(.container-box) .mode-switcher,
+body:has(.container-box) .engine-switch,
+body:has(.container-box) .model-pill,
+body:has(.container-box) .size-select,
+body:has(.container-box) .size-custom,
+body:has(.container-box) #lightboxCard,
+body:has(.container-box) #compareContainer {
+    background:var(--ai-panel) !important;
+    border-color:var(--ai-line) !important;
+    color:var(--ai-text) !important;
+    box-shadow:0 24px 72px rgba(0,0,0,.34) !important;
+    backdrop-filter:blur(18px);
+    background-clip:padding-box;
+}
+
+body:has(.container-box) .console-card {
+    border-radius:22px !important;
+    overflow:hidden;
+}
+
+body:has(.container-box) .console-card > div:first-child,
+body:has(.container-box) .engine-btn,
+body:has(.container-box) .model-option,
+body:has(.container-box) .mode-btn,
+body:has(.container-box) .size-select,
+body:has(.container-box) .size-custom,
+body:has(.container-box) input,
+body:has(.container-box) textarea,
+body:has(.container-box) select {
+    background:rgba(9,7,9,.62) !important;
+    border-color:rgba(255,255,255,.08) !important;
+    color:var(--ai-text) !important;
+}
+
+body:has(.container-box) textarea::placeholder,
+body:has(.container-box) input::placeholder {
+    color:rgba(255,247,237,.36) !important;
+}
+
+body:has(.container-box) .result-frame {
+    border-radius:28px !important;
+    background:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+        rgba(3,6,12,.78) !important;
+    background-size:40px 40px, 40px 40px, auto !important;
+}
+
+body:has(.container-box) .upload-item:hover,
+body:has(.container-box) .upload-item.drag-over,
+body:has(.container-box) .nano-input:focus {
+    border-color:var(--ai-line-strong) !important;
+    box-shadow:0 0 0 1px rgba(249,115,22,.22), 0 22px 54px rgba(220,38,38,.16) !important;
+    transform:translateY(-1px);
+}
+
+body:has(.container-box) .glass-btn,
+body:has(.container-box) .btn-render,
+body:has(.container-box) #downloadBtn,
+body:has(.container-box) #lightboxDownload,
+body:has(.container-box) #sameStyleBtn,
+body:has(.container-box) #lightboxCard button,
+body:has(.container-box) .mode-glider,
+body:has(.container-box) .engine-btn.active,
+body:has(.container-box) .model-option.active,
+body:has(.container-box) .ios-switch input:checked + .ios-slider {
+    background:linear-gradient(135deg, var(--ai-red), var(--ai-orange)) !important;
+    border-color:rgba(255,211,141,.36) !important;
+    color:#fff !important;
+    box-shadow:0 16px 34px rgba(220,38,38,.24) !important;
+}
+
+body:has(.container-box) .mode-btn.active,
+body:has(.container-box) .engine-btn.active,
+body:has(.container-box) .model-option.active {
+    color:#fff !important;
+}
+
+body:has(.container-box) .masonry-item {
+    border-radius:16px !important;
+    overflow:hidden !important;
+}
+
+body:has(.container-box) .masonry-item:hover {
+    border-color:var(--ai-line-strong) !important;
+    box-shadow:0 0 0 1px rgba(249,115,22,.18), 0 24px 72px rgba(0,0,0,.42) !important;
+}
+
+body:has(.container-box) .h-px {
+    background:rgba(255,119,92,.2) !important;
+}
+
+body:has(.container-box) .gallery-lightbox,
+body:has(.container-box) #lightbox {
+    background:rgba(5,6,9,.88) !important;
+    backdrop-filter:blur(22px) saturate(1.08) !important;
+}
+
+@media (max-width:760px) {
+    body:has(.container-box) .container-box,
+    body:has(.container-box) .layout-container {
+        max-width:100%;
+        padding:0 14px;
+    }
+
+    body:has(.container-box) header {
+        align-items:flex-start !important;
+        gap:14px !important;
+        margin:12px 0 22px !important;
+    }
+}
+
+body:has(.layout-container) h1,
+body:has(.layout-container) h2,
+body:has(.layout-container) h3 {
+    color:var(--ai-text) !important;
+    letter-spacing:0 !important;
+}
+
+body:has(.layout-container) .text-gray-400,
+body:has(.layout-container) .text-gray-500,
+body:has(.layout-container) .text-gray-600,
+body:has(.layout-container) .text-gray-700,
+body:has(.layout-container) .text-gray-800,
+body:has(.layout-container) p,
+body:has(.layout-container) label {
+    color:var(--ai-muted) !important;
+}
+
+body:has(.layout-container) .console-card,
+body:has(.layout-container) .nano-input,
+body:has(.layout-container) .upload-item,
+body:has(.layout-container) .result-frame,
+body:has(.layout-container) .engine-panel,
+body:has(.layout-container) .tool-panel,
+body:has(.layout-container) .control-panel,
+body:has(.layout-container) .masonry-item,
+body:has(.layout-container) .mode-switcher,
+body:has(.layout-container) .engine-switch,
+body:has(.layout-container) .model-pill,
+body:has(.layout-container) .size-select,
+body:has(.layout-container) .size-custom,
+body:has(.layout-container) input,
+body:has(.layout-container) textarea,
+body:has(.layout-container) select {
+    background:var(--ai-panel) !important;
+    border-color:var(--ai-line) !important;
+    color:var(--ai-text) !important;
+    box-shadow:0 24px 72px rgba(0,0,0,.34) !important;
+    backdrop-filter:blur(18px);
+}
+
+body:has(.layout-container) .result-frame {
+    background:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+        rgba(3,6,12,.78) !important;
+    background-size:40px 40px, 40px 40px, auto !important;
+}
+
+body:has(.layout-container) textarea::placeholder,
+body:has(.layout-container) input::placeholder {
+    color:rgba(255,247,237,.36) !important;
+}
+
+body:has(.layout-container) .glass-btn,
+body:has(.layout-container) .btn-render,
+body:has(.layout-container) #downloadBtn,
+body:has(.layout-container) #sameStyleBtn,
+body:has(.layout-container) .mode-glider,
+body:has(.layout-container) .engine-btn.active,
+body:has(.layout-container) .model-option.active {
+    background:linear-gradient(135deg, var(--ai-red), var(--ai-orange)) !important;
+    border-color:rgba(255,211,141,.36) !important;
+    color:#fff !important;
+    box-shadow:0 16px 34px rgba(220,38,38,.24) !important;
+}
+
+/* 2026-07-28: keep secondary pages in the workbench dark glass skin. */
+html.studio-theme-dark body .upload-item,
+body.studio-theme-dark .upload-item,
+html.studio-theme-dark body #dropzone,
+body.studio-theme-dark #dropzone,
+html.studio-theme-dark body #uploadContent,
+body.studio-theme-dark #uploadContent,
+html.studio-theme-dark body #localControls .bg-white,
+body.studio-theme-dark #localControls .bg-white,
+html.studio-theme-dark body #cameraControl .bg-white,
+body.studio-theme-dark #cameraControl .bg-white,
+html.studio-theme-dark body #modelPickerBtn,
+body.studio-theme-dark #modelPickerBtn,
+html.studio-theme-dark body .model-picker-button,
+body.studio-theme-dark .model-picker-button,
+html.studio-theme-dark body .hbm-toolbar,
+body.studio-theme-dark .hbm-toolbar {
+    background:rgba(5,6,8,.72) !important;
+    border-color:rgba(255,138,76,.18) !important;
+    color:#fff4df !important;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.025), 0 18px 44px rgba(0,0,0,.28) !important;
+}
+
+html.studio-theme-dark body #uploadContent > div,
+body.studio-theme-dark #uploadContent > div,
+html.studio-theme-dark body .upload-item .bg-white,
+body.studio-theme-dark .upload-item .bg-white,
+html.studio-theme-dark body #localControls .bg-gray-50,
+body.studio-theme-dark #localControls .bg-gray-50,
+html.studio-theme-dark body #cameraControl .bg-gray-50,
+body.studio-theme-dark #cameraControl .bg-gray-50 {
+    background:rgba(255,255,255,.075) !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#fff4df !important;
+}
+
+html.studio-theme-dark body #cameraControl [class*="md:w-64"],
+body.studio-theme-dark #cameraControl [class*="md:w-64"] {
+    background:rgba(8,8,10,.86) !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#fff4df !important;
+}
+
+html.studio-theme-dark body #modelPickerBtn span,
+body.studio-theme-dark #modelPickerBtn span,
+html.studio-theme-dark body .model-picker-button span,
+body.studio-theme-dark .model-picker-button span,
+html.studio-theme-dark body .hbm-toolbar button,
+body.studio-theme-dark .hbm-toolbar button {
+    color:inherit !important;
+}
+
+body:has(.container-box) .upload-item,
+body:has(.container-box) #dropzone,
+body:has(.container-box) #uploadContent,
+body:has(.container-box) #localControls .bg-white,
+body:has(.container-box) #cameraControl .bg-white,
+body:has(.container-box) .hbm-toolbar,
+body:has(.container-box) .hbm-toolbar .hbm-btn {
+    background:rgba(5,6,8,.72) !important;
+    border-color:rgba(255,138,76,.18) !important;
+    color:#fff4df !important;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.025), 0 18px 44px rgba(0,0,0,.28) !important;
+}
+
+body:has(.container-box) #uploadContent > div,
+body:has(.container-box) .upload-item .bg-white,
+body:has(.container-box) #localControls .bg-gray-50,
+body:has(.container-box) #cameraControl .bg-gray-50,
+body:has(.container-box) #cameraControl [class*="md:w-64"] {
+    background:rgba(255,255,255,.075) !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#fff4df !important;
+}

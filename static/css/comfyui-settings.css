@@ -238,3 +238,127 @@ body.studio-theme-dark .pfield-bool-track:not(.on) .pfield-bool-thumb { backgrou
 .mini-port.out { right:-5px; }
 .mini-run { margin-top:10px; }
 @media (max-width:1100px) { .layout { grid-template-columns:1fr; } .sidebar, .preview { position:static; } }
+
+/* AI designer workflow-settings skin. */
+:root {
+    --bg:#08090d;
+    --panel:rgba(24,18,21,.88);
+    --soft:rgba(255,255,255,.055);
+    --line:rgba(255,119,92,.2);
+    --line-strong:rgba(255,159,97,.42);
+    --text:#fff7ed;
+    --muted:#b8aaa2;
+    --faint:#81746f;
+    --accent:#ef4444;
+}
+
+body {
+    background:
+        linear-gradient(110deg, rgba(84,7,18,.82) 0%, rgba(30,10,14,.68) 32%, rgba(5,13,11,.98) 72%),
+        #08090d;
+    color:var(--text);
+}
+
+body::before {
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    z-index:-1;
+    background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size:40px 40px;
+}
+
+.page {
+    padding:28px 24px 72px;
+}
+
+.page-head,
+.sidebar,
+.side-card,
+.content-head,
+.graph-card,
+.node-card,
+.popup-panel,
+.preview,
+.mini-card,
+.empty-state {
+    background:var(--panel) !important;
+    border-color:var(--line) !important;
+    box-shadow:0 24px 72px rgba(0,0,0,.28);
+    backdrop-filter:blur(18px);
+}
+
+.page-head,
+.content-head {
+    min-height:64px;
+    padding:12px 18px;
+    border:1px solid var(--line);
+    border-radius:999px;
+}
+
+.page-head .title,
+.content-head .editor-title,
+.graph-head .editor-title,
+.node-class,
+.preview-title,
+.workflow-name,
+.input-key {
+    color:var(--text) !important;
+}
+
+.page-head .sub,
+.content-head .editor-sub,
+.graph-head .editor-sub,
+.workflow-meta,
+.input-orig,
+.side-title,
+.preview-desc {
+    color:var(--muted) !important;
+}
+
+.action-btn.save-btn,
+.upload-btn:hover,
+.run-btn,
+.check-toggle.checked,
+.workflow-card.active,
+.workspace-mode-tabs button.active,
+.random-btn.active {
+    background:linear-gradient(135deg,#dc2626,#fb6b3d) !important;
+    border-color:rgba(255,211,141,.36) !important;
+    color:#fff !important;
+}
+
+.action-btn,
+.upload-btn,
+.workflow-card,
+.small-input,
+.small-select,
+.pfield-input,
+.pfield-textarea,
+.pfield-select,
+.mini-tool,
+.mini-textarea,
+.mini-input,
+.mini-image-drop,
+.graph-svg-wrap,
+.mini-canvas,
+input,
+textarea,
+select {
+    background:rgba(9,7,9,.62) !important;
+    border-color:rgba(255,255,255,.08) !important;
+    color:var(--text) !important;
+}
+
+.action-btn:hover,
+.workflow-card:hover,
+.node-card-head:hover,
+.mini-tool:hover,
+.random-btn:hover {
+    border-color:var(--line-strong) !important;
+    background:rgba(249,115,22,.12) !important;
+    color:var(--text) !important;
+}

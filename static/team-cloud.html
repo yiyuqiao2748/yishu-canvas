@@ -646,6 +646,172 @@
                 white-space: normal;
             }
         }
+        /* 2026-07-28 secondary page workbench skin */
+        :root {
+            --ai-bg: #080608;
+            --ai-panel: rgba(18, 13, 16, .78);
+            --ai-card: rgba(255, 255, 255, .055);
+            --ai-line: rgba(255, 255, 255, .11);
+            --ai-line-hot: rgba(255, 138, 76, .32);
+            --ai-text: #fff7ed;
+            --ai-muted: rgba(255, 247, 237, .62);
+            --ai-red: #dc2626;
+            --ai-orange: #f97316;
+        }
+
+        body {
+            background:
+                linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+                radial-gradient(circle at 14% 0%, rgba(127,29,29,.42), transparent 36%),
+                radial-gradient(circle at 100% 10%, rgba(6,78,59,.24), transparent 34%),
+                var(--ai-bg) !important;
+            background-size: 42px 42px, 42px 42px, auto, auto;
+            color: var(--ai-text) !important;
+        }
+
+        .page {
+            width: min(1180px, calc(100vw - 40px));
+            margin-top: 24px;
+        }
+
+        .page-head,
+        .panel {
+            border: 1px solid var(--ai-line) !important;
+            background: var(--ai-panel) !important;
+            box-shadow: 0 24px 72px rgba(0,0,0,.34) !important;
+            backdrop-filter: blur(18px);
+        }
+
+        .panel,
+        .team-api-block,
+        .team-api-editor-head,
+        .team-api-provider-card,
+        .team-item,
+        .log-item,
+        .canvas-card,
+        .project-card,
+        .version-item {
+            border-color: var(--ai-line) !important;
+            background: var(--ai-card) !important;
+            color: var(--ai-text) !important;
+        }
+
+        .panel-title,
+        .section-title,
+        .team-api-block-title,
+        .team-api-editor-title,
+        h1,
+        h2,
+        h3,
+        label {
+            color: var(--ai-text) !important;
+        }
+
+        .muted,
+        .sub,
+        .empty,
+        .team-api-editor-sub,
+        .team-api-block-desc,
+        .team-api-model-empty,
+        small {
+            color: var(--ai-muted) !important;
+        }
+
+        input,
+        textarea,
+        select {
+            border-color: rgba(255,255,255,.12) !important;
+            background: rgba(0,0,0,.28) !important;
+            color: var(--ai-text) !important;
+        }
+
+        input::placeholder,
+        textarea::placeholder {
+            color: rgba(255,247,237,.38) !important;
+        }
+
+        .btn.primary,
+        button.primary,
+        .team-api-actions .btn.primary {
+            border-color: rgba(255,211,141,.34) !important;
+            background: linear-gradient(135deg, var(--ai-red), var(--ai-orange)) !important;
+            color: #fff !important;
+            box-shadow: 0 16px 34px rgba(220,38,38,.24) !important;
+        }
+
+        .btn,
+        button {
+            border-color: rgba(255,255,255,.12);
+        }
+
+        .team-api-provider-card.active,
+        .team-item.active,
+        .canvas-card:hover,
+        .project-card:hover,
+        .version-item:hover {
+            border-color: var(--ai-line-hot) !important;
+        }
+
+        html,
+        body {
+            background:#080608 !important;
+        }
+
+        .page {
+            background:
+                radial-gradient(circle at 18% 13%, rgba(100,36,24,.48), transparent 24%),
+                radial-gradient(circle at 82% 10%, rgba(21,73,54,.4), transparent 25%),
+                linear-gradient(105deg, #43070d 0%, #211011 43%, #06100d 100%) !important;
+            color:var(--ai-text) !important;
+        }
+
+        .panel,
+        .account-card,
+        .auth-card,
+        .team-api-provider-card,
+        .team-api-editor,
+        .team-api-block,
+        .usage-card,
+        .log-list,
+        .team-list,
+        .member-list,
+        .project-list,
+        .canvas-list,
+        .version-list {
+            background:rgba(7,8,10,.48) !important;
+            border-color:rgba(255,219,184,.13) !important;
+            color:var(--ai-text) !important;
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.025), 0 18px 48px rgba(0,0,0,.26) !important;
+        }
+
+        .empty,
+        .team-api-model-empty,
+        .log-empty,
+        .canvas-empty,
+        .project-empty {
+            background:rgba(5,6,8,.56) !important;
+            border:1px solid rgba(255,219,184,.1) !important;
+            color:rgba(255,237,213,.58) !important;
+        }
+
+        .auth-tabs,
+        .auth-tab,
+        .btn:not(.primary),
+        button:not(.primary),
+        .team-api-action-btn {
+            background:rgba(255,255,255,.055) !important;
+            border-color:rgba(255,255,255,.12) !important;
+            color:var(--ai-muted) !important;
+        }
+
+        .auth-tab.active,
+        .btn:not(.primary):hover,
+        button:not(.primary):hover {
+            background:rgba(244,63,63,.18) !important;
+            border-color:rgba(255,138,76,.28) !important;
+            color:var(--ai-text) !important;
+        }
     </style>
 </head>
 <body>

@@ -652,7 +652,15 @@ class TeamCloudStaticUiTests(unittest.TestCase):
     def test_canvas_list_visibility_filter_stays_responsive_when_scale_is_disabled(self):
         root = Path(__file__).resolve().parents[1]
         css = (root / "static" / "css" / "canvas-list.css").read_text(encoding="utf-8")
+        html = (root / "static" / "canvas-list.html").read_text(encoding="utf-8")
+        index_html = (root / "static" / "index.html").read_text(encoding="utf-8")
 
+        self.assertIn("canvas-list.html?v=2026.07.28.5", index_html)
+        self.assertIn("canvas-list.css?v=2026.07.28.5", html)
+        self.assertIn("canvas-list.js?v=2026.07.28.4", html)
+        self.assertIn('id="backHomeBtn"', html)
+        self.assertIn("studio-open-page", html)
+        self.assertIn("AI designer workbench skin", css)
         self.assertIn("html[data-studio-scale=\"off\"].studio-scale-managed .workspace {\n        flex-direction:column;", css)
         self.assertIn("html[data-studio-scale=\"off\"].studio-scale-managed .ws-sidebar {\n        flex:0 0 auto;\n        width:auto;", css)
         self.assertIn("html[data-studio-scale=\"off\"].studio-scale-managed .ws-board-empty .ws-primary-btn span {\n        display:inline;", css)
@@ -661,9 +669,10 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         css = (root / "static" / "css" / "workbench.css").read_text(encoding="utf-8")
 
-        self.assertIn(".composer-tools {\n        display: grid;", css)
+        self.assertIn(".preview-tools,\n    .library-grid {\n        grid-template-columns: 1fr;", css)
         self.assertIn("grid-template-columns: 1fr;", css)
-        self.assertIn(".tool-btn,\n    .select-chip {\n        width: 100%;\n        min-width: 0;", css)
+        self.assertIn(".nav-chip {\n    flex: 0 0 auto;", css)
+        self.assertIn(".nav-chip.muted,\n    .nav-chip.compact {\n        display: none;", css)
 
     def test_workbench_prompt_composer_seeds_new_canvas_flow(self):
         root = Path(__file__).resolve().parents[1]
@@ -683,6 +692,84 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function seedWorkbenchGeneratorFromDraft", canvas_script)
         self.assertIn("addGeneratorNode({x:promptNode.x + 360, y:promptNode.y})", canvas_script)
         self.assertIn("connections.push({id:uid('c'), from:promptNode.id, to:generator.id});", canvas_script)
+
+    def test_workbench_home_uses_live_account_feedback_and_thumbnail_hooks(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "static" / "workbench.html").read_text(encoding="utf-8")
+        script = (root / "static" / "js" / "workbench.js").read_text(encoding="utf-8")
+        main_py = (root / "main.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="workbenchUserLabel">未登录', html)
+        self.assertIn('id="workbenchInspirationPoints">0', html)
+        self.assertIn("/static/images/workbench-character.png", html)
+        self.assertIn('data-open-page="api-settings"', html)
+        self.assertIn('data-open-page="team-cloud"', html)
+        self.assertIn('data-open-page="asset-manager"', html)
+        self.assertIn('data-open-page="comfyui-settings"', html)
+        self.assertIn("data-theme-toggle", html)
+        self.assertIn("rail-create", html)
+        self.assertIn("data-tools-toggle", html)
+        self.assertIn("rail-tool-popover", html)
+        self.assertIn('data-open-page="zimage"', html)
+        self.assertIn("data-feedback-open", html)
+        self.assertIn("data-recent-canvas-card", html)
+        self.assertIn("data-frequent-assets-card", html)
+        self.assertIn("PROMPT_PLACEHOLDERS", script)
+        self.assertIn("loadCurrentUser", script)
+        self.assertIn("function toggleStudioTheme", script)
+        self.assertIn("function applyWorkbenchTheme", script)
+        self.assertIn("workbench_theme", script)
+        self.assertIn("function setToolsOpen", script)
+        self.assertIn("querySelectorAll('[data-workbench-generate]')", script)
+        self.assertIn("studio-toggle-theme", script)
+        self.assertIn("/api/team-cloud/me", script)
+        self.assertIn("? '无限制' : '0'", script)
+        self.assertIn("loadRecentCanvasBackground", script)
+        self.assertIn("loadAssetBackground", script)
+        self.assertIn("/api/workbench/feedback", script)
+        self.assertIn('WORKBENCH_FEEDBACK_FILE = os.path.join(DATA_DIR, "workbench_feedback.jsonl")', main_py)
+        self.assertIn('@app.post("/api/workbench/feedback")', main_py)
+
+    def test_workbench_home_owns_the_full_studio_shell(self):
+        root = Path(__file__).resolve().parents[1]
+        index_html = (root / "static" / "index.html").read_text(encoding="utf-8")
+        workbench_css = (root / "static" / "css" / "workbench.css").read_text(encoding="utf-8")
+
+        self.assertIn("body.studio-immersive-mode .sidebar", index_html)
+        self.assertIn("body.studio-immersive-mode .stage", index_html)
+        self.assertIn("id === 'workbench' || id === 'canvas'", index_html)
+        self.assertIn("function setStudioPageMode", index_html)
+        self.assertIn("studio-toggle-theme", index_html)
+        self.assertIn(".preview-quick-rail button.active", workbench_css)
+        self.assertIn(".preview-quick-rail::before", workbench_css)
+        self.assertIn(".preview-quick-rail button:hover span", workbench_css)
+        self.assertIn(".rail-tool-popover[hidden]", workbench_css)
+
+    def test_canvas_editors_share_workbench_visual_skin(self):
+        root = Path(__file__).resolve().parents[1]
+        canvas_html = (root / "static" / "canvas.html").read_text(encoding="utf-8")
+        smart_html = (root / "static" / "smart-canvas.html").read_text(encoding="utf-8")
+        canvas_css = (root / "static" / "css" / "canvas.css").read_text(encoding="utf-8")
+        smart_css = (root / "static" / "css" / "smart-canvas.css").read_text(encoding="utf-8")
+
+        self.assertIn("canvas.css?v=2026.07.28.5", canvas_html)
+        self.assertIn("canvas.js?v=2026.07.28.4", canvas_html)
+        self.assertIn("smart-canvas.css?v=2026.07.28.4", smart_html)
+        self.assertIn("smart-canvas.js?v=2026.07.28.4", smart_html)
+        self.assertIn("2026-07-28 secondary canvas workbench alignment", canvas_css)
+        self.assertIn("2026-07-28 secondary canvas workbench alignment", smart_css)
+        self.assertIn("#quickToolbar.toolbar", canvas_css)
+        self.assertIn("canvas-secondary-actions", canvas_html)
+        self.assertIn("secondary-actions-toggle", canvas_html)
+        self.assertIn("secondary-extra", canvas_html)
+        self.assertIn(".canvas-secondary-actions", canvas_css)
+        self.assertIn(".canvas-secondary-actions.is-open .secondary-extra", canvas_css)
+        self.assertIn('onclick="addLoopNode()"', canvas_html)
+        self.assertIn('content:"CANVAS"', canvas_css)
+        self.assertIn(".canvas-asset-panel,\n.workflow-transfer-panel", canvas_css)
+        self.assertIn('content:"SMART CANVAS"', smart_css)
+        self.assertIn(".smart-toolbar-fixed", smart_css)
+        self.assertIn(".asset-panel,\n.workflow-transfer-panel", smart_css)
 
     def test_workbench_preview_exposes_reference_home_shell(self):
         root = Path(__file__).resolve().parents[1]

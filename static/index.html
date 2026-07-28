@@ -402,9 +402,53 @@
             transition: background 0.3s, border-color 0.3s;
         }
 
+        body.studio-immersive-mode .sidebar {
+            display: none;
+        }
+
+        body.studio-immersive-mode .stage {
+            margin: 0;
+            border: 0;
+            border-radius: 0;
+            background: #080608;
+        }
+
         body.studio-scale-host .stage {
             margin: max(10px, calc(16px * var(--studio-ui-scale, 1)));
             border-radius: max(20px, calc(32px * var(--studio-ui-scale, 1)));
+        }
+
+        body.studio-scale-host.studio-immersive-mode .stage {
+            margin: 0;
+            border-radius: 0;
+        }
+
+        body:not(.studio-immersive-mode) {
+            background:
+                radial-gradient(circle at 0% 0%, rgba(127, 29, 29, .18), transparent 30%),
+                radial-gradient(circle at 100% 0%, rgba(6, 78, 59, .16), transparent 30%),
+                #080608;
+        }
+
+        body:not(.studio-immersive-mode) .sidebar {
+            left: 12px;
+            top: 18px;
+            bottom: 18px;
+            width: 64px;
+            height: auto;
+            border-radius: 28px;
+            border: 1px solid rgba(255,255,255,.12);
+            background: rgba(20,18,22,.76);
+            color: rgba(255,255,255,.7);
+            box-shadow: 0 24px 68px rgba(0,0,0,.34);
+            backdrop-filter: blur(18px);
+        }
+
+        body:not(.studio-immersive-mode) .stage {
+            margin: 18px 18px 18px 92px;
+            border-radius: 28px;
+            border-color: rgba(255,255,255,.12);
+            background: #080608;
         }
 
         iframe {
@@ -1650,18 +1694,18 @@
         </script>
 
         <main class="stage">
-            <iframe id="frame-workbench" data-src="/static/workbench.html?v=2026.07.27.1" class="active" scrolling="yes"></iframe>
-            <iframe id="frame-zimage" data-src="/static/zimage.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
-            <iframe id="frame-enhance" data-src="/static/enhance.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
-            <iframe id="frame-klein" data-src="/static/klein.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
-            <iframe id="frame-angle" data-src="/static/angle.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
-            <iframe id="frame-online" data-src="/static/online.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
-            <iframe id="frame-gpt-chat" data-src="/static/gpt-chat.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
-            <iframe id="frame-asset-manager" data-src="/static/asset-manager.html?v=2026.07.17.1784688669" scrolling="yes"></iframe>
-            <iframe id="frame-team-cloud" data-src="/static/team-cloud.html?v=2026.07.26.2" scrolling="yes"></iframe>
-            <iframe id="frame-api-settings" data-src="/static/api-settings.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
-            <iframe id="frame-comfyui-settings" data-src="/static/comfyui-settings.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
-            <iframe id="frame-canvas" data-src="/static/canvas-list.html?v=2026.07.17.1784772497" scrolling="yes"></iframe>
+            <iframe id="frame-workbench" data-src="/static/workbench.html?v=2026.07.28.6" class="active" scrolling="yes"></iframe>
+            <iframe id="frame-zimage" data-src="/static/zimage.html?v=2026.07.28.4" scrolling="yes"></iframe>
+            <iframe id="frame-enhance" data-src="/static/enhance.html?v=2026.07.28.5" scrolling="yes"></iframe>
+            <iframe id="frame-klein" data-src="/static/klein.html?v=2026.07.28.5" scrolling="yes"></iframe>
+            <iframe id="frame-angle" data-src="/static/angle.html?v=2026.07.28.5" scrolling="yes"></iframe>
+            <iframe id="frame-online" data-src="/static/online.html?v=2026.07.28.4" scrolling="yes"></iframe>
+            <iframe id="frame-gpt-chat" data-src="/static/gpt-chat.html?v=2026.07.28.5" scrolling="yes"></iframe>
+            <iframe id="frame-asset-manager" data-src="/static/asset-manager.html?v=2026.07.28.4" scrolling="yes"></iframe>
+            <iframe id="frame-team-cloud" data-src="/static/team-cloud.html?v=2026.07.28.5" scrolling="yes"></iframe>
+            <iframe id="frame-api-settings" data-src="/static/api-settings.html?v=2026.07.28.6" scrolling="yes"></iframe>
+            <iframe id="frame-comfyui-settings" data-src="/static/comfyui-settings.html?v=2026.07.28.4" scrolling="yes"></iframe>
+            <iframe id="frame-canvas" data-src="/static/canvas-list.html?v=2026.07.28.5" scrolling="yes"></iframe>
 
         </main>
     </div>
@@ -1859,9 +1903,15 @@
             } catch(e) {}
         }
 
+        function setStudioPageMode(id) {
+            document.body.classList.toggle('studio-workbench-mode', id === 'workbench');
+            document.body.classList.toggle('studio-immersive-mode', id === 'workbench' || id === 'canvas');
+        }
+
         function switchUI(el, id, options = {}) {
             resetStudioRootScroll();
             if(!PAGE_IDS.includes(id)) id = DEFAULT_PAGE_ID;
+            setStudioPageMode(id);
             document.querySelectorAll('.nav-item,.side-pill').forEach(n => n.classList.remove('active'));
             if(el) el.classList.add('active');
             document.querySelectorAll('iframe').forEach(f => f.classList.remove('active'));
@@ -1922,6 +1972,10 @@
                     const trigger = document.querySelector(`[onclick*="'${id}'"],[onclick*='"${id}"']`);
                     switchUI(trigger, id);
                 }
+                return;
+            }
+            if(event.data?.type === 'studio-toggle-theme') {
+                toggleTheme();
                 return;
             }
             forwardStudioApiChange(event.data);

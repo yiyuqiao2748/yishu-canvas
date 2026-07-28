@@ -1,8 +1,8 @@
-:root { --bg:#f7f8fa; --panel:#fff; --soft:#f1f4f8; --line:#e8ecf2; --line-strong:#dbe1ea; --text:#0f172a; --muted:#64748b; --faint:#94a3b8; --accent:#0f172a; }
-body.studio-theme-dark, html.studio-theme-dark body { --bg:#0e1014; --panel:#1c1e26; --soft:#272a33; --line:#323540; --line-strong:#3f424d; --text:#e8e8ea; --muted:#a4adbf; --faint:#7a8497; --accent:#f5f6f8; }
+:root { --bg:#080608; --panel:rgba(37,23,22,.82); --soft:rgba(255,255,255,.055); --line:rgba(255,219,184,.14); --line-strong:rgba(255,138,76,.3); --text:#fff4df; --muted:rgba(255,237,213,.68); --faint:rgba(255,237,213,.42); --accent:#fff4df; --hot:#f43f3f; --orange:#ff7a45; }
+body.studio-theme-dark, html.studio-theme-dark body { --bg:#080608; --panel:rgba(37,23,22,.82); --soft:rgba(255,255,255,.055); --line:rgba(255,219,184,.14); --line-strong:rgba(255,138,76,.3); --text:#fff4df; --muted:rgba(255,237,213,.68); --faint:rgba(255,237,213,.42); --accent:#fff4df; }
 * { box-sizing:border-box; }
 html { min-height:100%; overflow-y:auto; overscroll-behavior:auto; }
-body { margin:0; min-height:100vh; overflow-y:auto; background:var(--bg); color:var(--text); font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; -webkit-overflow-scrolling:touch; overscroll-behavior:auto; }
+body { margin:0; min-height:100vh; overflow-y:auto; background:radial-gradient(circle at 29% 18%, rgba(100,36,24,.48), transparent 22%), radial-gradient(circle at 80% 10%, rgba(37,55,42,.52), transparent 25%), linear-gradient(105deg, #43070d 0%, #26090b 19%, #161110 51%, #07100d 100%); color:var(--text); font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased; -webkit-overflow-scrolling:touch; overscroll-behavior:auto; }
 * { scrollbar-width:thin !important; scrollbar-color:rgba(148,163,184,.72) transparent !important; }
 *::-webkit-scrollbar { width:10px !important; height:10px !important; background:transparent !important; }
 *::-webkit-scrollbar-track { background:transparent !important; }
@@ -6021,4 +6021,191 @@ html.studio-theme-dark body .recommend-tag.recommend-free-tag svg {
     .recommend-inline-body .recommend-setup-flow .recommend-guide-arrow {
         display:none !important;
     }
+}
+
+/* AI designer settings-page skin. */
+:root {
+    --bg:#08090d;
+    --panel:rgba(24,18,21,.88);
+    --soft:rgba(255,255,255,.055);
+    --line:rgba(255,119,92,.2);
+    --line-strong:rgba(255,159,97,.42);
+    --text:#fff7ed;
+    --muted:#b8aaa2;
+    --faint:#81746f;
+    --accent:#ef4444;
+}
+
+body {
+    background:
+        linear-gradient(110deg, rgba(84,7,18,.82) 0%, rgba(30,10,14,.68) 32%, rgba(5,13,11,.98) 72%),
+        #08090d;
+    color:var(--text);
+}
+
+body::before {
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    z-index:-1;
+    background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size:40px 40px;
+}
+
+.page {
+    padding:28px 24px 72px;
+}
+
+.page-head,
+.content-head,
+.block,
+.sidebar,
+.recommend-card,
+.provider-card,
+.side-card {
+    background:var(--panel) !important;
+    border-color:var(--line) !important;
+    box-shadow:0 24px 72px rgba(0,0,0,.28);
+    backdrop-filter:blur(18px);
+}
+
+.page-head {
+    min-height:64px;
+    padding:12px 18px;
+    border:1px solid var(--line);
+    border-radius:999px;
+}
+
+.page-head .title,
+.content-head .editor-title,
+.block-title,
+.provider-name,
+.recommend-name {
+    color:var(--text) !important;
+}
+
+.page-head .sub,
+.block-desc,
+.provider-meta,
+.label,
+.hint,
+.side-section-title {
+    color:var(--muted) !important;
+}
+
+.api-link-btn,
+.action-btn.save-btn,
+.recommend-register,
+.field-frame:focus-within,
+.provider-card.active,
+.tab.active {
+    background:linear-gradient(135deg,#dc2626,#fb6b3d) !important;
+    border-color:rgba(255,211,141,.36) !important;
+    color:#fff !important;
+}
+
+.action-btn,
+.add-btn,
+.field-frame,
+.key-panel,
+.recommend-tag,
+.cli-quick-btn,
+.small-input,
+.small-select,
+input,
+textarea,
+select {
+    background:rgba(9,7,9,.62) !important;
+    border-color:rgba(255,255,255,.08) !important;
+    color:var(--text) !important;
+}
+
+.action-btn:hover,
+.add-btn:hover,
+.provider-card:hover,
+.recommend-card:hover,
+.cli-quick-btn:hover {
+    border-color:var(--line-strong) !important;
+    background:rgba(249,115,22,.12) !important;
+    color:var(--text) !important;
+}
+
+/* Final workbench skin override: api-settings also opens standalone without theme classes. */
+html.studio-scale-managed body,
+html body:not(.force-light-api) {
+    --bg:#08090d !important;
+    --panel:rgba(24,18,21,.88) !important;
+    --soft:rgba(255,255,255,.055) !important;
+    --line:rgba(255,119,92,.2) !important;
+    --line-strong:rgba(255,159,97,.42) !important;
+    --text:#fff7ed !important;
+    --muted:#b8aaa2 !important;
+    --faint:#81746f !important;
+    background:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(110deg, rgba(84,7,18,.82) 0%, rgba(30,10,14,.68) 32%, rgba(5,13,11,.98) 72%),
+        #08090d !important;
+    background-size:40px 40px, 40px 40px, auto, auto !important;
+    color:var(--text) !important;
+}
+
+html.studio-scale-managed body .page-head,
+html.studio-scale-managed body .content-head,
+html.studio-scale-managed body .block,
+html.studio-scale-managed body .sidebar,
+html.studio-scale-managed body .recommend-card,
+html.studio-scale-managed body .provider-card,
+html.studio-scale-managed body .side-card,
+html body:not(.force-light-api) .page-head,
+html body:not(.force-light-api) .content-head,
+html body:not(.force-light-api) .block,
+html body:not(.force-light-api) .sidebar,
+html body:not(.force-light-api) .recommend-card,
+html body:not(.force-light-api) .provider-card,
+html body:not(.force-light-api) .side-card {
+    background:var(--panel) !important;
+    border-color:var(--line) !important;
+    color:var(--text) !important;
+}
+
+html.studio-scale-managed body .action-btn,
+html.studio-scale-managed body .add-btn,
+html.studio-scale-managed body .field-frame,
+html.studio-scale-managed body .key-panel,
+html.studio-scale-managed body .cli-quick-btn,
+html.studio-scale-managed body input,
+html.studio-scale-managed body textarea,
+html.studio-scale-managed body select,
+html body:not(.force-light-api) .action-btn,
+html body:not(.force-light-api) .add-btn,
+html body:not(.force-light-api) .field-frame,
+html body:not(.force-light-api) .key-panel,
+html body:not(.force-light-api) .cli-quick-btn,
+html body:not(.force-light-api) input,
+html body:not(.force-light-api) textarea,
+html body:not(.force-light-api) select {
+    background:rgba(9,7,9,.66) !important;
+    border-color:rgba(255,255,255,.1) !important;
+    color:var(--text) !important;
+}
+
+html.studio-scale-managed body .layout > .sidebar,
+html.studio-scale-managed body .layout > .content .block,
+html.studio-scale-managed body .layout > .content .content-head,
+html.studio-scale-managed body .wrap .sidebar,
+html.studio-scale-managed body .wrap .block,
+html.studio-scale-managed body .wrap .content-head,
+html body:not(.force-light-api) .layout > .sidebar,
+html body:not(.force-light-api) .layout > .content .block,
+html body:not(.force-light-api) .layout > .content .content-head,
+html body:not(.force-light-api) .wrap .sidebar,
+html body:not(.force-light-api) .wrap .block,
+html body:not(.force-light-api) .wrap .content-head {
+    background:rgba(24,18,21,.88) !important;
+    border-color:rgba(255,119,92,.2) !important;
+    color:#fff7ed !important;
 }

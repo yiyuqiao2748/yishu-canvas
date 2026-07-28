@@ -275,6 +275,7 @@ DATA_DIR = os.getenv("YISHU_DATA_DIR", os.path.join(BASE_DIR, "data"))
 CONVERSATION_DIR = os.path.join(DATA_DIR, "conversations")
 CANVAS_DIR = os.path.join(DATA_DIR, "canvases")
 MEDIA_PREVIEW_DIR = os.path.join(DATA_DIR, "media_previews")
+WORKBENCH_FEEDBACK_FILE = os.path.join(DATA_DIR, "workbench_feedback.jsonl")
 ASSET_LIBRARY_PATH = os.path.join(DATA_DIR, "asset_library.json")
 PROMPT_LIBRARY_PATH = os.path.join(DATA_DIR, "prompt_libraries.json")
 API_PROVIDERS_FILE = os.path.join(DATA_DIR, "api_providers.json")
@@ -2709,6 +2710,13 @@ class CanvasCreateRequest(BaseModel):
     project: Optional[str] = None
     board_x: Optional[float] = None
     board_y: Optional[float] = None
+
+class WorkbenchFeedbackRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    page: str = ""
+    user: Optional[Dict[str, Any]] = None
+    user_agent: str = ""
+    viewport: Optional[Dict[str, Any]] = None
 
 class CanvasMetaUpdate(BaseModel):
     title: Optional[str] = None
@@ -15896,6 +15904,23 @@ async def trashed_canvases():
 @app.post("/api/canvases")
 async def create_canvas(payload: CanvasCreateRequest):
     return {"canvas": new_canvas(payload.title, payload.icon, payload.kind, payload.project, payload.board_x, payload.board_y)}
+
+@app.post("/api/workbench/feedback")
+async def submit_workbench_feedback(payload: WorkbenchFeedbackRequest, request: Request):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    record = {
+        "id": f"fb_{uuid.uuid4().hex[:12]}",
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "message": payload.message.strip(),
+        "page": str(payload.page or "")[:500],
+        "user": payload.user if isinstance(payload.user, dict) else None,
+        "user_agent": str(payload.user_agent or request.headers.get("user-agent", ""))[:500],
+        "viewport": payload.viewport if isinstance(payload.viewport, dict) else None,
+        "client_host": request.client.host if request.client else "",
+    }
+    with open(WORKBENCH_FEEDBACK_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return {"ok": True, "feedback": {"id": record["id"], "created_at": record["created_at"]}}
 
 @app.get("/api/canvases/{canvas_id}/meta")
 async def get_canvas_meta(canvas_id: str):

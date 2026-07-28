@@ -20,7 +20,7 @@
     <script src="/static/vendor/js/lucide.js?v=2026.07.17.1782696749"></script>
     <script src="/static/js/theme.js?v=2026.07.17.1783117645"></script>
     <script src="/static/js/i18n.js?v=2026.07.26.8"></script>
-    <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.17.1782696682">
+    <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.28.5">
     <style>
         @import url('/static/vendor/css/fonts.css?v=2026.07.17.1782696732');
         :root {
@@ -457,6 +457,98 @@
         .composer-body::-webkit-scrollbar-thumb,
         #messageInput::-webkit-scrollbar-thumb {
             background:transparent !important;
+        }
+        /* 2026-07-28 secondary page workbench skin */
+        :root {
+            --chat-bg: #080608;
+            --chat-panel: rgba(18, 13, 16, .82);
+            --chat-panel-2: rgba(12, 10, 12, .9);
+            --chat-soft: rgba(255, 255, 255, .055);
+            --chat-line: rgba(255, 255, 255, .11);
+            --chat-line-2: rgba(255, 138, 76, .34);
+            --chat-text: #fff7ed;
+            --chat-muted: rgba(255, 247, 237, .62);
+            --chat-faint: rgba(255, 247, 237, .38);
+            --chat-strong: linear-gradient(135deg, #dc2626, #f97316);
+            --chat-strong-text: #fff;
+            --chat-strong-hover: linear-gradient(135deg, #ef4444, #fb923c);
+            --chat-active-bg: rgba(220, 38, 38, .2);
+            --chat-active-text: #fff;
+            --chat-active-border: rgba(255, 138, 76, .34);
+            --chat-user-bg: rgba(220, 38, 38, .28);
+            --chat-user-text: #fff7ed;
+            --chat-shadow: rgba(0, 0, 0, .38);
+        }
+
+        body,
+        .chat-shell {
+            background:
+                linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+                radial-gradient(circle at 14% 0%, rgba(127,29,29,.42), transparent 36%),
+                radial-gradient(circle at 100% 10%, rgba(6,78,59,.24), transparent 34%),
+                var(--chat-bg) !important;
+            background-size: 42px 42px, 42px 42px, auto, auto !important;
+        }
+
+        .topbar,
+        .composer,
+        .chat-rail,
+        .system-prompt-popover,
+        .message,
+        .ref-card,
+        .thread-item,
+        .welcome-card {
+            border-color: var(--chat-line) !important;
+            background: var(--chat-panel) !important;
+            box-shadow: 0 24px 72px rgba(0,0,0,.3) !important;
+            backdrop-filter: blur(18px);
+        }
+
+        .composer textarea,
+        .system-prompt-textarea,
+        input,
+        textarea,
+        select {
+            border-color: rgba(255,255,255,.12) !important;
+            background: rgba(0,0,0,.28) !important;
+            color: var(--chat-text) !important;
+        }
+
+        .composer textarea::placeholder,
+        input::placeholder,
+        textarea::placeholder {
+            color: rgba(255,247,237,.36) !important;
+        }
+
+        .send-btn,
+        .primary,
+        .action-btn.primary {
+            background: linear-gradient(135deg, #dc2626, #f97316) !important;
+            border-color: rgba(255,211,141,.34) !important;
+            color: #fff !important;
+            box-shadow: 0 16px 34px rgba(220,38,38,.24) !important;
+        }
+
+        .action-btn:hover,
+        .thread-item:hover,
+        .thread-item.active {
+            border-color: var(--chat-line-2) !important;
+        }
+
+        #modelPickerBtn,
+        .model-picker-button,
+        .upload-btn,
+        .resolution-picker-button {
+            background: rgba(17,23,34,.86) !important;
+            border-color: var(--chat-line-2) !important;
+            color: var(--chat-text) !important;
+            box-shadow: 0 10px 24px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.04) !important;
+        }
+
+        #modelPickerBtn span,
+        .model-picker-button span {
+            color: inherit !important;
         }
     </style>
 </head>

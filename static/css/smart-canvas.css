@@ -1419,7 +1419,7 @@ body,
     box-shadow:0 24px 72px rgba(0,0,0,.36);
 }
 .smart-back::after {
-    content:"AI 设计师";
+    content:"AI DESIGN";
     height:24px;
     margin-left:6px;
     padding:0 10px;
@@ -1552,5 +1552,238 @@ body,
     .asset-panel {
         right:14px !important;
         top:116px !important;
+    }
+}
+
+/* ===== 2026-07-28 secondary canvas workbench alignment ===== */
+:root {
+    --smart-shell:#070608;
+    --smart-grid:rgba(255,255,255,.055);
+    --smart-grid-strong:rgba(255,255,255,.028);
+    --smart-dock:rgba(13,10,11,.88);
+    --smart-card:rgba(23,18,19,.9);
+    --smart-line:rgba(255,210,166,.14);
+    --smart-line-hot:rgba(255,130,88,.42);
+    --smart-text:#fff4df;
+    --smart-muted:rgba(255,237,213,.68);
+    --smart-red:#f43f3f;
+    --smart-orange:#ff8a4c;
+}
+body,
+.shell {
+    color:var(--smart-text);
+    background:
+        radial-gradient(circle at 8% 4%, rgba(127,29,29,.46), transparent 30%),
+        radial-gradient(circle at 86% 12%, rgba(6,78,59,.3), transparent 34%),
+        linear-gradient(105deg, #210506 0%, #0b0708 48%, #03100d 100%);
+}
+.shell {
+    background-color:transparent;
+    background-image:
+        linear-gradient(var(--smart-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--smart-grid) 1px, transparent 1px),
+        linear-gradient(var(--smart-grid-strong) 1px, transparent 1px),
+        linear-gradient(90deg, var(--smart-grid-strong) 1px, transparent 1px);
+    background-size:36px 36px, 36px 36px, 180px 180px, 180px 180px;
+}
+.smart-back {
+    left:18px;
+    top:14px;
+    min-width:52px;
+    height:52px;
+    padding:0 14px;
+    border-radius:999px;
+    background:var(--smart-dock);
+    border-color:rgba(255,255,255,.1);
+    color:var(--smart-text);
+    box-shadow:0 16px 48px rgba(0,0,0,.42);
+}
+.smart-back::after {
+    content:"SMART CANVAS";
+    height:26px;
+    margin-left:4px;
+    padding:0 11px;
+    border-radius:999px;
+    display:inline-flex;
+    align-items:center;
+    color:#ffd8b4;
+    background:rgba(244,63,63,.18);
+    border:1px solid rgba(255,138,76,.28);
+    font-size:11px;
+    font-weight:900;
+}
+.smart-title {
+    left:34px;
+    top:76px;
+    color:var(--smart-muted);
+    text-shadow:0 10px 28px rgba(0,0,0,.5);
+}
+.smart-toolbar-fixed {
+    right:18px !important;
+    top:14px !important;
+    height:52px;
+    padding:6px;
+    border-radius:999px;
+    background:var(--smart-dock);
+    border-color:rgba(255,255,255,.1);
+    box-shadow:0 16px 48px rgba(0,0,0,.42);
+}
+.smart-log-toggle,
+.smart-history-toggle,
+.smart-shortcut-toggle,
+.smart-workflow-toggle,
+.asset-toggle {
+    width:40px;
+    height:40px;
+    border-radius:999px;
+    background:transparent;
+    border-color:transparent;
+    color:rgba(255,255,255,.62);
+}
+.smart-log-toggle:hover,
+.smart-history-toggle:hover,
+.smart-shortcut-toggle:hover,
+.smart-workflow-toggle:hover,
+.asset-toggle:hover,
+.smart-log-toggle.active,
+.smart-history-toggle.active,
+.smart-shortcut-toggle.active,
+.smart-workflow-toggle.active,
+.asset-toggle.active {
+    background:rgba(244,63,63,.22);
+    border-color:rgba(255,138,76,.34);
+    color:#fff;
+}
+.asset-panel,
+.workflow-transfer-panel {
+    right:18px !important;
+    top:78px !important;
+    bottom:18px !important;
+    width:340px;
+    border-radius:10px;
+    background:rgba(13,11,12,.92);
+    border-color:rgba(255,255,255,.12);
+    box-shadow:0 28px 76px rgba(0,0,0,.5);
+}
+.smart-log-panel,
+.shortcut-panel,
+.asset-dialog,
+.image-edit-panel,
+.preview-modal-panel,
+.prompt-template-panel {
+    border-radius:10px;
+    background:rgba(15,13,14,.94);
+    border-color:rgba(255,255,255,.12);
+    box-shadow:0 28px 76px rgba(0,0,0,.5);
+}
+.composer-card {
+    border-radius:10px;
+    padding:12px;
+    background:linear-gradient(180deg, rgba(66,39,38,.88), rgba(24,17,18,.9));
+    border-color:rgba(255,210,166,.16);
+    box-shadow:0 24px 70px rgba(0,0,0,.46), 0 0 44px rgba(244,63,63,.14);
+}
+.engine-select,
+.kind-toggle,
+.prompt-input,
+.dynamic-params select,
+.dynamic-params input,
+.dynamic-params textarea,
+.asset-tabs,
+.asset-source-select,
+.asset-category-select,
+.asset-item,
+.asset-drop-zone,
+.workflow-card,
+.node-control,
+.smart-popover,
+.mention-picker,
+.prompt-template-card {
+    background:rgba(255,255,255,.055);
+    border-color:rgba(255,255,255,.1);
+    color:var(--smart-text);
+}
+.prompt-input:focus,
+.engine-select:focus {
+    border-color:var(--smart-line-hot);
+    box-shadow:0 0 0 3px rgba(244,63,63,.16);
+}
+.run-btn,
+.cascade-run-btn,
+.composer-run,
+.image-edit-btn.primary,
+.asset-dialog-btn.primary,
+.prompt-template-actions button.primary {
+    background:linear-gradient(135deg, var(--smart-red), var(--smart-orange));
+    border-color:rgba(255,210,166,.32);
+    color:#fff;
+    box-shadow:0 16px 34px rgba(244,63,63,.24);
+}
+.image-node,
+.image-node.empty-node,
+.image-node.prompt-smart-node,
+.image-node.loop-smart-node,
+.smart-group-node {
+    border-radius:10px;
+    background:rgba(23,18,19,.92);
+    border-color:var(--smart-line);
+    box-shadow:0 18px 44px rgba(0,0,0,.38);
+}
+.asset-item:hover,
+.workflow-card:hover,
+.image-node:hover,
+.smart-group-node:hover,
+.prompt-template-card:hover {
+    border-color:var(--smart-line-hot);
+}
+.asset-tab.active,
+.asset-kind,
+.asset-local-tag,
+.image-resolution-badge,
+.kind-toggle button.active,
+.mention-source-tab.active {
+    background:rgba(244,63,63,.2);
+    border-color:rgba(255,138,76,.32);
+    color:#ffd8b4;
+}
+.asset-empty,
+.workflow-empty,
+.smart-group-empty {
+    background:rgba(255,255,255,.035);
+    border-color:rgba(255,210,166,.16);
+    color:var(--smart-muted);
+}
+@media (max-width:900px) {
+    .smart-back {
+        left:12px;
+        top:12px;
+        height:46px;
+    }
+    .smart-back::after,
+    .smart-title {
+        display:none;
+    }
+    .smart-toolbar-fixed {
+        right:12px !important;
+        top:12px !important;
+        height:46px;
+        max-width:calc(100vw - 82px);
+    }
+    .smart-log-toggle,
+    .smart-history-toggle,
+    .smart-shortcut-toggle,
+    .smart-workflow-toggle,
+    .asset-toggle {
+        width:34px;
+        height:34px;
+    }
+    .asset-panel,
+    .workflow-transfer-panel {
+        left:12px !important;
+        right:12px !important;
+        top:70px !important;
+        bottom:12px !important;
+        width:auto;
+        max-width:none;
     }
 }

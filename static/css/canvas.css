@@ -1492,6 +1492,7 @@ body,
 }
 .canvas-nav,
 .toolbar,
+.canvas-secondary-actions,
 .toolbar.collapsed,
 .toolbar.scale-expanded,
 .library,
@@ -1507,11 +1508,12 @@ body,
     box-shadow:0 24px 72px rgba(0,0,0,.36);
 }
 .canvas-nav,
-.toolbar {
+.toolbar,
+.canvas-secondary-actions {
     border-radius:999px;
 }
 .canvas-nav::before {
-    content:"AI 设计师";
+    content:"AI DESIGN";
     height:24px;
     padding:0 10px;
     border-radius:999px;
@@ -1628,5 +1630,395 @@ body,
     .canvas-asset-panel {
         right:14px;
         top:86px;
+    }
+}
+
+/* ===== 2026-07-28 secondary canvas workbench alignment ===== */
+:root {
+    --canvas-shell:#070608;
+    --canvas-grid:rgba(255,255,255,.055);
+    --canvas-grid-strong:rgba(255,255,255,.028);
+    --canvas-dock:rgba(13,10,11,.88);
+    --canvas-dock-2:rgba(35,24,25,.88);
+    --canvas-card:rgba(23,18,19,.9);
+    --canvas-line:rgba(255,210,166,.14);
+    --canvas-line-hot:rgba(255,130,88,.42);
+    --canvas-text:#fff4df;
+    --canvas-muted:rgba(255,237,213,.68);
+    --canvas-faint:rgba(255,237,213,.46);
+    --canvas-red:#f43f3f;
+    --canvas-orange:#ff8a4c;
+}
+body,
+.shell {
+    color:var(--canvas-text);
+    background:
+        radial-gradient(circle at 8% 4%, rgba(127,29,29,.46), transparent 30%),
+        radial-gradient(circle at 86% 12%, rgba(6,78,59,.3), transparent 34%),
+        linear-gradient(105deg, #210506 0%, #0b0708 48%, #03100d 100%);
+}
+.board {
+    background-color:transparent;
+    background-image:
+        linear-gradient(var(--canvas-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--canvas-grid) 1px, transparent 1px),
+        linear-gradient(var(--canvas-grid-strong) 1px, transparent 1px),
+        linear-gradient(90deg, var(--canvas-grid-strong) 1px, transparent 1px);
+    background-size:36px 36px, 36px 36px, 180px 180px, 180px 180px;
+}
+.topbar {
+    top:12px;
+    left:92px;
+    right:18px;
+    align-items:center;
+}
+.canvas-nav {
+    min-height:52px;
+    padding:6px 14px 6px 7px;
+    gap:10px;
+    background:var(--canvas-dock);
+    border-color:rgba(255,255,255,.1);
+    box-shadow:0 16px 48px rgba(0,0,0,.42);
+}
+.canvas-nav::before {
+    content:"CANVAS";
+    height:26px;
+    padding:0 11px;
+    border-radius:999px;
+    display:inline-flex;
+    align-items:center;
+    color:#ffd8b4;
+    background:rgba(244,63,63,.18);
+    border:1px solid rgba(255,138,76,.28);
+    font-size:11px;
+    font-weight:900;
+}
+.current-canvas-title {
+    max-width:min(34vw, 360px);
+    color:var(--canvas-text);
+    font-size:13px;
+}
+.current-canvas-time,
+#saveState {
+    color:var(--canvas-muted);
+}
+#quickToolbar.toolbar {
+    position:fixed;
+    left:18px;
+    top:86px;
+    right:auto;
+    width:58px;
+    max-width:58px;
+    max-height:calc(100vh - 112px);
+    padding:8px 7px;
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+    overflow:visible;
+    border-radius:999px;
+    background:linear-gradient(180deg, rgba(42,41,47,.88), rgba(22,21,25,.9));
+    border-color:rgba(255,255,255,.12);
+    box-shadow:0 22px 54px rgba(0,0,0,.42);
+}
+#quickToolbar.toolbar.collapsed .toolbar-items,
+#quickToolbar.toolbar .toolbar-items,
+#quickToolbar.toolbar .toolbar-fixed {
+    display:flex !important;
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+    min-width:0;
+    overflow:visible;
+}
+#quickToolbar.toolbar .toolbar-fixed {
+    padding:8px 0 0;
+    border-left:0;
+    border-top:1px solid rgba(255,255,255,.1);
+}
+#quickToolbar.toolbar .tool-btn {
+    position:relative;
+    width:42px;
+    height:42px;
+    min-width:42px;
+    padding:0;
+    border-radius:999px;
+    background:transparent;
+    border-color:transparent;
+    color:rgba(255,255,255,.62);
+    font-size:0;
+}
+#quickToolbar.toolbar .tool-btn:hover,
+#quickToolbar.toolbar .tool-btn.active {
+    background:rgba(244,63,63,.22);
+    border-color:rgba(255,138,76,.34);
+    color:#fff;
+}
+#quickToolbar.toolbar .tool-btn svg {
+    width:18px !important;
+    height:18px !important;
+}
+#quickToolbar.toolbar .toolbar-toggle {
+    background:linear-gradient(135deg, rgba(244,63,63,.95), rgba(255,138,76,.9));
+    color:#fff;
+    box-shadow:0 12px 26px rgba(244,63,63,.25);
+}
+#quickToolbar.toolbar .tool-btn span {
+    position:absolute;
+    left:calc(100% + 12px);
+    top:50%;
+    height:30px;
+    padding:0 11px;
+    border-radius:999px;
+    display:inline-flex;
+    align-items:center;
+    background:rgba(12,10,11,.92);
+    border:1px solid rgba(255,255,255,.12);
+    color:var(--canvas-text);
+    box-shadow:0 14px 34px rgba(0,0,0,.32);
+    font-size:12px;
+    font-weight:800;
+    white-space:nowrap;
+    opacity:0;
+    pointer-events:none;
+    transform:translate(-6px, -50%);
+    transition:opacity .16s ease, transform .16s ease;
+}
+#quickToolbar.toolbar .tool-btn:hover span,
+#quickToolbar.toolbar .tool-btn:focus-visible span {
+    opacity:1;
+    transform:translate(0, -50%);
+}
+.canvas-secondary-actions {
+    margin-left:auto;
+    min-height:52px;
+    padding:6px;
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:6px;
+    max-width:min(760px, calc(100vw - 520px));
+    overflow-x:auto;
+    overflow-y:hidden;
+    scrollbar-width:none;
+    background:var(--canvas-dock);
+    border-color:rgba(255,255,255,.1);
+    box-shadow:0 16px 48px rgba(0,0,0,.42);
+}
+.canvas-secondary-actions:not(.is-open) {
+    max-width:min(430px, calc(100vw - 520px));
+}
+.canvas-secondary-actions::-webkit-scrollbar {
+    display:none;
+}
+.canvas-secondary-actions .secondary-extra {
+    display:none;
+}
+.canvas-secondary-actions.is-open .secondary-extra {
+    display:inline-flex;
+}
+.canvas-secondary-actions .secondary-actions-toggle {
+    border-color:rgba(255,138,76,.3);
+    background:linear-gradient(135deg, rgba(220,38,38,.34), rgba(249,115,22,.2));
+    color:#fff;
+}
+.canvas-secondary-actions .secondary-actions-toggle svg {
+    transition:transform .18s ease;
+}
+.canvas-secondary-actions.is-open .secondary-actions-toggle svg {
+    transform:rotate(180deg);
+}
+.canvas-secondary-actions .tool-btn {
+    flex:0 0 auto;
+    width:auto;
+    height:40px;
+    min-width:40px;
+    padding:0 12px;
+    border-radius:999px;
+    background:rgba(255,255,255,.055);
+    border-color:rgba(255,255,255,.09);
+    color:var(--canvas-muted);
+    font-size:12px;
+    font-weight:850;
+}
+.canvas-secondary-actions .tool-btn:hover,
+.canvas-secondary-actions .tool-btn.active {
+    background:rgba(244,63,63,.22);
+    border-color:rgba(255,138,76,.34);
+    color:#fff;
+}
+.canvas-secondary-actions .tool-btn span {
+    display:inline-flex;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+.canvas-secondary-actions .tool-btn svg {
+    width:16px !important;
+    height:16px !important;
+}
+.llm-node .llm-input-area,
+.llm-node .llm-input-area[readonly],
+.llm-node .llm-output,
+.generator-body .prompt-list .bg-slate-50,
+.generator-body .prompt-list [class*="bg-slate-50"],
+.node .text-slate-500.bg-slate-50 {
+    background:rgba(5, 6, 8, .84) !important;
+    color:#e7e5e4 !important;
+    border-color:rgba(255,255,255,.12) !important;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.025) !important;
+}
+.llm-node .llm-input-area:focus {
+    background:rgba(8, 10, 12, .94) !important;
+    border-color:rgba(255,138,76,.44) !important;
+}
+.llm-output-copy {
+    background:rgba(15,15,16,.88) !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#e7e5e4 !important;
+}
+.canvas-asset-panel,
+.workflow-transfer-panel {
+    right:18px;
+    top:78px;
+    bottom:18px;
+    width:340px;
+    border-radius:10px;
+    background:rgba(13,11,12,.92);
+    border-color:rgba(255,255,255,.12);
+    box-shadow:0 28px 76px rgba(0,0,0,.5);
+}
+.log-panel,
+.asset-manager-panel,
+.image-edit-panel,
+.prompt-template-panel,
+.canvas-meta-pop {
+    border-radius:10px;
+    background:rgba(15,13,14,.94);
+    border-color:rgba(255,255,255,.12);
+    box-shadow:0 28px 76px rgba(0,0,0,.5);
+}
+.node {
+    border-radius:10px;
+    background:rgba(23,18,19,.92);
+    border-color:var(--canvas-line);
+    box-shadow:0 18px 44px rgba(0,0,0,.38);
+}
+.node::before {
+    background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.01));
+}
+.node-head {
+    height:38px;
+    border-bottom-color:rgba(255,210,166,.12);
+    border-radius:9px 9px 0 0;
+    background:rgba(255,255,255,.035);
+}
+.node-title,
+.node-kind-chip,
+.canvas-kind-chip,
+.canvas-asset-kind,
+.asset-kind {
+    color:#ffd8b4;
+}
+.prompt-node textarea,
+.node textarea,
+.node input,
+.node select,
+.canvas-category-select,
+.canvas-asset-button,
+.asset-action-btn,
+.preview-icon-btn,
+.menu-btn,
+.create-menu,
+.canvas-asset-drop,
+.asset-drop-zone,
+.workflow-drop-zone {
+    background:rgba(255,255,255,.055);
+    border-color:rgba(255,255,255,.1);
+    color:var(--canvas-text);
+}
+.gen-btn,
+.comfy-run,
+.llm-run,
+.gen-cascade-btn,
+.image-edit-btn.primary,
+.asset-dialog-btn.primary,
+.prompt-template-actions button.primary {
+    background:linear-gradient(135deg, var(--canvas-red), var(--canvas-orange));
+    border-color:rgba(255,210,166,.32);
+    color:#fff;
+    box-shadow:0 16px 34px rgba(244,63,63,.24);
+}
+.canvas-asset-item,
+.asset-item,
+.workflow-card,
+.prompt-template-card {
+    border-radius:8px;
+    background:rgba(255,255,255,.055);
+    border-color:rgba(255,255,255,.1);
+}
+.canvas-asset-item:hover,
+.asset-item:hover,
+.workflow-card:hover,
+.prompt-template-card:hover,
+.node:hover {
+    border-color:var(--canvas-line-hot);
+}
+@media (max-width:900px) {
+    .topbar {
+        left:14px;
+        right:14px;
+        top:12px;
+        align-items:stretch;
+    }
+    #quickToolbar.toolbar {
+        left:12px;
+        top:auto;
+        bottom:12px;
+        width:auto;
+        max-width:calc(100vw - 24px);
+        max-height:none;
+        flex-direction:row;
+        border-radius:999px;
+        overflow-x:auto;
+    }
+    #quickToolbar.toolbar.collapsed .toolbar-items,
+    #quickToolbar.toolbar .toolbar-items,
+    #quickToolbar.toolbar .toolbar-fixed {
+        flex-direction:row;
+    }
+    #quickToolbar.toolbar .toolbar-fixed {
+        padding:0 0 0 8px;
+        border-top:0;
+        border-left:1px solid rgba(255,255,255,.1);
+    }
+    #quickToolbar.toolbar .tool-btn span {
+        display:none;
+    }
+    .canvas-asset-panel,
+    .workflow-transfer-panel {
+        right:12px;
+        left:12px;
+        top:82px;
+        bottom:82px;
+        width:auto;
+        max-width:none;
+    }
+    .canvas-secondary-actions {
+        max-width:calc(100vw - 28px);
+        min-height:46px;
+        padding:5px;
+        border-radius:999px;
+    }
+    .canvas-secondary-actions:not(.is-open) {
+        max-width:min(220px, calc(100vw - 28px));
+    }
+    .canvas-secondary-actions .tool-btn {
+        height:34px;
+        min-width:34px;
+        padding:0 10px;
+    }
+    .canvas-secondary-actions .tool-btn span {
+        display:none;
     }
 }

@@ -109,8 +109,19 @@
 - [x] Create `static/js/workbench.js` for shell navigation actions.
 - [x] Add `workbench` to `static/index.html` iframe routing and make it the default route.
 - [x] Support iframe-to-shell page switching through `studio-open-page` messages.
-- [ ] Connect the composer primary action to real canvas creation/generation.
-- [ ] Capture browser screenshots for desktop and mobile once a browser runtime is available.
+- [x] Connect the composer primary action to real canvas creation and seed prompt/generator nodes without auto-running generation.
+- [x] Promote the approved `workbench-preview` visual structure into the official `workbench.html` / `workbench.css`.
+- [x] Capture desktop and mobile browser screenshots for the promoted official homepage once a browser runtime is available.
+- [x] Apply browser annotation pass: live account label, inspiration points copy, user-owned hero character image, rotating typed prompt placeholders, thumbnail-backed library cards, and backend feedback JSONL submission.
+- [x] Move the legacy outer sidebar entries into a dark pill-style homepage quick rail with hover labels, collapse low-frequency local tools behind a secondary reveal button, hide the outer sidebar in workbench mode, and add top-right team/assets/workflow/API settings plus theme toggle controls.
+- [x] Restyle the canvas list plus classic/smart canvas editor pages with a first-pass visual skin that matches the new homepage direction while leaving canvas engine behavior unchanged.
+- [x] Hide the legacy outer sidebar in canvas mode and move low-frequency classic canvas tools into a top-right capsule action group.
+- [x] Apply the same dark red/black glass workbench skin to generation pages, GPT chat, team page, asset manager, API settings, ComfyUI settings, and canvas list while preserving existing controls.
+- [x] Fix homepage generation event binding so both the side rail create button and primary composer button run the same guarded canvas creation flow.
+- [x] Apply browser annotation polish across secondary pages: darken remaining white fallback panels, add canvas-list home navigation, fix workbench history routing, support standalone theme toggle, and collapse low-frequency canvas editor toolbar actions by default.
+- [x] Sync the latest UI source/static/docs/test files to NAS and verify key file hashes while preserving `.env`, `data/`, and `output/`.
+- [ ] Polish the right-side generation/assets panel density after browser review.
+- [ ] Recheck the promoted official homepage after Docker rebuild/restart.
 
 **Trade-off:** This keeps the first UI pass low risk by adding a new home shell instead of rewriting the canvas editor. The downside is that the composer is a guided entry point for now; full generation wiring remains the next slice.
 
@@ -417,17 +428,17 @@
 
 | Milestone | Status | Notes |
 | --- | --- | --- |
-| 0 Safety Baseline | In progress | Targeted tests and JS syntax checks completed; full test run pending |
+| 0 Safety Baseline | Done | Full Python test discovery and changed JS syntax checks completed for this UI pass |
 | 1 Role-Aware Team Entry | Not started | Needed before hiding API for members |
 | 2 Private-By-Default Data Model | In progress | Backend visibility rules and publish endpoints added; production Supabase schema still needs applying and browser verification |
 | 3 NAS-Local Media Lifecycle | Not started | Blocks fast media display |
 | 4 Async Save UX | Not started | Prevents NAS save latency from blocking canvas |
 | 5 Workbench Home Redesign | In progress | Project list and main sidebar now use AI designer workbench direction |
-| 6 Canvas Shell Redesign | In progress | Classic and smart canvas have matching dark shell and right-panel overrides |
+| 6 Canvas Shell Redesign | In progress | Classic and smart canvas have matching dark shell, collapsed secondary toolbar, and dark node/output overrides |
 | 7 Right-Side Generation Panel | Not started | Main generation workflow |
 | 8 Team API Model Manager | Not started | Admin-only API management |
 | 9 115 Cold Archive And Cleanup | Not started | Storage protection |
-| 10 Deployment And Verification | In progress | GitHub/NAS handoff planned for this pass |
+| 10 Deployment And Verification | In progress | NAS source sync completed; Docker rebuild/restart and browser runtime acceptance remain |
 
 ---
 

@@ -132,6 +132,8 @@ html[data-studio-scale="off"].studio-scale-managed .workspace {
 .ws-topbar-right { display:flex; align-items:center; gap:8px; flex:0 0 auto; }
 .ws-icon-btn { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); background:var(--card-solid); border:1px solid var(--line); cursor:pointer; transition:all .15s var(--ease); }
 .ws-icon-btn:hover { color:var(--text); border-color:var(--line-2); background:var(--soft); box-shadow:0 6px 14px var(--shadow); }
+.ws-home-btn { width:auto; padding:0 12px; gap:7px; font-size:12px; font-weight:850; }
+.ws-home-btn span { color:inherit; }
 .ws-primary-btn { height:36px; padding:0 14px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; gap:7px; background:var(--strong); color:var(--strong-text); border:none; cursor:pointer; font-size:12px; font-weight:850; box-shadow:0 8px 18px var(--shadow); }
 .ws-primary-btn:hover { transform:translateY(-1px); box-shadow:0 12px 24px var(--shadow-strong); }
 /* 粘贴到此项目：剪切后才出现的强调按钮，固定高对比色避免主题变量冲淡文字。 */

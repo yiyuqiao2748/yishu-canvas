@@ -21,8 +21,8 @@
     <script src="/static/js/theme.js?v=2026.07.23.1784893025"></script>
     <script src="/static/js/touch-mouse.js?v=2026.07.23.1784893025"></script>
     <script src="/static/js/i18n.js?v=2026.07.26.8"></script>
-    <link rel="stylesheet" href="/static/css/canvas.css?v=2026.07.23.1784984879">
-    <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.23.1784893025">
+    <link rel="stylesheet" href="/static/css/canvas.css?v=2026.07.28.5">
+    <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.28.5">
 </head>
 <body>
     <div id="shell" class="shell no-canvas">
@@ -40,23 +40,24 @@
                 <div class="toolbar-items">
                     <button class="tool-btn" onclick="addImageNode()"><i data-lucide="image-plus" class="w-4 h-4"></i><span data-i18n="canvas.image">图片</span></button>
                     <button class="tool-btn" onclick="addPromptNode()"><i data-lucide="text-cursor-input" class="w-4 h-4"></i><span data-i18n="canvas.prompt">提示词</span></button>
-                    <button class="tool-btn" onclick="addLoopNode()"><i data-lucide="repeat-2" class="w-4 h-4"></i><span data-i18n="canvas.loop">循环</span></button>
-                    <button class="tool-btn" onclick="addLLMNode()"><i data-lucide="message-square-text" class="w-4 h-4"></i>LLM</button>
                     <button class="tool-btn" onclick="addGeneratorNode()"><i data-lucide="wand-sparkles" class="w-4 h-4"></i><span data-i18n="canvas.apiGenerate">API生成</span></button>
-                    <button class="tool-btn" onclick="addMsGenNode()"><i data-lucide="cloud-lightning" class="w-4 h-4"></i><span data-i18n="canvas.msGenerate">MS生成</span></button>
-                    <button class="tool-btn" onclick="addVideoNode()"><i data-lucide="clapperboard" class="w-4 h-4"></i><span data-i18n="canvas.videoGenerate">视频生成</span></button>
-                    <button class="tool-btn" onclick="addRhNode()"><i data-lucide="workflow" class="w-4 h-4"></i><span data-i18n="canvas.rhGenerate">RH生成</span></button>
-                    <button class="tool-btn" onclick="addComfyNode()"><i data-lucide="workflow" class="w-4 h-4"></i>ComfyUI</button>
-                    <button class="tool-btn" onclick="addLTXDirectorNode()"><i data-lucide="film" class="w-4 h-4"></i><span data-i18n="canvas.ltxDirector">LTX Director</span></button>
                     <button class="tool-btn" onclick="addOutputNode()"><i data-lucide="circle-dot" class="w-4 h-4"></i>Output</button>
-                    <button class="tool-btn" onclick="groupSelectedImages()"><i data-lucide="group" class="w-4 h-4"></i><span data-i18n="canvas.group">分组</span></button>
                 </div>
-                <div class="toolbar-fixed">
-                    <button id="cloudVersionHistoryToggle" class="tool-btn toolbar-history" type="button" title="版本历史" aria-label="版本历史" style="display:none"><i data-lucide="history" class="w-4 h-4"></i><span>历史</span></button>
-                    <button id="workflowTransferToggle" class="tool-btn toolbar-workflow" type="button" title="导入导出工作流" aria-label="导入导出工作流"><i data-lucide="package-open" class="w-4 h-4"></i><span>工作流</span></button>
-                    <button id="canvasAssetToggle" class="tool-btn toolbar-asset canvas-asset-toggle" type="button" title="资产库" aria-label="资产库"><i data-lucide="library" class="w-4 h-4"></i><span>资产库</span></button>
-                    <button id="canvasLogToggle" class="tool-btn toolbar-log" type="button" onclick="openCanvasLog(event)" title="日志" aria-label="日志" data-i18n-title="canvas.logs"><i data-lucide="list-todo" class="w-4 h-4"></i><span data-i18n="canvas.logs">日志</span></button>
-                </div>
+            </div>
+            <div class="panel canvas-secondary-actions editor-only">
+                <button class="tool-btn secondary-actions-toggle" type="button" title="展开更多工具" aria-label="展开更多工具" aria-expanded="false" onclick="const dock=this.closest('.canvas-secondary-actions'); const open=!dock.classList.contains('is-open'); dock.classList.toggle('is-open', open); this.setAttribute('aria-expanded', open ? 'true' : 'false'); this.title=open ? '收起更多工具' : '展开更多工具'; this.setAttribute('aria-label', this.title);"><i data-lucide="chevrons-left" class="w-4 h-4"></i><span>更多</span></button>
+                <button class="tool-btn secondary-extra" onclick="addLoopNode()"><i data-lucide="repeat-2" class="w-4 h-4"></i><span data-i18n="canvas.loop">循环</span></button>
+                <button class="tool-btn secondary-extra" onclick="addLLMNode()"><i data-lucide="message-square-text" class="w-4 h-4"></i><span>LLM</span></button>
+                <button class="tool-btn secondary-extra" onclick="addMsGenNode()"><i data-lucide="cloud-lightning" class="w-4 h-4"></i><span data-i18n="canvas.msGenerate">MS生成</span></button>
+                <button class="tool-btn secondary-extra" onclick="addVideoNode()"><i data-lucide="clapperboard" class="w-4 h-4"></i><span data-i18n="canvas.videoGenerate">视频生成</span></button>
+                <button class="tool-btn secondary-extra" onclick="addRhNode()"><i data-lucide="workflow" class="w-4 h-4"></i><span data-i18n="canvas.rhGenerate">RH生成</span></button>
+                <button class="tool-btn secondary-extra" onclick="addComfyNode()"><i data-lucide="workflow" class="w-4 h-4"></i><span>ComfyUI</span></button>
+                <button class="tool-btn secondary-extra" onclick="addLTXDirectorNode()"><i data-lucide="film" class="w-4 h-4"></i><span data-i18n="canvas.ltxDirector">LTX Director</span></button>
+                <button class="tool-btn secondary-extra" onclick="groupSelectedImages()"><i data-lucide="group" class="w-4 h-4"></i><span data-i18n="canvas.group">分组</span></button>
+                <button id="cloudVersionHistoryToggle" class="tool-btn toolbar-history" type="button" title="版本历史" aria-label="版本历史" style="display:none"><i data-lucide="history" class="w-4 h-4"></i><span>历史</span></button>
+                <button id="workflowTransferToggle" class="tool-btn toolbar-workflow" type="button" title="导入导出工作流" aria-label="导入导出工作流"><i data-lucide="package-open" class="w-4 h-4"></i><span>工作流</span></button>
+                <button id="canvasAssetToggle" class="tool-btn toolbar-asset canvas-asset-toggle" type="button" title="资产库" aria-label="资产库"><i data-lucide="library" class="w-4 h-4"></i><span>资产库</span></button>
+                <button id="canvasLogToggle" class="tool-btn toolbar-log" type="button" onclick="openCanvasLog(event)" title="日志" aria-label="日志" data-i18n-title="canvas.logs"><i data-lucide="list-todo" class="w-4 h-4"></i><span data-i18n="canvas.logs">日志</span></button>
             </div>
         </div>
 
@@ -368,6 +369,6 @@
 
     <script src="/static/js/ltx-director-timeline.js?v=2026.07.23.1784893025"></script>
     <script src="/static/js/team-assets.js?v=2026.07.26.4"></script>
-    <script src="/static/js/canvas.js?v=2026.07.26.4"></script>
+    <script src="/static/js/canvas.js?v=2026.07.28.4"></script>
 </body>
 </html>
