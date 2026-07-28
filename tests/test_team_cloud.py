@@ -688,19 +688,30 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         html = (root / "static" / "workbench-preview.html").read_text(encoding="utf-8")
         css = (root / "static" / "css" / "workbench-preview.css").read_text(encoding="utf-8")
+        workbench_script = (root / "static" / "js" / "workbench.js").read_text(encoding="utf-8")
+        list_script = (root / "static" / "js" / "canvas-list.js").read_text(encoding="utf-8")
 
         self.assertIn('class="preview-top-dock"', html)
         self.assertIn('class="preview-quick-rail"', html)
         self.assertIn('class="preview-composer"', html)
+        self.assertIn('/static/images/workbench-character-preview.png', html)
+        self.assertIn('体验反馈', html)
+        self.assertIn('私有画布', html)
+        self.assertIn('data-visibility-target="private"', html)
+        self.assertIn('data-lucide="sliders-horizontal"', html)
         self.assertIn('data-workbench-generate', html)
         self.assertIn('data-open-page="canvas"', html)
         self.assertIn('data-open-page="team-cloud"', html)
         self.assertIn('data-open-page="asset-manager"', html)
         self.assertIn("/static/js/workbench.js", html)
+        self.assertIn(".hero-avatar.character", css)
         self.assertIn(".preview-top-dock", css)
         self.assertIn(".preview-quick-rail", css)
         self.assertIn(".preview-composer", css)
         self.assertIn("@media (max-width: 760px)", css)
+        self.assertIn("button.dataset.visibilityTarget", workbench_script)
+        self.assertIn("initialCanvasVisibilityFilter", list_script)
+        self.assertIn("params.get('visibility')", list_script)
 
 
 if __name__ == "__main__":

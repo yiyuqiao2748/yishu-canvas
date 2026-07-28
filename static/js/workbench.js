@@ -30,13 +30,13 @@
         return `${url}?${query.toString()}`;
     }
 
-    function openPage(page) {
+    function openPage(page, params = null) {
         if(!PAGE_IDS.has(page)) return;
         if(window.parent && window.parent !== window) {
-            window.parent.postMessage({ type: 'studio-open-page', page }, window.location.origin);
+            window.parent.postMessage({ type: 'studio-open-page', page, params }, window.location.origin);
             return;
         }
-        window.location.href = pageUrl(page);
+        window.location.href = pageUrl(page, params);
     }
 
     function setStatus(text) {
@@ -107,7 +107,12 @@
 
     function init() {
         document.querySelectorAll('[data-open-page]').forEach(button => {
-            button.addEventListener('click', () => openPage(button.dataset.openPage));
+            button.addEventListener('click', () => {
+                const params = button.dataset.visibilityTarget
+                    ? { cloud: '1', visibility: button.dataset.visibilityTarget }
+                    : null;
+                openPage(button.dataset.openPage, params);
+            });
         });
 
         document.querySelector('[data-clear-prompt]')?.addEventListener('click', () => {

@@ -45,6 +45,16 @@ function rememberedProjectId(){
     }
 }
 
+function initialCanvasVisibilityFilter(){
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const visibility = String(params.get('visibility') || '').toLowerCase();
+        return visibility === 'private' || visibility === 'team' ? visibility : 'all';
+    } catch(e){
+        return 'all';
+    }
+}
+
 function rememberProjectId(pid){
     if(!pid) return;
     try {
@@ -100,7 +110,7 @@ let currentProjectId = rememberedProjectId();
 let pendingDeleteProjectId = null;
 let statusTimer = null;
 let clipboardCanvasId = null;   // 剪切的画布（切到别的项目后粘贴）
-let canvasVisibilityFilter = 'all';
+let canvasVisibilityFilter = initialCanvasVisibilityFilter();
 let workbenchDraftCreateBusy = false;
 
 // board viewport (mirrors smart-canvas math)

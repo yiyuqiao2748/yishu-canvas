@@ -184,6 +184,16 @@ button {
     background: rgba(255, 255, 255, .07);
 }
 
+.nav-chip.user-chip {
+    gap: 7px;
+    padding: 0 11px;
+}
+
+.nav-chip.user-chip .icon {
+    width: 14px;
+    height: 14px;
+}
+
 .nav-chip.compact {
     width: 48px;
     justify-content: center;
@@ -261,8 +271,8 @@ button {
 }
 
 .hero-avatar-wrap {
-    width: 90px;
-    height: 92px;
+    width: 98px;
+    height: 96px;
     position: relative;
     display: grid;
     place-items: center;
@@ -270,14 +280,24 @@ button {
 }
 
 .hero-avatar {
-    width: 70px;
-    height: 70px;
+    width: 78px;
+    height: 78px;
     position: relative;
     z-index: 1;
     border-radius: 50%;
     object-fit: cover;
     background: #120c12;
     box-shadow: 0 22px 42px rgba(0, 0, 0, .52);
+}
+
+.hero-avatar.character {
+    width: 92px;
+    height: 92px;
+    border-radius: 0;
+    object-fit: contain;
+    background: transparent;
+    filter: drop-shadow(0 18px 28px rgba(0, 0, 0, .52));
+    box-shadow: none;
 }
 
 .avatar-orbit {

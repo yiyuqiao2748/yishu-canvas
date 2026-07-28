@@ -22,9 +22,10 @@
             </button>
 
             <nav class="preview-nav" aria-label="主要入口">
-                <button class="nav-chip muted" type="button">
+                <button class="nav-chip muted user-chip" type="button">
+                    <i data-lucide="user-round" class="icon"></i>
                     <span>用户·达达</span>
-                    <i data-lucide="settings-2" class="icon"></i>
+                    <i data-lucide="sliders-horizontal" class="icon"></i>
                 </button>
                 <button class="nav-chip" type="button">
                     <span>灵感</span>
@@ -59,9 +60,9 @@
         </header>
 
         <aside class="preview-quick-rail" aria-label="快捷入口">
-            <button type="button" data-open-page="asset-manager" title="灵感图库">
-                <i data-lucide="folder" class="icon"></i>
-                <span>灵感图库</span>
+            <button type="button" data-open-page="canvas" data-visibility-target="private" title="进入私有画布">
+                <i data-lucide="lock-keyhole" class="icon"></i>
+                <span>私有画布</span>
             </button>
             <button type="button" data-open-page="team-cloud" title="历史创作">
                 <i data-lucide="history" class="icon"></i>
@@ -74,12 +75,12 @@
                 <div class="hero-avatar-wrap" aria-hidden="true">
                     <span class="avatar-orbit one"></span>
                     <span class="avatar-orbit two"></span>
-                    <img src="/static/images/logo.png" alt="" class="hero-avatar">
+                    <img src="/static/images/workbench-character-preview.png" alt="" class="hero-avatar character">
                 </div>
                 <div class="hero-pill">团队内容专用</div>
                 <h1>AI设计师</h1>
                 <p>上传参考图，输入需求，生成高级设计作品。使用最新的生图模型。</p>
-                <button class="mini-cta" type="button" data-open-page="team-cloud">体验团队创作版本</button>
+                <button class="mini-cta" type="button" data-open-page="gpt-chat">体验反馈</button>
             </section>
 
             <section class="preview-composer" aria-label="创作输入区">
