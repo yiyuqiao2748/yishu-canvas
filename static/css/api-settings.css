@@ -6175,6 +6175,8 @@ html body:not(.force-light-api) .side-card {
 html.studio-scale-managed body .action-btn,
 html.studio-scale-managed body .add-btn,
 html.studio-scale-managed body .field-frame,
+html.studio-scale-managed body .field-frame.protocol-selector-wrap,
+html.studio-scale-managed body .field-frame.image-request-mode-wrap,
 html.studio-scale-managed body .key-panel,
 html.studio-scale-managed body .cli-quick-btn,
 html.studio-scale-managed body input,
@@ -6183,11 +6185,22 @@ html.studio-scale-managed body select,
 html body:not(.force-light-api) .action-btn,
 html body:not(.force-light-api) .add-btn,
 html body:not(.force-light-api) .field-frame,
+html body:not(.force-light-api) .field-frame.protocol-selector-wrap,
+html body:not(.force-light-api) .field-frame.image-request-mode-wrap,
 html body:not(.force-light-api) .key-panel,
 html body:not(.force-light-api) .cli-quick-btn,
 html body:not(.force-light-api) input,
 html body:not(.force-light-api) textarea,
 html body:not(.force-light-api) select {
+    background:rgba(9,7,9,.66) !important;
+    border-color:rgba(255,255,255,.1) !important;
+    color:var(--text) !important;
+}
+
+html.studio-scale-managed body .protocol-selector-wrap,
+html.studio-scale-managed body .image-request-mode-wrap,
+html body:not(.force-light-api) .protocol-selector-wrap,
+html body:not(.force-light-api) .image-request-mode-wrap {
     background:rgba(9,7,9,.66) !important;
     border-color:rgba(255,255,255,.1) !important;
     color:var(--text) !important;
@@ -6208,4 +6221,68 @@ html body:not(.force-light-api) .wrap .content-head {
     background:rgba(24,18,21,.88) !important;
     border-color:rgba(255,119,92,.2) !important;
     color:#fff7ed !important;
+}
+
+/* native select menu contrast */
+select,
+select option,
+select optgroup {
+    color-scheme:dark;
+}
+select option,
+select optgroup {
+    background:#1f1718 !important;
+    color:#fff7ed !important;
+}
+select option:checked {
+    background:#dc2626 !important;
+    color:#ffffff !important;
+}
+select option:disabled {
+    background:#2a2020 !important;
+    color:#b8aaa2 !important;
+}
+
+/* final production recommend-panel contrast */
+html.studio-scale-managed body.show-recommend-mode .provider-onboarding-card.recommend-inline-card,
+html.studio-scale-managed body.show-recommend-mode .recommend-inline-card,
+html.studio-scale-managed body.show-recommend-mode .recommend-group,
+html.studio-scale-managed body.show-recommend-mode .recommend-card.recommend-platform-card,
+html.studio-scale-managed body.show-recommend-mode .recommend-platform-card,
+html.studio-scale-managed body.show-recommend-mode .recommend-platform-info,
+html.studio-scale-managed body.show-recommend-mode .recommend-platform-setup,
+html.studio-scale-managed body.show-recommend-mode .recommend-guide-source,
+html.studio-scale-managed body.show-recommend-mode .recommend-guide-save,
+html.studio-scale-managed body.show-recommend-mode .onboarding-rh-source-group,
+html.studio-scale-managed body.show-recommend-mode .onboarding-key-field,
+html.studio-scale-managed body .field-frame,
+html.studio-scale-managed body .key-panel,
+html body:not(.force-light-api).show-recommend-mode .provider-onboarding-card.recommend-inline-card,
+html body:not(.force-light-api).show-recommend-mode .recommend-inline-card,
+html body:not(.force-light-api).show-recommend-mode .recommend-group,
+html body:not(.force-light-api).show-recommend-mode .recommend-card.recommend-platform-card,
+html body:not(.force-light-api).show-recommend-mode .recommend-platform-card,
+html body:not(.force-light-api).show-recommend-mode .recommend-platform-info,
+html body:not(.force-light-api).show-recommend-mode .recommend-platform-setup,
+html body:not(.force-light-api).show-recommend-mode .recommend-guide-source,
+html body:not(.force-light-api).show-recommend-mode .recommend-guide-save,
+html body:not(.force-light-api).show-recommend-mode .onboarding-rh-source-group,
+html body:not(.force-light-api).show-recommend-mode .onboarding-key-field,
+html body:not(.force-light-api) .field-frame,
+html body:not(.force-light-api) .key-panel {
+    background:rgba(24,18,21,.88) !important;
+    border-color:rgba(255,119,92,.2) !important;
+    color:var(--text) !important;
+    box-shadow:0 18px 48px rgba(0,0,0,.22) !important;
+}
+
+html.studio-scale-managed body.show-recommend-mode .recommend-inline-card .recommend-guide-source,
+html.studio-scale-managed body.show-recommend-mode .recommend-inline-card .recommend-guide-save,
+html.studio-scale-managed body.show-recommend-mode .recommend-inline-card .onboarding-key-field,
+html body:not(.force-light-api).show-recommend-mode .recommend-inline-card .recommend-guide-source,
+html body:not(.force-light-api).show-recommend-mode .recommend-inline-card .recommend-guide-save,
+html body:not(.force-light-api).show-recommend-mode .recommend-inline-card .onboarding-key-field {
+    background:rgba(9,7,9,.66) !important;
+    border-color:rgba(255,255,255,.1) !important;
+    color:var(--text) !important;
 }

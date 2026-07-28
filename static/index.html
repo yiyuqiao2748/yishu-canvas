@@ -646,6 +646,30 @@
             border-color: var(--text);
         }
 
+        /* studio shell sidebar dark active contrast */
+        html.theme-dark .nav-item.active,
+        body.theme-dark .nav-item.active,
+        html.studio-theme-dark .nav-item.active,
+        body.studio-theme-dark .nav-item.active,
+        body:not(.studio-immersive-mode) .nav-item.active,
+        html.theme-dark .side-pill.active,
+        body.theme-dark .side-pill.active,
+        html.studio-theme-dark .side-pill.active,
+        body.studio-theme-dark .side-pill.active,
+        body:not(.studio-immersive-mode) .side-pill.active {
+            background:rgba(220,38,38,.22);
+            color:#fff7ed;
+            border-color:rgba(255,138,76,.34);
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), 0 10px 24px rgba(220,38,38,.16);
+        }
+
+        body:not(.studio-immersive-mode) .nav-item:hover,
+        body:not(.studio-immersive-mode) .side-pill:hover {
+            background:rgba(255,255,255,.075);
+            color:#fff7ed;
+            border-color:rgba(255,255,255,.12);
+        }
+
         .side-pill.update-available {
             border-color:#22c55e;
             color:#16a34a;
@@ -1694,18 +1718,18 @@
         </script>
 
         <main class="stage">
-            <iframe id="frame-workbench" data-src="/static/workbench.html?v=2026.07.28.6" class="active" scrolling="yes"></iframe>
-            <iframe id="frame-zimage" data-src="/static/zimage.html?v=2026.07.28.4" scrolling="yes"></iframe>
-            <iframe id="frame-enhance" data-src="/static/enhance.html?v=2026.07.28.5" scrolling="yes"></iframe>
-            <iframe id="frame-klein" data-src="/static/klein.html?v=2026.07.28.5" scrolling="yes"></iframe>
-            <iframe id="frame-angle" data-src="/static/angle.html?v=2026.07.28.5" scrolling="yes"></iframe>
-            <iframe id="frame-online" data-src="/static/online.html?v=2026.07.28.4" scrolling="yes"></iframe>
-            <iframe id="frame-gpt-chat" data-src="/static/gpt-chat.html?v=2026.07.28.5" scrolling="yes"></iframe>
-            <iframe id="frame-asset-manager" data-src="/static/asset-manager.html?v=2026.07.28.4" scrolling="yes"></iframe>
-            <iframe id="frame-team-cloud" data-src="/static/team-cloud.html?v=2026.07.28.5" scrolling="yes"></iframe>
-            <iframe id="frame-api-settings" data-src="/static/api-settings.html?v=2026.07.28.6" scrolling="yes"></iframe>
-            <iframe id="frame-comfyui-settings" data-src="/static/comfyui-settings.html?v=2026.07.28.4" scrolling="yes"></iframe>
-            <iframe id="frame-canvas" data-src="/static/canvas-list.html?v=2026.07.28.5" scrolling="yes"></iframe>
+            <iframe id="frame-workbench" data-src="/static/workbench.html?v=2026.07.29.1" class="active" scrolling="yes"></iframe>
+            <iframe id="frame-zimage" data-src="/static/zimage.html?v=2026.07.29.1" scrolling="yes"></iframe>
+            <iframe id="frame-enhance" data-src="/static/enhance.html?v=2026.07.29.1" scrolling="yes"></iframe>
+            <iframe id="frame-klein" data-src="/static/klein.html?v=2026.07.29.1" scrolling="yes"></iframe>
+            <iframe id="frame-angle" data-src="/static/angle.html?v=2026.07.29.1" scrolling="yes"></iframe>
+            <iframe id="frame-online" data-src="/static/online.html?v=2026.07.29.1" scrolling="yes"></iframe>
+            <iframe id="frame-gpt-chat" data-src="/static/gpt-chat.html?v=2026.07.29.1" scrolling="yes"></iframe>
+            <iframe id="frame-asset-manager" data-src="/static/asset-manager.html?v=2026.07.29.1" scrolling="yes"></iframe>
+            <iframe id="frame-team-cloud" data-src="/static/team-cloud.html?v=2026.07.29.1" scrolling="yes"></iframe>
+            <iframe id="frame-api-settings" data-src="/static/api-settings.html?v=2026.07.29.1" scrolling="yes"></iframe>
+            <iframe id="frame-comfyui-settings" data-src="/static/comfyui-settings.html?v=2026.07.29.1" scrolling="yes"></iframe>
+            <iframe id="frame-canvas" data-src="/static/canvas-list.html?v=2026.07.29.1" scrolling="yes"></iframe>
 
         </main>
     </div>

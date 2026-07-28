@@ -613,6 +613,43 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("hasCanvasAssetDrag(event.dataTransfer)", script)
         self.assertIn("bindAssetItemDragGuard(canvasAssetGrid, '.canvas-asset-item'", script)
 
+    def test_dark_native_select_menus_stay_readable(self):
+        root = Path(__file__).resolve().parents[1]
+        css_files = [
+            "canvas.css",
+            "smart-canvas.css",
+            "workbench.css",
+            "workbench-preview.css",
+            "theme.css",
+            "api-settings.css",
+            "asset-manager.css",
+        ]
+
+        for filename in css_files:
+            with self.subTest(filename=filename):
+                css = (root / "static" / "css" / filename).read_text(encoding="utf-8")
+                self.assertIn("native select menu contrast", css)
+                self.assertIn("select option,\nselect optgroup", css)
+                self.assertIn("background:#1f1718 !important;", css)
+                self.assertIn("color:#fff7ed !important;", css)
+                self.assertIn("select option:disabled", css)
+        team_cloud_html = (root / "static" / "team-cloud.html").read_text(encoding="utf-8")
+        self.assertIn("native select menu contrast", team_cloud_html)
+        self.assertIn("select option,\n        select optgroup", team_cloud_html)
+        self.assertIn("background:#1f1718 !important;", team_cloud_html)
+        self.assertIn("color:#fff7ed !important;", team_cloud_html)
+        self.assertIn("select option:disabled", team_cloud_html)
+        self.assertIn(".tabs,\n        .tab,", team_cloud_html)
+        self.assertIn(".tab.active,", team_cloud_html)
+        self.assertIn(".team-api-sidebar,", team_cloud_html)
+
+        api_settings_css = (root / "static" / "css" / "api-settings.css").read_text(encoding="utf-8")
+        self.assertIn("html.studio-scale-managed body .field-frame.protocol-selector-wrap", api_settings_css)
+        self.assertIn("html.studio-scale-managed body .field-frame.image-request-mode-wrap", api_settings_css)
+        self.assertIn("final production recommend-panel contrast", api_settings_css)
+        self.assertIn("html.studio-scale-managed body.show-recommend-mode .provider-onboarding-card.recommend-inline-card", api_settings_css)
+        self.assertIn("html.studio-scale-managed body.show-recommend-mode .recommend-card.recommend-platform-card", api_settings_css)
+
     def test_cloud_canvas_kind_is_per_canvas_and_defaults_classic(self):
         root = Path(__file__).resolve().parents[1]
         script = (root / "static" / "js" / "canvas-list.js").read_text(encoding="utf-8")
@@ -655,7 +692,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         html = (root / "static" / "canvas-list.html").read_text(encoding="utf-8")
         index_html = (root / "static" / "index.html").read_text(encoding="utf-8")
 
-        self.assertIn("canvas-list.html?v=2026.07.28.5", index_html)
+        self.assertIn("canvas-list.html?v=2026.07.29.1", index_html)
         self.assertIn("canvas-list.css?v=2026.07.28.5", html)
         self.assertIn("canvas-list.js?v=2026.07.28.4", html)
         self.assertIn('id="backHomeBtn"', html)
@@ -740,6 +777,10 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("id === 'workbench' || id === 'canvas'", index_html)
         self.assertIn("function setStudioPageMode", index_html)
         self.assertIn("studio-toggle-theme", index_html)
+        self.assertIn("studio shell sidebar dark active contrast", index_html)
+        self.assertIn("html.theme-dark .nav-item.active,\n        body.theme-dark .nav-item.active,\n        html.studio-theme-dark .nav-item.active,\n        body.studio-theme-dark .nav-item.active", index_html)
+        self.assertIn("html.theme-dark .side-pill.active,\n        body.theme-dark .side-pill.active,\n        html.studio-theme-dark .side-pill.active,\n        body.studio-theme-dark .side-pill.active", index_html)
+        self.assertIn("background:rgba(220,38,38,.22);", index_html)
         self.assertIn(".preview-quick-rail button.active", workbench_css)
         self.assertIn(".preview-quick-rail::before", workbench_css)
         self.assertIn(".preview-quick-rail button:hover span", workbench_css)
@@ -752,9 +793,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         canvas_css = (root / "static" / "css" / "canvas.css").read_text(encoding="utf-8")
         smart_css = (root / "static" / "css" / "smart-canvas.css").read_text(encoding="utf-8")
 
-        self.assertIn("canvas.css?v=2026.07.28.5", canvas_html)
+        self.assertIn("canvas.css?v=2026.07.29.1", canvas_html)
         self.assertIn("canvas.js?v=2026.07.28.4", canvas_html)
-        self.assertIn("smart-canvas.css?v=2026.07.28.4", smart_html)
+        self.assertIn("smart-canvas.css?v=2026.07.29.1", smart_html)
         self.assertIn("smart-canvas.js?v=2026.07.28.4", smart_html)
         self.assertIn("2026-07-28 secondary canvas workbench alignment", canvas_css)
         self.assertIn("2026-07-28 secondary canvas workbench alignment", smart_css)

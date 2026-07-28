@@ -2031,3 +2031,23 @@ body:has(.container-box) #cameraControl [class*="md:w-64"] {
     border-color:rgba(255,255,255,.12) !important;
     color:#fff4df !important;
 }
+
+/* native select menu contrast */
+select,
+select option,
+select optgroup {
+    color-scheme:dark;
+}
+select option,
+select optgroup {
+    background:#1f1718 !important;
+    color:#fff7ed !important;
+}
+select option:checked {
+    background:#dc2626 !important;
+    color:#ffffff !important;
+}
+select option:disabled {
+    background:#2a2020 !important;
+    color:#b8aaa2 !important;
+}
