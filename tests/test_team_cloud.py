@@ -684,6 +684,24 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("addGeneratorNode({x:promptNode.x + 360, y:promptNode.y})", canvas_script)
         self.assertIn("connections.push({id:uid('c'), from:promptNode.id, to:generator.id});", canvas_script)
 
+    def test_workbench_preview_exposes_reference_home_shell(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "static" / "workbench-preview.html").read_text(encoding="utf-8")
+        css = (root / "static" / "css" / "workbench-preview.css").read_text(encoding="utf-8")
+
+        self.assertIn('class="preview-top-dock"', html)
+        self.assertIn('class="preview-quick-rail"', html)
+        self.assertIn('class="preview-composer"', html)
+        self.assertIn('data-workbench-generate', html)
+        self.assertIn('data-open-page="canvas"', html)
+        self.assertIn('data-open-page="team-cloud"', html)
+        self.assertIn('data-open-page="asset-manager"', html)
+        self.assertIn("/static/js/workbench.js", html)
+        self.assertIn(".preview-top-dock", css)
+        self.assertIn(".preview-quick-rail", css)
+        self.assertIn(".preview-composer", css)
+        self.assertIn("@media (max-width: 760px)", css)
+
 
 if __name__ == "__main__":
     unittest.main()
