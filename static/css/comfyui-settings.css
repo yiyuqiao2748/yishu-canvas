@@ -362,3 +362,83 @@ select {
     background:rgba(249,115,22,.12) !important;
     color:var(--text) !important;
 }
+
+/* Keep this page in the same red-black studio skin even when theme.css applies
+   higher-specificity .studio-theme-dark variables. */
+html.theme-dark body,
+body.theme-dark,
+html.studio-theme-dark body,
+body.studio-theme-dark {
+    --bg:#08090d;
+    --panel:rgba(24,18,21,.88);
+    --soft:rgba(255,255,255,.055);
+    --line:rgba(255,119,92,.2);
+    --line-strong:rgba(255,159,97,.42);
+    --text:#fff7ed;
+    --muted:#b8aaa2;
+    --faint:#81746f;
+    --accent:#ef4444;
+    background:
+        linear-gradient(110deg, rgba(84,7,18,.82) 0%, rgba(30,10,14,.68) 32%, rgba(5,13,11,.98) 72%),
+        #08090d !important;
+    color:var(--text) !important;
+}
+
+.wrap {
+    max-width:none;
+}
+
+.page-head-actions {
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:10px;
+}
+
+.home-btn {
+    height:34px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:7px;
+    padding:0 12px;
+    border:1px solid rgba(255,219,184,.14);
+    border-radius:999px;
+    background:rgba(255,255,255,.07);
+    color:var(--text);
+    font-size:11.5px;
+    font-weight:900;
+    box-shadow:0 12px 28px rgba(0,0,0,.22);
+}
+
+.home-btn:hover {
+    border-color:var(--line-strong);
+    background:rgba(249,115,22,.14);
+}
+
+html.theme-dark body .workspace-mode-tabs,
+body.theme-dark .workspace-mode-tabs,
+html.studio-theme-dark body .workspace-mode-tabs,
+body.studio-theme-dark .workspace-mode-tabs {
+    background:rgba(9,7,9,.62);
+    border-color:rgba(255,255,255,.08);
+}
+
+html.theme-dark body .workspace-mode-tabs button.active,
+body.theme-dark .workspace-mode-tabs button.active,
+html.studio-theme-dark body .workspace-mode-tabs button.active,
+body.studio-theme-dark .workspace-mode-tabs button.active {
+    background:linear-gradient(135deg,#dc2626,#fb6b3d);
+    color:#fff;
+}
+
+html.theme-dark body .graph-svg-wrap,
+body.theme-dark .graph-svg-wrap,
+html.studio-theme-dark body .graph-svg-wrap,
+body.studio-theme-dark .graph-svg-wrap {
+    background:
+        linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px),
+        rgba(5,7,8,.72) !important;
+    background-size:40px 40px,40px 40px,auto !important;
+}

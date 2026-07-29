@@ -2,6 +2,10 @@
     const WORKBENCH_DRAFTS_KEY = 'workbenchCanvasDrafts:v1';
     const WORKBENCH_PENDING_DRAFT_KEY = 'workbenchCanvasDraftPending:v1';
     const WORKBENCH_REFERENCES_KEY = 'workbenchReferences:v1';
+    const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
+    let currentWorkbenchUser = null;
+    let currentWorkbenchTeams = [];
+    let authModalMode = 'user';
     const PROMPT_PLACEHOLDERS = [
         '例如：为城市展厅设计一张建筑概念图，玻璃幕墙、金红色灯带、入口有水景和人流，高级夜景摄影质感。',
         '例如：设计一家现代中餐厅室内效果图，暖金灯光、深色木饰面、开放式吧台、圆桌包间、空间层次丰富。',
@@ -50,8 +54,12 @@
         const isLight = theme === 'light';
         document.documentElement.classList.toggle('theme-light', isLight);
         document.body.classList.toggle('theme-light', isLight);
+        document.documentElement.classList.toggle('studio-theme-light', isLight);
+        document.body.classList.toggle('studio-theme-light', isLight);
         document.documentElement.classList.toggle('theme-dark', !isLight);
         document.body.classList.toggle('theme-dark', !isLight);
+        document.documentElement.classList.toggle('studio-theme-dark', !isLight);
+        document.body.classList.toggle('studio-theme-dark', !isLight);
         try {
             const next = isLight ? 'light' : 'dark';
             localStorage.setItem('studio_theme', next);
@@ -103,16 +111,42 @@
         return escapeHtml(value);
     }
 
+    function storedTeamAccessToken() {
+        try { return localStorage.getItem(TEAM_CLOUD_ACCESS_TOKEN_KEY) || ''; } catch(e) { return ''; }
+    }
+
+    function storeTeamAccessToken(token) {
+        try {
+            if(token) localStorage.setItem(TEAM_CLOUD_ACCESS_TOKEN_KEY, token);
+            else localStorage.removeItem(TEAM_CLOUD_ACCESS_TOKEN_KEY);
+        } catch(e) {}
+    }
+
+    function teamCloudHeaders(headers = {}) {
+        const next = { ...headers };
+        const token = storedTeamAccessToken();
+        if(token && !next.Authorization && !next.authorization) next.Authorization = `Bearer ${token}`;
+        return next;
+    }
+
+    function apiErrorMessage(data, fallback = '请求失败') {
+        const detail = data && data.detail;
+        if(detail && typeof detail === 'object') return detail.message || data.message || fallback;
+        return detail || (data && data.message) || fallback;
+    }
+
     async function fetchJson(url, options = {}) {
+        const rawHeaders = options.headers || {};
+        const headers = String(url || '').startsWith('/api/team-cloud') ? teamCloudHeaders(rawHeaders) : { ...rawHeaders };
         const response = await fetch(url, {
             credentials: 'same-origin',
             ...options,
-            headers: {
-                ...(options.headers || {}),
-            },
+            headers,
         });
-        if(!response.ok) throw new Error(`request failed: ${response.status}`);
-        return await response.json();
+        let data = null;
+        try { data = await response.json(); } catch(e) { data = {}; }
+        if(!response.ok) throw new Error(apiErrorMessage(data, `request failed: ${response.status}`));
+        return data;
     }
 
     function setUrlStatus(text) {
@@ -217,19 +251,130 @@
     async function loadCurrentUser() {
         const label = document.getElementById('workbenchUserLabel');
         const points = document.getElementById('workbenchInspirationPoints');
-        if(!label) return;
+        if(!label) return null;
         try {
             const data = await fetchJson('/api/team-cloud/me');
             label.textContent = shortUserName(data.user);
             if(points) points.textContent = (data.user && Array.isArray(data.teams) && data.teams.length) ? '无限制' : '0';
-            window.__workbenchCurrentUser = data.user || null;
+            currentWorkbenchUser = data.user || null;
+            currentWorkbenchTeams = Array.isArray(data.teams) ? data.teams : [];
+            window.__workbenchCurrentUser = currentWorkbenchUser;
+            return data;
         } catch(e) {
             label.textContent = '未登录';
             if(points) points.textContent = '0';
+            currentWorkbenchUser = null;
+            currentWorkbenchTeams = [];
             window.__workbenchCurrentUser = null;
+            return null;
         }
     }
 
+    function hasApiSettingsAccess() {
+        return !!currentWorkbenchUser && currentWorkbenchTeams.some(team => ['owner', 'admin'].includes(String(team?.role || '').toLowerCase()));
+    }
+
+    function setAuthMessage(text, type = '') {
+        const el = document.getElementById('authModalMessage');
+        if(!el) return;
+        el.textContent = text || '';
+        el.classList.remove('error', 'ok');
+        if(type) el.classList.add(type);
+    }
+
+    function setAuthMode(mode) {
+        authModalMode = mode === 'admin' ? 'admin' : 'user';
+        document.querySelectorAll('[data-auth-mode]').forEach(button => {
+            const active = button.dataset.authMode === authModalMode;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        const kicker = document.getElementById('authModalKicker');
+        const title = document.getElementById('authModalTitle');
+        if(kicker) kicker.textContent = authModalMode === 'admin' ? '管理员入口' : '账户登录';
+        if(title) title.textContent = authModalMode === 'admin' ? '管理员登录' : '登录到 AI设计师';
+        setAuthMessage(authModalMode === 'admin' ? '管理员登录成功后会直接进入 API 设置。' : '登录后可使用团队资源；管理员可进入 API 设置。');
+    }
+
+    function openAuthModal(mode = 'user') {
+        const modal = document.getElementById('authModal');
+        const input = document.getElementById('authIdentifierInput');
+        if(!modal) return;
+        window.__authReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setAuthMode(mode);
+        modal.hidden = false;
+        const focusInput = () => input?.focus?.({ preventScroll: true });
+        window.requestAnimationFrame(focusInput);
+        window.setTimeout(focusInput, 80);
+    }
+
+    function closeAuthModal() {
+        const modal = document.getElementById('authModal');
+        if(modal) modal.hidden = true;
+        setAuthMessage('登录后可使用团队资源；管理员可进入 API 设置。');
+        window.__authReturnFocus?.focus?.();
+        window.__authReturnFocus = null;
+    }
+
+    async function submitAuthModal(event) {
+        event?.preventDefault?.();
+        const identifier = String(document.getElementById('authIdentifierInput')?.value || '').trim();
+        const password = String(document.getElementById('authPasswordInput')?.value || '');
+        const button = document.querySelector('[data-auth-submit]');
+        if(!identifier || !password) {
+            setAuthMessage('请输入邮箱/账号和密码。', 'error');
+            return;
+        }
+        if(button) button.disabled = true;
+        setAuthMessage('正在登录...');
+        try {
+            const data = await fetchJson('/api/team-cloud/auth/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ identifier, password }),
+            });
+            if(!data.session_ready) throw new Error('登录未成功，请检查账号状态。');
+            storeTeamAccessToken(data.access_token || '');
+            await loadCurrentUser();
+            if(authModalMode === 'admin') {
+                if(!hasApiSettingsAccess()) {
+                    setAuthMessage('当前账户不是管理员，不能进入 API 设置。', 'error');
+                    return;
+                }
+                closeAuthModal();
+                openPage('api-settings');
+                return;
+            }
+            closeAuthModal();
+            setStatus('登录成功');
+        } catch(e) {
+            setAuthMessage(e.message || '账号或密码不正确。', 'error');
+        } finally {
+            if(button) button.disabled = false;
+        }
+    }
+
+    function openAccountEntry() {
+        if(currentWorkbenchUser) {
+            openPage('team-cloud');
+            return;
+        }
+        openAuthModal('user');
+    }
+
+    async function openApiSettingsEntry() {
+        if(!currentWorkbenchUser) await loadCurrentUser();
+        if(!currentWorkbenchUser) {
+            openAuthModal('admin');
+            return;
+        }
+        if(!hasApiSettingsAccess()) {
+            openAuthModal('admin');
+            setAuthMessage('需要管理员账户才能进入 API 设置。', 'error');
+            return;
+        }
+        openPage('api-settings');
+    }
     function selectedValue(id) {
         const el = document.getElementById(id);
         return String(el?.value || '').trim();
@@ -628,6 +773,11 @@
             if(!event.target.closest?.('.preview-quick-rail')) setToolsOpen(false);
         });
 
+        window.addEventListener('message', event => {
+            if(event.origin && event.origin !== location.origin) return;
+            if(event.data?.type === 'studio-theme') applyWorkbenchTheme(event.data.theme);
+        });
+
         document.querySelector('[data-clear-prompt]')?.addEventListener('click', () => {
             const input = document.getElementById('promptInput');
             if(input) input.value = '';
@@ -658,11 +808,19 @@
             button.addEventListener('click', startWorkbenchGeneration);
         });
         document.querySelector('[data-feedback-open]')?.addEventListener('click', openFeedbackModal);
+        document.querySelector('[data-account-entry]')?.addEventListener('click', openAccountEntry);
+        document.querySelector('[data-api-settings-entry]')?.addEventListener('click', openApiSettingsEntry);
         document.querySelector('[data-theme-toggle]')?.addEventListener('click', toggleStudioTheme);
         document.querySelectorAll('[data-feedback-close]').forEach(button => {
             button.addEventListener('click', closeFeedbackModal);
         });
         document.querySelector('[data-feedback-submit]')?.addEventListener('click', submitFeedback);
+        document.getElementById('authModalForm')?.addEventListener('submit', submitAuthModal);
+        document.querySelectorAll('[data-auth-close]').forEach(button => button.addEventListener('click', closeAuthModal));
+        document.querySelectorAll('[data-auth-mode]').forEach(button => button.addEventListener('click', () => setAuthMode(button.dataset.authMode)));
+        document.getElementById('authModal')?.addEventListener('click', event => {
+            if(event.target?.id === 'authModal') closeAuthModal();
+        });
         document.getElementById('feedbackModal')?.addEventListener('click', event => {
             if(event.target?.id === 'feedbackModal') closeFeedbackModal();
         });
@@ -673,6 +831,10 @@
             }
             if(event.key === 'Escape' && !document.getElementById('feedbackModal')?.hidden) {
                 closeFeedbackModal();
+                return;
+            }
+            if(event.key === 'Escape' && !document.getElementById('authModal')?.hidden) {
+                closeAuthModal();
             }
         });
 

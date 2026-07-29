@@ -120,6 +120,7 @@
 - [x] Fix homepage generation event binding so both the side rail create button and primary composer button run the same guarded canvas creation flow.
 - [x] Apply browser annotation polish across secondary pages: darken remaining white fallback panels, add canvas-list home navigation, fix workbench history routing, support standalone theme toggle, and collapse low-frequency canvas editor toolbar actions by default.
 - [x] Sync the latest UI source/static/docs/test files to NAS and verify key file hashes while preserving `.env`, `data/`, and `output/`.
+- [x] Complete UI review follow-up: homepage auth chip opens login/admin modal, API settings are gated to owner/admin, Team Cloud no longer carries a duplicate Team API settings panel, and child pages receive shared theme classes so light/dark state can follow from the workbench.
 - [ ] Polish the right-side generation/assets panel density after browser review.
 - [ ] Recheck the promoted official homepage after Docker rebuild/restart.
 
@@ -433,8 +434,8 @@
 | 2 Private-By-Default Data Model | In progress | Backend visibility rules and publish endpoints added; production Supabase schema still needs applying and browser verification |
 | 3 NAS-Local Media Lifecycle | Not started | Blocks fast media display |
 | 4 Async Save UX | Not started | Prevents NAS save latency from blocking canvas |
-| 5 Workbench Home Redesign | In progress | Project list and main sidebar now use AI designer workbench direction |
-| 6 Canvas Shell Redesign | In progress | Classic and smart canvas have matching dark shell, collapsed secondary toolbar, and dark node/output overrides |
+| 5 Workbench Home Redesign | In progress | Homepage is active, auth/admin/API entry is gated, and light/dark theme broadcasts to child pages |
+| 6 Canvas Shell Redesign | In progress | Classic/smart canvas and canvas list share the workbench skin; canvas list now follows light theme as well |
 | 7 Right-Side Generation Panel | Not started | Main generation workflow |
 | 8 Team API Model Manager | Not started | Admin-only API management |
 | 9 115 Cold Archive And Cleanup | Not started | Storage protection |

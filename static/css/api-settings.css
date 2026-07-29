@@ -16,6 +16,15 @@ button { font-family:inherit; cursor:pointer; border:0; background:transparent; 
 .page-head .title { font-size:26px; line-height:1.05; font-weight:900; letter-spacing:-.015em; }
 .page-head .sub { margin-top:8px; color:var(--muted); font-size:12.5px; line-height:1.55; font-weight:600; max-width:520px; }
 .page-head .status { color:var(--muted); font-size:11.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; min-height:16px; }
+.page-head-actions { display:flex; align-items:center; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+.api-home-btn { min-height:34px; padding:0 12px; border:1px solid var(--line); border-radius:999px; background:var(--soft); color:var(--text); display:inline-flex; align-items:center; justify-content:center; gap:6px; font-size:12px; font-weight:900; box-shadow:0 10px 24px rgba(0,0,0,.18); transition:transform .15s ease,border-color .15s ease,background .15s ease; }
+.api-home-btn:hover { transform:translateY(-1px); border-color:rgba(251,146,60,.5); background:rgba(249,115,22,.14); }
+.api-access-gate { margin-bottom:18px; padding:18px 20px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg, rgba(38,24,24,.92), rgba(10,9,10,.9)); box-shadow:0 22px 60px rgba(0,0,0,.22); display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.api-access-gate[hidden] { display:none; }
+.api-access-gate span { color:var(--faint); font-size:10px; font-weight:900; letter-spacing:.1em; text-transform:uppercase; }
+.api-access-gate h2 { margin:5px 0 4px; color:var(--text); font-size:20px; line-height:1.15; font-weight:950; }
+.api-access-gate p { margin:0; color:var(--muted); font-size:12.5px; line-height:1.55; font-weight:700; }
+body.api-access-blocked .layout { display:none; }
 .layout { display:grid; grid-template-columns:260px minmax(0,1fr); gap:36px; align-items:start; }
 /* Sidebar */
 .sidebar { display:flex; flex-direction:column; gap:12px; position:sticky; top:32px; max-height:calc(100vh - 64px); overflow-y:auto; -webkit-overflow-scrolling:touch; padding:16px; background:var(--panel); border:1px solid var(--line); border-radius:16px; }

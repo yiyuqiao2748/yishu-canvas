@@ -14,9 +14,13 @@
         const dark = next === 'dark';
         document.documentElement.classList.toggle('studio-theme-dark', dark);
         document.documentElement.classList.toggle('theme-dark', dark);
+        document.documentElement.classList.toggle('studio-theme-light', !dark);
+        document.documentElement.classList.toggle('theme-light', !dark);
         if(document.body){
             document.body.classList.toggle('studio-theme-dark', dark);
             document.body.classList.toggle('theme-dark', dark);
+            document.body.classList.toggle('studio-theme-light', !dark);
+            document.body.classList.toggle('theme-light', !dark);
         }
         window.dispatchEvent(new CustomEvent('studio-theme-change', { detail: { theme: next } }));
     }

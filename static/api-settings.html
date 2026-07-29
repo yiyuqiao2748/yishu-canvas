@@ -18,10 +18,10 @@
     </script>
     <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.07.29.2"></script>
     <script src="/static/vendor/js/lucide.js?v=2026.07.29.2"></script>
-    <script src="/static/js/theme.js?v=2026.07.29.2"></script>
+    <script src="/static/js/theme.js?v=2026.07.29.3"></script>
     <script src="/static/js/i18n.js?v=2026.07.29.2"></script>
     <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.29.2">
-    <link rel="stylesheet" href="/static/css/api-settings.css?v=2026.07.29.2">
+    <link rel="stylesheet" href="/static/css/api-settings.css?v=2026.07.29.3">
 </head>
 <body>
     <div class="page">
@@ -31,9 +31,27 @@
                     <div class="title" data-i18n="api.title">API 设置</div>
                     <div class="sub" data-i18n="api.subtitle">管理平台地址、模型列表和 Key。Key 写入后端 env，页面不会回显完整内容。</div>
                 </div>
-                <div id="status" class="status"></div>
+                <div class="page-head-actions">
+                    <button id="apiBackHomeBtn" class="api-home-btn" type="button" onclick="goApiHome()" title="返回主页" aria-label="返回主页">
+                        <i data-lucide="home" class="w-3.5 h-3.5"></i>
+                        <span>主页</span>
+                    </button>
+                    <div id="status" class="status"></div>
+                </div>
             </header>
 
+
+            <section class="api-access-gate" id="apiAccessGate" hidden aria-live="polite">
+                <div>
+                    <span>管理员权限</span>
+                    <h2>请先用管理员账户登录</h2>
+                    <p id="apiAccessMessage">API 设置只允许已登录的团队管理员进入。</p>
+                </div>
+                <button class="api-home-btn" type="button" onclick="goApiHome()">
+                    <i data-lucide="home" class="w-3.5 h-3.5"></i>
+                    <span>返回主页登录</span>
+                </button>
+            </section>
             <div class="layout">
                 <aside class="sidebar">
                     <div class="side-section-title" data-i18n="api.providersTitle">平台列表</div>
@@ -567,6 +585,6 @@
         </div>
     </div>
 
-    <script src="/static/js/api-settings.js?v=2026.07.29.2"></script>
+    <script src="/static/js/api-settings.js?v=2026.07.29.3"></script>
 </body>
 </html>

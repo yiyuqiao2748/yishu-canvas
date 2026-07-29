@@ -141,7 +141,7 @@
         $("inviteForm").querySelectorAll("input,select,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
         $("projectForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedTeamId);
         $("canvasForm").querySelectorAll("input,button").forEach((item) => item.disabled = !signedIn || !state.selectedProjectId);
-        $("apiProviderForm").querySelectorAll("input,select,textarea,button").forEach((item) => item.disabled = !canManageApi);
+        $("apiProviderForm")?.querySelectorAll("input,select,textarea,button").forEach((item) => item.disabled = !canManageApi);
         document.querySelectorAll("[data-api-model-add], [data-api-model-input], [data-api-model-role], [data-api-model-remove]").forEach((item) => {
             item.disabled = !canManageApi;
         });
@@ -1293,7 +1293,7 @@
         $("inviteForm").addEventListener("submit", submitInvite);
         $("projectForm").addEventListener("submit", submitProject);
         $("canvasForm").addEventListener("submit", submitCanvas);
-        $("apiProviderForm").addEventListener("submit", submitApiProvider);
+        $("apiProviderForm")?.addEventListener("submit", submitApiProvider);
         $("teamList").addEventListener("click", (event) => {
             const del = event.target.closest("[data-team-delete]");
             if(del){
@@ -1310,12 +1310,12 @@
                 deleteProject(del.dataset.projectDelete);
             }
         });
-        $("apiProviderAdd").addEventListener("click", addApiProvider);
-        $("apiProviderRecommend").addEventListener("click", applyRecommendedApi);
-        $("apiProviderDelete").addEventListener("click", () => deleteApiProvider(state.selectedApiProviderId));
-        $("apiProviderValidate").addEventListener("click", validateApiProvider);
-        $("apiProviderFetchModels").addEventListener("click", fetchApiProviderModels);
-        $("apiProviderClearKey").addEventListener("click", markApiKeyForClear);
+        $("apiProviderAdd")?.addEventListener("click", addApiProvider);
+        $("apiProviderRecommend")?.addEventListener("click", applyRecommendedApi);
+        $("apiProviderDelete")?.addEventListener("click", () => deleteApiProvider(state.selectedApiProviderId));
+        $("apiProviderValidate")?.addEventListener("click", validateApiProvider);
+        $("apiProviderFetchModels")?.addEventListener("click", fetchApiProviderModels);
+        $("apiProviderClearKey")?.addEventListener("click", markApiKeyForClear);
         document.querySelectorAll("[data-api-model-add]").forEach((button) => {
             button.addEventListener("click", () => addTeamApiModel(button.dataset.apiModelAdd));
         });
@@ -1335,7 +1335,8 @@
                 if(button) removeTeamApiModel(kind, button.dataset.apiModelIndex);
             });
         });
-        $("apiProviderList").addEventListener("click", (event) => {
+        const apiProviderList = $("apiProviderList");
+        if(apiProviderList) apiProviderList.addEventListener("click", (event) => {
             const selected = event.target.closest("[data-api-select]");
             if(selected) selectApiProvider(selected.dataset.apiSelect);
         });

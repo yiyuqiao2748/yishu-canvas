@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -6,7 +6,7 @@
     <title>AI设计师工作台</title>
     <link rel="icon" href="/static/images/logo.png" type="image/png">
     <script src="/static/vendor/js/lucide.js?v=2026.07.29.2"></script>
-    <link rel="stylesheet" href="/static/css/workbench.css?v=2026.07.29.2">
+    <link rel="stylesheet" href="/static/css/workbench.css?v=2026.07.29.3">
 </head>
 <body>
     <div class="preview-shell">
@@ -22,7 +22,7 @@
             </button>
 
             <nav class="preview-nav" aria-label="主要入口">
-                <button class="nav-chip muted user-chip" type="button" data-open-page="team-cloud">
+                <button class="nav-chip muted user-chip" type="button" data-account-entry aria-haspopup="dialog">
                     <i data-lucide="user-round" class="icon"></i>
                     <span id="workbenchUserLabel">未登录</span>
                     <i data-lucide="sliders-horizontal" class="icon"></i>
@@ -56,7 +56,7 @@
                     <i data-lucide="route" class="icon"></i>
                     <span>工作流</span>
                 </button>
-                <button class="nav-chip icon-only" type="button" data-open-page="api-settings" title="API 设置" aria-label="API 设置">
+                <button class="nav-chip icon-only" type="button" data-api-settings-entry title="API 设置" aria-label="API 设置">
                     <i data-lucide="settings" class="icon"></i>
                 </button>
                 <button class="nav-chip icon-only" type="button" data-theme-toggle title="黑白切换" aria-label="黑白切换">
@@ -66,9 +66,9 @@
         </header>
 
         <aside class="preview-quick-rail" aria-label="快捷入口">
-            <button class="rail-create" type="button" data-workbench-generate title="生成高级设计">
+            <button class="rail-create" type="button" data-open-page="canvas" data-visibility-target="private" title="新建画布">
                 <i data-lucide="plus" class="icon"></i>
-                <span>生成</span>
+                <span>新建画布</span>
             </button>
             <button class="active" type="button" data-open-page="workbench" title="主页">
                 <i data-lucide="home" class="icon"></i>
@@ -77,10 +77,6 @@
             <button type="button" data-open-page="canvas" title="AI画布">
                 <i data-lucide="layout-grid" class="icon"></i>
                 <span>AI画布</span>
-            </button>
-            <button type="button" data-open-page="canvas" data-visibility-target="private" title="私有画布">
-                <i data-lucide="lock-keyhole" class="icon"></i>
-                <span>私有画布</span>
             </button>
             <button type="button" data-open-page="canvas" data-recent-history-target title="历史创作">
                 <i data-lucide="history" class="icon"></i>
@@ -282,8 +278,38 @@
                 </div>
             </div>
         </div>
+        <div class="auth-modal" id="authModal" hidden>
+            <form class="auth-card" id="authModalForm" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+                <div class="auth-head">
+                    <div>
+                        <span id="authModalKicker">账户登录</span>
+                        <h2 id="authModalTitle">登录到 AI设计师</h2>
+                    </div>
+                    <button class="round-icon-btn" type="button" data-auth-close title="关闭" aria-label="关闭">
+                        <i data-lucide="x" class="icon"></i>
+                    </button>
+                </div>
+                <div class="auth-mode-row" role="tablist" aria-label="登录类型">
+                    <button class="auth-mode active" type="button" data-auth-mode="user" aria-selected="true">普通登录</button>
+                    <button class="auth-mode" type="button" data-auth-mode="admin" aria-selected="false">管理员入口</button>
+                </div>
+                <label class="auth-field" for="authIdentifierInput">
+                    <span>邮箱 / 账号</span>
+                    <input id="authIdentifierInput" name="identifier" type="text" autocomplete="username" placeholder="输入邮箱或账号" required>
+                </label>
+                <label class="auth-field" for="authPasswordInput">
+                    <span>密码</span>
+                    <input id="authPasswordInput" name="password" type="password" autocomplete="current-password" placeholder="输入密码" required>
+                </label>
+                <p class="auth-message" id="authModalMessage">登录后可使用团队资源；管理员可进入 API 设置。</p>
+                <div class="auth-actions">
+                    <button class="action-pill ghost" type="button" data-auth-close>取消</button>
+                    <button class="action-pill hot" type="submit" data-auth-submit>登录</button>
+                </div>
+            </form>
+        </div>
         <input id="referenceFileInput" type="file" accept="image/*" multiple hidden>
     </div>
-    <script src="/static/js/workbench.js?v=2026.07.29.2"></script>
+    <script src="/static/js/workbench.js?v=2026.07.29.3"></script>
 </body>
 </html>

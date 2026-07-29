@@ -1,4 +1,6 @@
 let providers = [];
+let apiSettingsAuthorized = false;
+const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
 let selectedId = '';
 const providerList = document.getElementById('providerList');
 const editorTitle = document.getElementById('editorTitle');
@@ -78,6 +80,54 @@ const MS_BUILTIN_IMAGE_MODELS = [
     'black-forest-labs/FLUX.2-klein-9B'
 ];
 const MS_DEFAULT_BASE_URL = 'https://api-inference.modelscope.cn/v1';
+
+function goApiHome(){
+    if(window.parent && window.parent !== window) {
+        window.parent.postMessage({ type:'studio-open-page', page:'workbench' }, window.location.origin);
+        return;
+    }
+    window.location.href = '/static/workbench.html';
+}
+function storedTeamAccessToken(){
+    try { return localStorage.getItem(TEAM_CLOUD_ACCESS_TOKEN_KEY) || ''; } catch(e) { return ''; }
+}
+function teamAuthHeaders(headers = {}){
+    const next = { ...headers };
+    const token = storedTeamAccessToken();
+    if(token && !next.Authorization && !next.authorization) next.Authorization = `Bearer ${token}`;
+    return next;
+}
+function apiSettingsUserCanManage(data){
+    return !!data?.user && Array.isArray(data.teams) && data.teams.some(team => ['owner', 'admin'].includes(String(team?.role || '').toLowerCase()));
+}
+function showApiAccessGate(message){
+    apiSettingsAuthorized = false;
+    document.body.classList.add('api-access-blocked');
+    const gate = document.getElementById('apiAccessGate');
+    const msg = document.getElementById('apiAccessMessage');
+    if(gate) gate.hidden = false;
+    if(msg) msg.textContent = message || 'API 设置只允许已登录的团队管理员进入。';
+    setStatus('需要管理员登录');
+}
+async function ensureApiSettingsAccess(){
+    try {
+        const response = await fetch('/api/team-cloud/me', { credentials:'same-origin', headers:teamAuthHeaders() });
+        let data = null;
+        try { data = await response.json(); } catch(e) { data = {}; }
+        if(!response.ok || !apiSettingsUserCanManage(data)) {
+            showApiAccessGate(data?.user ? '当前账户不是管理员，不能进入 API 设置。' : '请先回到主页，用管理员账户登录后再进入 API 设置。');
+            return false;
+        }
+        apiSettingsAuthorized = true;
+        document.body.classList.remove('api-access-blocked');
+        const gate = document.getElementById('apiAccessGate');
+        if(gate) gate.hidden = true;
+        return true;
+    } catch(e) {
+        showApiAccessGate('无法读取登录状态，请回到主页重新登录。');
+        return false;
+    }
+}
 const RH_DEFAULT_BASE_URL = 'https://www.runninghub.cn';
 const LINGJING_DEFAULT_BASE_URL = 'https://apistudio.vip';
 const LINGJING_REGISTER_URL = 'https://apistudio.vip/register?aff=g1CT';
@@ -3734,6 +3784,7 @@ function removeModel(kind, index){
     if(kind === 'image') renderMsLoras();
 }
 async function loadProviders(){
+    if(!apiSettingsAuthorized && !(await ensureApiSettingsAccess())) return;
     setStatus(tr('api.loading'));
     try {
         const data = await fetch('/api/providers').then(r => r.json());
@@ -3747,6 +3798,7 @@ async function loadProviders(){
     }
 }
 async function saveProviders(){
+    if(!apiSettingsAuthorized && !(await ensureApiSettingsAccess())) return false;
     syncEditor();
     providers.forEach(item => {
         item.id = normalizeId(item.id);
@@ -3899,9 +3951,13 @@ window.addEventListener('studio-lang-change', () => {
     if(recommendInlineOpen) renderRecommendApi();
     else renderEditor();
 });
-window.onload = () => {
+window.onload = async () => {
     if(window.StudioTheme) window.StudioTheme.apply();
     if(window.StudioI18n) window.StudioI18n.apply();
+    if(!(await ensureApiSettingsAccess())) {
+        if(window.lucide) window.lucide.createIcons();
+        return;
+    }
     syncRecommendView();
     loadProviders();
     // 平台名输入时实时预览生成的 ID
