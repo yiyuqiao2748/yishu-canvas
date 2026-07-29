@@ -438,6 +438,17 @@ function teamCloudRequestMeta(){
 backToManagerBtn?.addEventListener('click', () => {
     window.location.href = canvasListUrlForProject(canvas?.project || requestedCanvasListProject() || rememberedCanvasListProject());
 });
+document.getElementById('secondaryActionsToggle')?.addEventListener('click', event => {
+    const toggle = event.currentTarget;
+    const dock = toggle.closest('.canvas-secondary-actions');
+    if(!dock) return;
+    const open = !dock.classList.contains('is-open');
+    dock.classList.toggle('is-open', open);
+    const title = open ? '收起更多工具' : '展开更多工具';
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.setAttribute('aria-label', title);
+    toggle.title = title;
+});
 let localCanvasDirty = false;
 let savingCanvasNow = false;
 let saveCanvasAgain = false;
@@ -2148,8 +2159,12 @@ async function openCanvas(id){
     try {
         const res = TEAM_CLOUD_CANVAS
             ? await teamCloudFetch(`/api/team-cloud/canvases/${encodeURIComponent(id)}`)
-            : await fetch(`/api/canvases/${id}`);
-        if(!res.ok) throw new Error(tr('canvas.openFailed'));
+            : await fetch(`/api/canvases/${encodeURIComponent(id)}`);
+        if(!res.ok) {
+            const err = new Error(tr('canvas.openFailed'));
+            err.status = res.status;
+            throw err;
+        }
         const data = await res.json();
         resetCascadeRuntimeState();
         canvas = TEAM_CLOUD_CANVAS ? cloudCanvasForEditor(data.canvas) : data.canvas;
@@ -2183,8 +2198,11 @@ async function openCanvas(id){
         setStatus('Ready');
         applyWorkbenchDraftToCanvas();
     } catch(e) {
-        setStatus(tr('canvas.openFailed'));
-        console.error(e);
+        const expectedMissing = e?.status === 401 || e?.status === 403 || e?.status === 404;
+        setStatus(expectedMissing
+            ? (langIsEn() ? 'Canvas unavailable, returning to list' : '画布不可用，正在回到列表')
+            : tr('canvas.openFailed'));
+        if(!expectedMissing) console.error(e);
         // 打开失败（id 无效/已删除）：回到选画布页面，避免停在空白编辑器。
         window.location.replace(canvasListUrlForProject(canvas?.project || requestedCanvasListProject() || rememberedCanvasListProject()));
     }
@@ -2521,7 +2539,7 @@ document.addEventListener('mousedown', e => {
 });
 gateCanvasList?.addEventListener('scroll', () => requestAnimationFrame(positionCanvasMetaPopover), {passive:true});
 window.addEventListener('resize', () => requestAnimationFrame(positionCanvasMetaPopover));
-window.addEventListener('studio-theme-change', event => applyTheme(event.detail?.theme || 'light'));
+window.addEventListener('studio-theme-change', event => applyTheme(event.detail?.theme || 'dark'));
 function cropDragModeFromPointer(event){
     const explicit = event.target.closest?.('[data-crop-handle]')?.dataset?.cropHandle;
     if(explicit) return `crop-${explicit}`;
@@ -15330,7 +15348,7 @@ cloudVersionHistoryList?.addEventListener('click', event => {
     if(button) restoreCloudVersion(button.dataset.cloudVersionRestore);
 });
 window.onload = async () => {
-    applyTheme(localStorage.getItem('studio_theme') || localStorage.getItem(CANVAS_THEME_KEY) || 'light');
+    applyTheme(localStorage.getItem('studio_theme') || localStorage.getItem(CANVAS_THEME_KEY) || 'dark');
     applyQuickToolbarState();
     if(window.StudioI18n) StudioI18n.apply();
     document.title = tr('canvas.title');

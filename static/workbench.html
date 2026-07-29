@@ -1,12 +1,12 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI设计师工作台</title>
     <link rel="icon" href="/static/images/logo.png" type="image/png">
-    <script src="/static/vendor/js/lucide.js?v=2026.07.17.1782696749"></script>
-    <link rel="stylesheet" href="/static/css/workbench.css?v=2026.07.29.1">
+    <script src="/static/vendor/js/lucide.js?v=2026.07.29.2"></script>
+    <link rel="stylesheet" href="/static/css/workbench.css?v=2026.07.29.2">
 </head>
 <body>
     <div class="preview-shell">
@@ -82,7 +82,7 @@
                 <i data-lucide="lock-keyhole" class="icon"></i>
                 <span>私有画布</span>
             </button>
-            <button type="button" data-open-page="canvas" title="历史创作">
+            <button type="button" data-open-page="canvas" data-recent-history-target title="历史创作">
                 <i data-lucide="history" class="icon"></i>
                 <span>历史创作</span>
             </button>
@@ -123,7 +123,7 @@
                 <div class="hero-avatar-wrap" aria-hidden="true">
                     <span class="avatar-orbit one"></span>
                     <span class="avatar-orbit two"></span>
-                    <img src="/static/images/workbench-character.png?v=2026.07.28.6" alt="" class="hero-avatar character">
+                    <img src="/static/images/workbench-character.png?v=2026.07.29.2" alt="" class="hero-avatar character">
                 </div>
                 <div class="hero-pill">团队内容专用</div>
                 <h1>AI设计师</h1>
@@ -149,7 +149,7 @@
                         <i data-lucide="plus" class="icon"></i>
                         <span>
                             <strong>上传参考图</strong>
-                            <small>0张参考图</small>
+                            <small data-reference-count>0张参考图</small>
                         </span>
                     </button>
                     <button class="tool-chip" type="button" data-url-placeholder>
@@ -191,7 +191,7 @@
                 <div class="preview-actions">
                     <span id="composerStatus">准备就绪</span>
                     <div>
-                        <button class="action-pill ghost" type="button" data-open-page="gpt-chat">
+                        <button class="action-pill ghost" type="button" data-optimize-prompt>
                             <i data-lucide="sparkles" class="icon"></i>
                             <span>优化提示词</span>
                         </button>
@@ -201,6 +201,20 @@
                         </button>
                     </div>
                 </div>
+            </section>
+
+            <section class="preview-result" id="workbenchResult" hidden aria-label="生成结果">
+                <div class="result-head">
+                    <div>
+                        <span>生成结果</span>
+                        <h2>最近生成</h2>
+                    </div>
+                    <button type="button" data-open-generated-canvas>
+                        <i data-lucide="layout-grid" class="icon"></i>
+                        <span>进入画布编辑</span>
+                    </button>
+                </div>
+                <div class="result-grid" id="workbenchResultGrid"></div>
             </section>
 
             <section class="preview-library" aria-label="作品资产库">
@@ -249,7 +263,27 @@
                 </div>
             </div>
         </div>
+        <div class="url-modal" id="urlModal" hidden>
+            <div class="url-card" role="dialog" aria-modal="true" aria-labelledby="urlModalTitle">
+                <div class="url-head">
+                    <h2 id="urlModalTitle">上传 URL</h2>
+                    <button class="round-icon-btn" type="button" data-url-close title="关闭" aria-label="关闭">
+                        <i data-lucide="x" class="icon"></i>
+                    </button>
+                </div>
+                <label class="url-field">
+                    <span>网页或图片链接</span>
+                    <input id="urlInput" type="url" placeholder="https://example.com/reference.jpg">
+                </label>
+                <p id="urlStatus">保存后可作为本次创作参考。</p>
+                <div class="url-actions">
+                    <button class="action-pill ghost" type="button" data-url-close>取消</button>
+                    <button class="action-pill hot" type="button" data-url-save>保存链接</button>
+                </div>
+            </div>
+        </div>
+        <input id="referenceFileInput" type="file" accept="image/*" multiple hidden>
     </div>
-    <script src="/static/js/workbench.js?v=2026.07.28.6"></script>
+    <script src="/static/js/workbench.js?v=2026.07.29.2"></script>
 </body>
 </html>

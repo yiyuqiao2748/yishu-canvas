@@ -1,12 +1,12 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI设计师预览页</title>
     <link rel="icon" href="/static/images/logo.png" type="image/png">
-    <script src="/static/vendor/js/lucide.js?v=2026.07.17.1782696749"></script>
-    <link rel="stylesheet" href="/static/css/workbench-preview.css?v=2026.07.29.1">
+    <script src="/static/vendor/js/lucide.js?v=2026.07.29.2"></script>
+    <link rel="stylesheet" href="/static/css/workbench-preview.css?v=2026.07.29.2">
 </head>
 <body>
     <div class="preview-shell">
@@ -44,7 +44,7 @@
                     <i data-lucide="layout-grid" class="icon"></i>
                     <span>AI画布</span>
                 </button>
-                <button class="nav-chip" type="button" data-open-page="team-cloud">
+                <button class="nav-chip" type="button" data-open-page="canvas" data-recent-history-target>
                     <i data-lucide="clock-3" class="icon"></i>
                     <span>历史创作</span>
                 </button>
@@ -64,7 +64,7 @@
                 <i data-lucide="lock-keyhole" class="icon"></i>
                 <span>私有画布</span>
             </button>
-            <button type="button" data-open-page="canvas" title="历史创作">
+            <button type="button" data-open-page="canvas" data-recent-history-target title="历史创作">
                 <i data-lucide="history" class="icon"></i>
                 <span>历史创作</span>
             </button>
@@ -143,7 +143,7 @@
                 <div class="preview-actions">
                     <span id="composerStatus">准备就绪</span>
                     <div>
-                        <button class="action-pill ghost" type="button" data-open-page="gpt-chat">
+                        <button class="action-pill ghost" type="button" data-optimize-prompt>
                             <i data-lucide="sparkles" class="icon"></i>
                             <span>优化提示词</span>
                         </button>
@@ -183,6 +183,6 @@
             </section>
         </main>
     </div>
-    <script src="/static/js/workbench.js?v=2026.07.27.1"></script>
+    <script src="/static/js/workbench.js?v=2026.07.29.2"></script>
 </body>
 </html>

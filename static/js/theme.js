@@ -5,11 +5,12 @@
     const SCALE_OPTIONS = ['auto', '60', '65', '70', '75', '80', '85', '90', '95', '100', '115', '125', '140'];
 
     function currentTheme(){
-        return localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || 'light';
+        return localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || 'dark';
     }
 
     function applyTheme(theme){
-        const next = theme === 'dark' ? 'dark' : 'light';
+        const requested = theme || currentTheme();
+        const next = requested === 'dark' ? 'dark' : 'light';
         const dark = next === 'dark';
         document.documentElement.classList.toggle('studio-theme-dark', dark);
         document.documentElement.classList.toggle('theme-dark', dark);
@@ -129,8 +130,14 @@
         document.body.classList.toggle('studio-scale-viewport', viewportLocked);
     }
 
+    function standaloneScaleOptedOut(){
+        if(isFramed()) return false;
+        if(document.documentElement.dataset.studioStandaloneScale === 'on') return false;
+        return !document.querySelector('.app-shell');
+    }
+
     function scaleOptedOut(){
-        return document.documentElement.dataset.studioScale === 'off';
+        return document.documentElement.dataset.studioScale === 'off' || standaloneScaleOptedOut();
     }
 
     function contentFitOptedOut(){

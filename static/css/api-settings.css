@@ -6286,3 +6286,107 @@ html body:not(.force-light-api).show-recommend-mode .recommend-inline-card .onbo
     border-color:rgba(255,255,255,.1) !important;
     color:var(--text) !important;
 }
+
+/* Final dark button pass for API recommendation helpers. */
+html.studio-scale-managed body .api-link-btn,
+html.studio-scale-managed body .onboarding-key-btn,
+html.studio-scale-managed body .recommend-guide-key-btn,
+html body:not(.force-light-api) .api-link-btn,
+html body:not(.force-light-api) .onboarding-key-btn,
+html body:not(.force-light-api) .recommend-guide-key-btn {
+    background:rgba(9,7,9,.7) !important;
+    border:1px solid rgba(255,255,255,.12) !important;
+    color:var(--text) !important;
+    box-shadow:0 14px 34px rgba(0,0,0,.22) !important;
+}
+
+html.studio-scale-managed body .api-link-btn:hover,
+html.studio-scale-managed body .onboarding-key-btn:hover,
+html.studio-scale-managed body .recommend-guide-key-btn:hover,
+html body:not(.force-light-api) .api-link-btn:hover,
+html body:not(.force-light-api) .onboarding-key-btn:hover,
+html body:not(.force-light-api) .recommend-guide-key-btn:hover {
+    background:rgba(249,115,22,.14) !important;
+    border-color:rgba(255,159,97,.42) !important;
+    color:#fff7ed !important;
+}
+
+html.studio-theme-dark body.studio-theme-dark.show-recommend-mode .api-link-btn,
+html.studio-theme-dark body.studio-theme-dark.show-recommend-mode .onboarding-key-btn,
+html.studio-theme-dark body.studio-theme-dark.show-recommend-mode .recommend-guide-key-btn {
+    background:rgba(9,7,9,.72) !important;
+    border:1px solid rgba(255,159,97,.28) !important;
+    color:#fff7ed !important;
+    box-shadow:0 14px 34px rgba(0,0,0,.24) !important;
+}
+
+/* 2026-07-29 API settings full-screen glass pass. */
+html.studio-scale-managed body .wrap,
+html body:not(.force-light-api) .wrap {
+    width:100% !important;
+    max-width:none !important;
+    margin:0 !important;
+}
+
+html.studio-scale-managed body .page,
+html body:not(.force-light-api) .page {
+    padding:24px 24px 72px !important;
+}
+
+html.studio-scale-managed body .layout,
+html body:not(.force-light-api) .layout {
+    grid-template-columns:260px minmax(0, 1fr) !important;
+    gap:16px !important;
+}
+
+html.studio-scale-managed body .provider-card.provider-card-banner,
+html.studio-scale-managed body .provider-card.provider-card-banner.active,
+html.studio-scale-managed body .add-btn,
+html.studio-scale-managed body .recommend-tag,
+html.studio-scale-managed body .recommend-badge,
+html.studio-scale-managed body .recommend-note,
+html.studio-scale-managed body .onboarding-key-btn,
+html.studio-scale-managed body .recommend-guide-key-btn,
+html.studio-scale-managed body .onboarding-key-field input,
+html.studio-scale-managed body .recommend-guide-save .onboarding-key-field input,
+html body:not(.force-light-api) .provider-card.provider-card-banner,
+html body:not(.force-light-api) .provider-card.provider-card-banner.active,
+html body:not(.force-light-api) .add-btn,
+html body:not(.force-light-api) .recommend-tag,
+html body:not(.force-light-api) .recommend-badge,
+html body:not(.force-light-api) .recommend-note,
+html body:not(.force-light-api) .onboarding-key-btn,
+html body:not(.force-light-api) .recommend-guide-key-btn,
+html body:not(.force-light-api) .onboarding-key-field input,
+html body:not(.force-light-api) .recommend-guide-save .onboarding-key-field input {
+    background:
+        linear-gradient(180deg, rgba(255,255,255,.085), rgba(255,255,255,.035)),
+        rgba(9,7,9,.7) !important;
+    border:1px solid rgba(255,159,97,.22) !important;
+    color:#fff7ed !important;
+    box-shadow:0 14px 34px rgba(0,0,0,.24) !important;
+    backdrop-filter:blur(18px) !important;
+}
+
+html.studio-scale-managed body .recommend-tag.recommend-seedance-tag,
+html body:not(.force-light-api) .recommend-tag.recommend-seedance-tag {
+    background:rgba(251,146,60,.16) !important;
+    border-color:rgba(253,186,116,.42) !important;
+    color:#fed7aa !important;
+}
+
+html.studio-scale-managed body .recommend-tag.recommend-seedance-tag *,
+html body:not(.force-light-api) .recommend-tag.recommend-seedance-tag * {
+    color:#fed7aa !important;
+    stroke:#fed7aa !important;
+}
+
+html.studio-scale-managed body .recommend-note,
+html body:not(.force-light-api) .recommend-note {
+    color:rgba(255,237,213,.72) !important;
+}
+
+html.studio-scale-managed body .provider-card-banner img,
+html body:not(.force-light-api) .provider-card-banner img {
+    filter:drop-shadow(0 8px 16px rgba(0,0,0,.34));
+}

@@ -1,6 +1,7 @@
 (function(){
     const WORKBENCH_DRAFTS_KEY = 'workbenchCanvasDrafts:v1';
     const WORKBENCH_PENDING_DRAFT_KEY = 'workbenchCanvasDraftPending:v1';
+    const WORKBENCH_REFERENCES_KEY = 'workbenchReferences:v1';
     const PROMPT_PLACEHOLDERS = [
         '例如：为城市展厅设计一张建筑概念图，玻璃幕墙、金红色灯带、入口有水景和人流，高级夜景摄影质感。',
         '例如：设计一家现代中餐厅室内效果图，暖金灯光、深色木饰面、开放式吧台、圆桌包间、空间层次丰富。',
@@ -52,7 +53,10 @@
         document.documentElement.classList.toggle('theme-dark', !isLight);
         document.body.classList.toggle('theme-dark', !isLight);
         try {
-            localStorage.setItem('workbench_theme', isLight ? 'light' : 'dark');
+            const next = isLight ? 'light' : 'dark';
+            localStorage.setItem('studio_theme', next);
+            localStorage.setItem('canvas_theme', next);
+            localStorage.setItem('workbench_theme', next);
         } catch(e) {}
     }
 
@@ -85,6 +89,20 @@
         if(status) status.textContent = text;
     }
 
+    function escapeHtml(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, s => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+        }[s]));
+    }
+
+    function escapeAttr(value) {
+        return escapeHtml(value);
+    }
+
     async function fetchJson(url, options = {}) {
         const response = await fetch(url, {
             credentials: 'same-origin',
@@ -95,6 +113,97 @@
         });
         if(!response.ok) throw new Error(`request failed: ${response.status}`);
         return await response.json();
+    }
+
+    function setUrlStatus(text) {
+        const status = document.getElementById('urlStatus');
+        if(status) status.textContent = text;
+    }
+
+    function openUrlModal() {
+        const modal = document.getElementById('urlModal');
+        const input = document.getElementById('urlInput');
+        if(!modal) return;
+        window.__urlReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        modal.hidden = false;
+        setUrlStatus('保存后可作为本次创作参考。');
+        const focusInput = () => {
+            input?.focus?.({ preventScroll: true });
+            input?.select?.();
+        };
+        window.requestAnimationFrame(focusInput);
+        window.setTimeout(focusInput, 80);
+    }
+
+    function closeUrlModal() {
+        const modal = document.getElementById('urlModal');
+        if(modal) modal.hidden = true;
+        window.__urlReturnFocus?.focus?.();
+        window.__urlReturnFocus = null;
+    }
+
+    function isLikelyImageUrl(url) {
+        return /\.(png|jpe?g|webp|gif)(\?|#|$)/i.test(String(url || ''));
+    }
+
+    function saveUrlReference() {
+        const input = document.getElementById('urlInput');
+        const raw = String(input?.value || '').trim();
+        if(!raw) {
+            setUrlStatus('请先输入一个链接。');
+            input?.focus();
+            return;
+        }
+        let parsed;
+        try {
+            parsed = new URL(raw, location.origin);
+        } catch(e) {
+            setUrlStatus('链接格式不正确。');
+            input?.focus();
+            return;
+        }
+        const url = parsed.href;
+        const refs = loadReferences();
+        refs.unshift({
+            url,
+            original_url: url,
+            name: parsed.hostname || 'url-reference',
+            kind: isLikelyImageUrl(url) ? 'image' : 'url',
+            addedAt: Date.now(),
+        });
+        saveReferences(refs);
+        if(input) input.value = '';
+        setStatus(isLikelyImageUrl(url) ? '图片 URL 已加入参考图' : '网页链接已保存');
+        closeUrlModal();
+    }
+
+    async function uploadReferenceFiles(event) {
+        const input = event.currentTarget;
+        const files = Array.from(input?.files || []);
+        if(!files.length) return;
+        const form = new FormData();
+        files.forEach(file => form.append('files', file));
+        setStatus('正在上传参考图...');
+        try {
+            const data = await fetchJson('/api/ai/upload', {
+                method: 'POST',
+                body: form,
+            });
+            const uploaded = (data.files || []).filter(item => item?.url);
+            if(!uploaded.length) throw new Error('没有可用的上传结果');
+            saveReferences([...uploaded.map(item => ({
+                url: item.url,
+                name: item.name || 'reference',
+                kind: item.kind || 'image',
+                mime: item.mime || '',
+                addedAt: Date.now(),
+            })), ...loadReferences()]);
+            setStatus(`已上传 ${uploaded.length} 张参考图`);
+        } catch(e) {
+            setStatus(e.message || '参考图上传失败');
+        } finally {
+            if(input) input.value = '';
+        }
     }
 
     function shortUserName(user) {
@@ -124,6 +233,28 @@
     function selectedValue(id) {
         const el = document.getElementById(id);
         return String(el?.value || '').trim();
+    }
+
+    function loadReferences() {
+        try {
+            const data = JSON.parse(localStorage.getItem(WORKBENCH_REFERENCES_KEY) || '[]');
+            return Array.isArray(data) ? data.filter(item => item?.url) : [];
+        } catch(e) {
+            return [];
+        }
+    }
+
+    function saveReferences(items) {
+        const refs = (items || []).filter(item => item?.url).slice(0, 12);
+        try { localStorage.setItem(WORKBENCH_REFERENCES_KEY, JSON.stringify(refs)); } catch(e) {}
+        updateReferenceCount(refs);
+        return refs;
+    }
+
+    function updateReferenceCount(items = loadReferences()) {
+        const count = items.filter(item => (item.kind || 'image') === 'image').length;
+        const label = document.querySelector('[data-reference-count]');
+        if(label) label.textContent = `${count}张参考图`;
     }
 
     function draftTitleFromPrompt(prompt) {
@@ -168,18 +299,144 @@
 
     function openCanvasDraft(draft) {
         saveWorkbenchDraft(draft);
+        const params = { workbenchDraft: draft.id, autoCreate: '1' };
         if(window.parent && window.parent !== window) {
-            openPage('canvas');
+            openPage('canvas', params);
             return;
         }
-        window.location.href = pageUrl('canvas', { workbenchDraft: draft.id, autoCreate: '1' });
+        window.location.href = pageUrl('canvas', params);
     }
 
     function startWorkbenchGeneration() {
         const draft = createWorkbenchDraft();
         if(!draft) return;
-        setStatus('正在创建画布...');
-        openCanvasDraft(draft);
+        generateWorkbenchImage(draft);
+    }
+
+    function resolutionScale() {
+        const value = selectedValue('resolutionSelect').toUpperCase();
+        if(value === '4K') return 2048;
+        if(value === '1K') return 1024;
+        return 1536;
+    }
+
+    function requestSizeFromSelections() {
+        const base = resolutionScale();
+        const ratio = selectedValue('sizeSelect');
+        if(ratio === '16:9') return `${base}x${Math.round(base * 9 / 16)}`;
+        if(ratio === '9:16') return `${Math.round(base * 9 / 16)}x${base}`;
+        return `${base}x${base}`;
+    }
+
+    function selectedImageModel() {
+        const value = selectedValue('modelSelect');
+        return value && !value.includes('默认') ? value : '';
+    }
+
+    function imageReferencesForRequest() {
+        return loadReferences()
+            .filter(item => (item.kind || 'image') === 'image')
+            .slice(0, 8)
+            .map(item => ({
+                url: item.url,
+                name: item.name || 'reference',
+                kind: 'image',
+                original_url: item.original_url || item.url,
+            }));
+    }
+
+    function renderWorkbenchResult(result, draft) {
+        const section = document.getElementById('workbenchResult');
+        const grid = document.getElementById('workbenchResultGrid');
+        const images = (result?.images || []).filter(Boolean);
+        if(!section || !grid || !images.length) return;
+        grid.innerHTML = images.map((url, index) => `
+            <a class="result-card" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer" aria-label="查看生成图 ${index + 1}">
+                <img src="${escapeAttr(url)}" alt="">
+            </a>
+        `).join('');
+        section.hidden = false;
+        window.__lastWorkbenchDraft = {
+            ...draft,
+            generatedImages: images,
+            generatedAt: Date.now(),
+        };
+        const recentCard = document.querySelector('[data-recent-canvas-card]');
+        applyCardBackground(recentCard, images[0]);
+    }
+
+    async function generateWorkbenchImage(draft) {
+        setStatus('正在调用默认模型生成图片...');
+        try {
+            const response = await fetch('/api/online-image', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    prompt: draft.prompt,
+                    provider_id: 'comfly',
+                    model: selectedImageModel(),
+                    size: requestSizeFromSelections(),
+                    quality: 'auto',
+                    n: 1,
+                    reference_images: imageReferencesForRequest(),
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if(!response.ok) throw new Error(data.detail || data.message || `生成失败：${response.status}`);
+            renderWorkbenchResult(data, draft);
+            setStatus('已生成图片，可进入画布继续编辑');
+        } catch(e) {
+            setStatus(e.message || '生成失败，请检查 API 设置');
+        }
+    }
+
+    function optimizePromptFallback(prompt) {
+        const text = String(prompt || '').trim();
+        if(!text) return '';
+        const suffix = '，高级商业设计质感，空间层次清晰，主体明确，真实材质细节，柔和但有方向的灯光，专业摄影构图，干净背景，适合方案展示。';
+        return text.endsWith('。') || text.endsWith('.') ? `${text}${suffix}` : `${text}${suffix}`;
+    }
+
+    async function optimizePromptInPlace() {
+        const input = document.getElementById('promptInput');
+        const prompt = String(input?.value || '').trim();
+        if(!prompt) {
+            setStatus('请先输入要优化的提示词');
+            input?.focus();
+            return;
+        }
+        setStatus('正在优化提示词...');
+        try {
+            const response = await fetch('/api/canvas-llm', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    provider: 'comfly',
+                    model: '',
+                    message: `把下面需求改写成适合图像生成的中文提示词。只输出优化后的提示词，不要解释：\n${prompt}`,
+                    system_prompt: '你是商业设计和建筑空间图像提示词专家。输出一句完整、具体、可用于生图的中文提示词。',
+                    messages: [],
+                    images: [],
+                    videos: [],
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if(!response.ok) throw new Error(data.detail || data.message || 'LLM 优化失败');
+            const next = String(data.text || '').trim();
+            if(!next) throw new Error('LLM 未返回内容');
+            input.value = next;
+            setStatus('提示词已优化');
+        } catch(e) {
+            const next = optimizePromptFallback(prompt);
+            if(next && input) {
+                input.value = next;
+                setStatus('已用本地模板优化提示词');
+            } else {
+                setStatus(e.message || '优化失败');
+            }
+        }
     }
 
     function startPromptTyping() {
@@ -293,6 +550,7 @@
         const modal = document.getElementById('feedbackModal');
         const input = document.getElementById('feedbackInput');
         if(!modal) return;
+        window.__feedbackReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         modal.hidden = false;
         setFeedbackStatus('反馈会保存到后台，后续可做管理页查看。');
         window.setTimeout(() => input?.focus(), 30);
@@ -301,6 +559,8 @@
     function closeFeedbackModal() {
         const modal = document.getElementById('feedbackModal');
         if(modal) modal.hidden = true;
+        window.__feedbackReturnFocus?.focus?.();
+        window.__feedbackReturnFocus = null;
     }
 
     async function submitFeedback() {
@@ -340,16 +600,19 @@
         if(!(window.parent && window.parent !== window)) {
             let savedTheme = 'dark';
             try {
-                savedTheme = localStorage.getItem('workbench_theme') === 'light' ? 'light' : 'dark';
+                const stored = localStorage.getItem('studio_theme')
+                    || localStorage.getItem('canvas_theme')
+                    || localStorage.getItem('workbench_theme');
+                savedTheme = stored === 'light' ? 'light' : 'dark';
             } catch(e) {}
             applyWorkbenchTheme(savedTheme);
         }
 
         document.querySelectorAll('[data-open-page]').forEach(button => {
             button.addEventListener('click', () => {
-                const params = button.dataset.visibilityTarget
-                    ? { cloud: '1', visibility: button.dataset.visibilityTarget }
-                    : null;
+                let params = null;
+                if(button.dataset.visibilityTarget) params = { cloud: '1', visibility: button.dataset.visibilityTarget };
+                if('recentHistoryTarget' in button.dataset) params = { ...(params || {}), recent: '1' };
                 setToolsOpen(false);
                 openPage(button.dataset.openPage, params);
             });
@@ -372,13 +635,23 @@
         });
 
         document.querySelector('[data-upload-placeholder]')?.addEventListener('click', () => {
-            setStatus('参考图请先在素材库上传');
-            openPage('asset-manager');
+            document.getElementById('referenceFileInput')?.click();
         });
 
         document.querySelector('[data-url-placeholder]')?.addEventListener('click', () => {
-            setStatus('URL 素材请先进入素材库登记');
-            openPage('asset-manager');
+            openUrlModal();
+        });
+
+        document.getElementById('referenceFileInput')?.addEventListener('change', uploadReferenceFiles);
+        document.querySelector('[data-url-save]')?.addEventListener('click', saveUrlReference);
+        document.querySelectorAll('[data-url-close]').forEach(button => button.addEventListener('click', closeUrlModal));
+        document.getElementById('urlModal')?.addEventListener('click', event => {
+            if(event.target?.id === 'urlModal') closeUrlModal();
+        });
+        document.querySelector('[data-optimize-prompt]')?.addEventListener('click', optimizePromptInPlace);
+        document.querySelector('[data-open-generated-canvas]')?.addEventListener('click', () => {
+            const draft = window.__lastWorkbenchDraft || createWorkbenchDraft();
+            if(draft) openCanvasDraft(draft);
         });
 
         document.querySelectorAll('[data-workbench-generate]').forEach(button => {
@@ -390,9 +663,22 @@
             button.addEventListener('click', closeFeedbackModal);
         });
         document.querySelector('[data-feedback-submit]')?.addEventListener('click', submitFeedback);
+        document.getElementById('feedbackModal')?.addEventListener('click', event => {
+            if(event.target?.id === 'feedbackModal') closeFeedbackModal();
+        });
+        document.addEventListener('keydown', event => {
+            if(event.key === 'Escape' && !document.getElementById('urlModal')?.hidden) {
+                closeUrlModal();
+                return;
+            }
+            if(event.key === 'Escape' && !document.getElementById('feedbackModal')?.hidden) {
+                closeFeedbackModal();
+            }
+        });
 
         if(window.lucide) window.lucide.createIcons();
         loadCurrentUser();
+        updateReferenceCount();
         startPromptTyping();
         loadRecentCanvasBackground();
         loadAssetBackground();

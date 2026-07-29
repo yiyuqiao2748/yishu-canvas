@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -7,7 +7,7 @@
     <script>
         (function(){
             try {
-                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'light';
+                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'dark';
                 if(theme === 'dark') {
                     document.documentElement.classList.add('studio-theme-dark');
                     document.documentElement.classList.add('theme-dark');
@@ -15,9 +15,9 @@
             } catch(e) {}
         })();
     </script>
-    <script src="/static/vendor/js/lucide.js?v=2026.07.23.1784872856"></script>
+    <script src="/static/vendor/js/lucide.js?v=2026.07.29.2"></script>
     <style>
-        @import url('/static/vendor/css/fonts.css?v=2026.07.23.1784872856');
+        @import url('/static/vendor/css/fonts.css?v=2026.07.29.2');
 
         :root {
             --bg: #f7f8fa;
@@ -880,7 +880,7 @@
                             </div>
                             <div class="field">
                                 <label for="password">密码</label>
-                                <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" required>
+                                <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" aria-label="密码" required>
                             </div>
                             <button class="btn primary" id="authSubmit" type="submit">
                                 <i data-lucide="log-in" width="16" height="16"></i>
@@ -911,7 +911,7 @@
                         <form id="teamForm">
                             <div class="field">
                                 <label for="teamName">新团队</label>
-                                <input id="teamName" name="teamName" type="text" maxlength="80" required>
+                                <input id="teamName" name="teamName" type="text" maxlength="80" placeholder="输入团队名称" aria-label="新团队" required>
                             </div>
                             <button class="btn primary" type="submit">
                                 <i data-lucide="plus" width="16" height="16"></i>
@@ -923,7 +923,7 @@
                             <div class="row">
                                 <div class="field" style="flex:1">
                                     <label for="inviteEmail">邀请邮箱</label>
-                                    <input id="inviteEmail" name="inviteEmail" type="email" required>
+                                    <input id="inviteEmail" name="inviteEmail" type="email" placeholder="name@example.com" aria-label="邀请邮箱" required>
                                 </div>
                                 <div class="field" style="width:120px">
                                     <label for="inviteRole">角色</label>
@@ -972,11 +972,11 @@
                         <form id="projectForm">
                             <div class="field">
                                 <label for="projectName">新项目</label>
-                                <input id="projectName" name="projectName" type="text" maxlength="120" required>
+                                <input id="projectName" name="projectName" type="text" maxlength="120" placeholder="输入项目名称" aria-label="新项目" required>
                             </div>
                             <div class="field">
                                 <label for="projectDescription">备注</label>
-                                <input id="projectDescription" name="projectDescription" type="text" maxlength="500">
+                                <input id="projectDescription" name="projectDescription" type="text" maxlength="500" placeholder="项目备注，可选" aria-label="备注">
                             </div>
                             <button class="btn primary" type="submit">
                                 <i data-lucide="folder-plus" width="16" height="16"></i>
@@ -987,7 +987,7 @@
                         <form id="canvasForm">
                             <div class="field">
                                 <label for="canvasTitle">新画布</label>
-                                <input id="canvasTitle" name="canvasTitle" type="text" maxlength="120" required>
+                                <input id="canvasTitle" name="canvasTitle" type="text" maxlength="120" placeholder="输入画布名称" aria-label="新画布" required>
                             </div>
                             <button class="btn primary" type="submit">
                                 <i data-lucide="file-plus-2" width="16" height="16"></i>
@@ -1188,6 +1188,6 @@
         </div>
     </div>
 
-    <script src="/static/js/team-cloud.js?v=2026.07.26.12"></script>
+    <script src="/static/js/team-cloud.js?v=2026.07.29.2"></script>
 </body>
 </html>

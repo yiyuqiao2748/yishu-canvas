@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN" data-studio-scale="off">
 <head>
     <meta charset="UTF-8">
@@ -8,7 +8,7 @@
     <script>
         (function(){
             try {
-                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'light';
+                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'dark';
                 if(theme === 'dark') {
                     document.documentElement.classList.add('studio-theme-dark');
                     document.documentElement.classList.add('theme-dark');
@@ -16,13 +16,13 @@
             } catch(e) {}
         })();
     </script>
-    <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.07.23.1784893025"></script>
-    <script src="/static/vendor/js/lucide.js?v=2026.07.23.1784893025"></script>
-    <script src="/static/js/theme.js?v=2026.07.23.1784893025"></script>
-    <script src="/static/js/touch-mouse.js?v=2026.07.23.1784893025"></script>
-    <script src="/static/js/i18n.js?v=2026.07.26.8"></script>
+    <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.07.29.2"></script>
+    <script src="/static/vendor/js/lucide.js?v=2026.07.29.2"></script>
+    <script src="/static/js/theme.js?v=2026.07.29.2"></script>
+    <script src="/static/js/touch-mouse.js?v=2026.07.29.2"></script>
+    <script src="/static/js/i18n.js?v=2026.07.29.2"></script>
     <link rel="stylesheet" href="/static/css/canvas.css?v=2026.07.29.1">
-    <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.29.1">
+    <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.29.2">
 </head>
 <body>
     <div id="shell" class="shell no-canvas">
@@ -45,7 +45,7 @@
                 </div>
             </div>
             <div class="panel canvas-secondary-actions editor-only">
-                <button class="tool-btn secondary-actions-toggle" type="button" title="展开更多工具" aria-label="展开更多工具" aria-expanded="false" onclick="const dock=this.closest('.canvas-secondary-actions'); const open=!dock.classList.contains('is-open'); dock.classList.toggle('is-open', open); this.setAttribute('aria-expanded', open ? 'true' : 'false'); this.title=open ? '收起更多工具' : '展开更多工具'; this.setAttribute('aria-label', this.title);"><i data-lucide="chevrons-left" class="w-4 h-4"></i><span>更多</span></button>
+                <button id="secondaryActionsToggle" class="tool-btn secondary-actions-toggle" type="button" title="展开更多工具" aria-label="展开更多工具" aria-expanded="false"><i data-lucide="chevrons-left" class="w-4 h-4"></i><span>更多</span></button>
                 <button class="tool-btn secondary-extra" onclick="addLoopNode()"><i data-lucide="repeat-2" class="w-4 h-4"></i><span data-i18n="canvas.loop">循环</span></button>
                 <button class="tool-btn secondary-extra" onclick="addLLMNode()"><i data-lucide="message-square-text" class="w-4 h-4"></i><span>LLM</span></button>
                 <button class="tool-btn secondary-extra" onclick="addMsGenNode()"><i data-lucide="cloud-lightning" class="w-4 h-4"></i><span data-i18n="canvas.msGenerate">MS生成</span></button>
@@ -100,9 +100,9 @@
                     <strong><i data-lucide="library" class="w-4 h-4"></i><span>资产库</span></strong>
                     <button id="canvasAssetCloseBtn" class="canvas-asset-icon-btn" type="button" title="关闭"><i data-lucide="x" class="w-4 h-4"></i></button>
                 </div>
-                <select id="canvasAssetLibrarySelect" class="canvas-asset-select"></select>
+                <select id="canvasAssetLibrarySelect" class="canvas-asset-select" aria-label="素材库"></select>
                 <div class="canvas-asset-row">
-                    <select id="canvasAssetCategorySelect" class="canvas-asset-select"></select>
+                    <select id="canvasAssetCategorySelect" class="canvas-asset-select" aria-label="素材分类"></select>
                     <button id="canvasAssetAddCategoryBtn" class="canvas-asset-icon-btn" type="button" title="新建分组"><i data-lucide="folder-plus" class="w-4 h-4"></i></button>
                 </div>
                 <div id="canvasAssetDropZone" class="canvas-asset-drop">拖入图片或输出保存到当前分组</div>
@@ -122,9 +122,9 @@
                         <p>使用当前框选的节点和它们之间的连线生成工作流。</p>
                         <div id="workflowExportMeta" class="workflow-transfer-meta">未选择节点</div>
                         <div class="workflow-transfer-actions workflow-export-actions">
-                            <button class="workflow-transfer-btn secondary" type="button" onclick="exportSelectedWorkflow(false)"><i data-lucide="file-json" class="w-4 h-4"></i><span>导出 JSON</span></button>
-                            <button class="workflow-transfer-btn primary" type="button" onclick="exportSelectedWorkflow(true)"><i data-lucide="package" class="w-4 h-4"></i><span>导出并包含资源</span></button>
-                            <button id="workflowExportLibraryBtn" class="workflow-transfer-btn secondary" type="button" onclick="exportSelectedWorkflowToLibrary()"><i data-lucide="library-big" class="w-4 h-4"></i><span>导出到资产库</span></button>
+                            <button class="workflow-transfer-btn secondary" type="button" aria-label="导出 JSON 工作流" onclick="exportSelectedWorkflow(false)"><i data-lucide="file-json" class="w-4 h-4"></i><span>导出 JSON</span></button>
+                            <button class="workflow-transfer-btn primary" type="button" aria-label="导出工作流并包含资源" onclick="exportSelectedWorkflow(true)"><i data-lucide="package" class="w-4 h-4"></i><span>导出并包含资源</span></button>
+                            <button id="workflowExportLibraryBtn" class="workflow-transfer-btn secondary" type="button" aria-label="导出工作流到资产库" onclick="exportSelectedWorkflowToLibrary()"><i data-lucide="library-big" class="w-4 h-4"></i><span>导出到资产库</span></button>
                         </div>
                     </section>
                     <section class="workflow-transfer-card">
@@ -367,8 +367,8 @@
         </div>
     </div>
 
-    <script src="/static/js/ltx-director-timeline.js?v=2026.07.23.1784893025"></script>
-    <script src="/static/js/team-assets.js?v=2026.07.26.4"></script>
+    <script src="/static/js/ltx-director-timeline.js?v=2026.07.29.2"></script>
+    <script src="/static/js/team-assets.js?v=2026.07.29.2"></script>
     <script src="/static/js/canvas.js?v=2026.07.28.4"></script>
 </body>
 </html>

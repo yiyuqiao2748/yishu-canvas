@@ -2384,7 +2384,7 @@ function renderProviderList(){
         const protocolLabel = item.id === 'runninghub' ? 'RH' : String(item.protocol || 'openai').toUpperCase();
         if(item.id === 'modelscope'){
             return `
-                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
+                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')" aria-label="选择 ModelScope 平台">
                     <span class="provider-banner-inner">
                         <span class="provider-logo-wrap">
                             <img src="/static/images/modelscope.gif" alt="ModelScope" class="ms-icon-light">
@@ -2398,7 +2398,7 @@ function renderProviderList(){
         }
         if(item.id === 'runninghub'){
             return `
-                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
+                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')" aria-label="选择 RunningHub 平台">
                     <span class="provider-banner-inner">
                         <span class="provider-logo-wrap">
                             <img src="/static/images/RunningHub-B.png" alt="RunningHub" class="runninghub-icon ms-icon-light">
@@ -2412,7 +2412,7 @@ function renderProviderList(){
         }
         if(item.id === 'volcengine'){
             return `
-                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
+                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')" aria-label="选择火山引擎平台">
                     <span class="provider-banner-inner">
                         <span class="provider-logo-wrap">
                             <img src="/static/images/volcengine-theme-light.svg" alt="火山引擎" class="volcengine-icon ms-icon-light">

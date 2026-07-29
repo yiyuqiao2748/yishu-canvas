@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -7,7 +7,7 @@
     <script>
         (function(){
             try {
-                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'light';
+                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'dark';
                 if(theme === 'dark') {
                     document.documentElement.classList.add('studio-theme-dark');
                     document.documentElement.classList.add('theme-dark');
@@ -15,12 +15,12 @@
             } catch(e) {}
         })();
     </script>
-    <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.07.17.1782696751"></script>
-    <script src="/static/vendor/js/lucide.js?v=2026.07.17.1782696749"></script>
-    <script src="/static/js/theme.js?v=2026.07.17.1783117645"></script>
-    <script src="/static/js/i18n.js?v=2026.07.26.8"></script>
-    <link rel="stylesheet" href="/static/css/comfyui-settings.css?v=2026.07.28.4">
-    <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.29.1">
+    <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.07.29.2"></script>
+    <script src="/static/vendor/js/lucide.js?v=2026.07.29.2"></script>
+    <script src="/static/js/theme.js?v=2026.07.29.2"></script>
+    <script src="/static/js/i18n.js?v=2026.07.29.2"></script>
+    <link rel="stylesheet" href="/static/css/comfyui-settings.css?v=2026.07.29.2">
+    <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.29.2">
 </head>
 <body>
     <div class="page">
@@ -122,6 +122,6 @@
         <img id="imageLightboxImg" src="" alt="preview" onclick="event.stopPropagation()">
     </div>
 
-    <script src="/static/js/comfyui-settings.js?v=2026.07.17.1782696702"></script>
+    <script src="/static/js/comfyui-settings.js?v=2026.07.29.2"></script>
 </body>
 </html>

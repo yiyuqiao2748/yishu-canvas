@@ -55,6 +55,15 @@ function initialCanvasVisibilityFilter(){
     }
 }
 
+function recentModeRequested(){
+    try {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('recent') === '1';
+    } catch(e){
+        return false;
+    }
+}
+
 function rememberProjectId(pid){
     if(!pid) return;
     try {
@@ -111,6 +120,7 @@ let pendingDeleteProjectId = null;
 let statusTimer = null;
 let clipboardCanvasId = null;   // 剪切的画布（切到别的项目后粘贴）
 let canvasVisibilityFilter = initialCanvasVisibilityFilter();
+let canvasRecentMode = recentModeRequested();
 let workbenchDraftCreateBusy = false;
 
 // board viewport (mirrors smart-canvas math)
@@ -216,11 +226,13 @@ function onBoardWheel(e){
 function currentProject(){ return projects.find(p => p.id === currentProjectId) || projects[0] || null; }
 function allCanvasesInProject(pid){ return canvases.filter(c => (c.project || 'default') === pid); }
 function canvasesInProject(pid){
-    const items = allCanvasesInProject(pid);
+    const items = canvasRecentMode ? canvases.slice() : allCanvasesInProject(pid);
     if(canvasVisibilityFilter === 'private' || canvasVisibilityFilter === 'team'){
-        return items.filter(c => normalizeCloudCanvasVisibility(c.visibility) === canvasVisibilityFilter);
+        return items
+            .filter(c => normalizeCloudCanvasVisibility(c.visibility) === canvasVisibilityFilter)
+            .sort((a, b) => Number(b.updated_at || b.created_at || 0) - Number(a.updated_at || a.created_at || 0));
     }
-    return items;
+    return items.sort((a, b) => Number(b.updated_at || b.created_at || 0) - Number(a.updated_at || a.created_at || 0));
 }
 
 async function cloudApi(path, options){
@@ -240,7 +252,11 @@ async function cloudApi(path, options){
     });
     let data = {};
     try { data = await res.json(); } catch(e){}
-    if(!res.ok) throw new Error(data.detail || data.message || 'team cloud request failed');
+    if(!res.ok) {
+        const err = new Error(data.detail || data.message || 'team cloud request failed');
+        err.status = res.status;
+        throw err;
+    }
     return data;
 }
 
@@ -391,9 +407,11 @@ async function loadCloudAll(){
         await maybeAutoCreateWorkbenchCanvas();
         return true;
     } catch(e){
-        console.error(e);
+        if(e?.status !== 401 && e?.status !== 403) console.error(e);
         teamCloud.enabled = false;
-        setStatus(L('团队云端加载失败','Team cloud load failed'));
+        setStatus((e?.status === 401 || e?.status === 403)
+            ? L('登录后可查看团队云端画布','Sign in to view team cloud canvases')
+            : L('团队云端加载失败','Team cloud load failed'));
         return false;
     }
 }
@@ -594,7 +612,7 @@ async function deleteProject(pid){
 /* ===== Board rendering ===== */
 function updateBoardHeader(){
     const p = currentProject();
-    boardProjectName.textContent = p ? p.name : L('默认项目','Default');
+    boardProjectName.textContent = canvasRecentMode ? L('最近画布','Recent canvases') : (p ? p.name : L('默认项目','Default'));
     boardCanvasCount.textContent = String(canvasesInProject(currentProjectId).length);
     visibilityFilterButtons.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.visibilityFilter === canvasVisibilityFilter);

@@ -702,6 +702,17 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("html[data-studio-scale=\"off\"].studio-scale-managed .ws-sidebar {\n        flex:0 0 auto;\n        width:auto;", css)
         self.assertIn("html[data-studio-scale=\"off\"].studio-scale-managed .ws-board-empty .ws-primary-btn span {\n        display:inline;", css)
 
+    def test_static_html_does_not_reference_stale_local_resource_version(self):
+        root = Path(__file__).resolve().parents[1]
+        html_files = (root / "static").glob("*.html")
+        stale = [
+            path.name
+            for path in html_files
+            if "2026.07.26.12" in path.read_text(encoding="utf-8")
+        ]
+
+        self.assertEqual(stale, [])
+
     def test_workbench_composer_controls_fit_mobile_viewports(self):
         root = Path(__file__).resolve().parents[1]
         css = (root / "static" / "css" / "workbench.css").read_text(encoding="utf-8")
@@ -724,6 +735,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function startWorkbenchGeneration", workbench_script)
         self.assertIn("function maybeAutoCreateWorkbenchCanvas", list_script)
         self.assertIn("workbenchDraft=", list_script)
+        self.assertIn("openPage('canvas', params)", workbench_script)
+        self.assertIn("params: event.data.params || null", (root / "static" / "index.html").read_text(encoding="utf-8"))
+        self.assertIn("function frameSrcWithParams", (root / "static" / "index.html").read_text(encoding="utf-8"))
         self.assertIn("function applyWorkbenchDraftToCanvas", canvas_script)
         self.assertIn("addPromptNode(defaultPoint(0, 0), prompt)", canvas_script)
         self.assertIn("function seedWorkbenchGeneratorFromDraft", canvas_script)
@@ -755,9 +769,20 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("loadCurrentUser", script)
         self.assertIn("function toggleStudioTheme", script)
         self.assertIn("function applyWorkbenchTheme", script)
+        self.assertIn("localStorage.setItem('studio_theme', next)", script)
+        self.assertIn("localStorage.setItem('canvas_theme', next)", script)
         self.assertIn("workbench_theme", script)
         self.assertIn("function setToolsOpen", script)
         self.assertIn("querySelectorAll('[data-workbench-generate]')", script)
+        self.assertIn("data-reference-count", html)
+        self.assertIn("data-optimize-prompt", html)
+        self.assertIn("data-recent-history-target", html)
+        self.assertIn("WORKBENCH_REFERENCES_KEY", script)
+        self.assertIn("function uploadReferenceFiles", script)
+        self.assertIn("function saveUrlReference", script)
+        self.assertIn("function optimizePromptInPlace", script)
+        self.assertIn("function generateWorkbenchImage", script)
+        self.assertIn("fetch('/api/online-image'", script)
         self.assertIn("studio-toggle-theme", script)
         self.assertIn("/api/team-cloud/me", script)
         self.assertIn("? '无限制' : '0'", script)
@@ -774,7 +799,8 @@ class TeamCloudStaticUiTests(unittest.TestCase):
 
         self.assertIn("body.studio-immersive-mode .sidebar", index_html)
         self.assertIn("body.studio-immersive-mode .stage", index_html)
-        self.assertIn("id === 'workbench' || id === 'canvas'", index_html)
+        self.assertIn("const IMMERSIVE_PAGE_IDS = new Set(['workbench', 'canvas', 'team-cloud', 'asset-manager', 'api-settings']);", index_html)
+        self.assertIn("IMMERSIVE_PAGE_IDS.has(id)", index_html)
         self.assertIn("function setStudioPageMode", index_html)
         self.assertIn("studio-toggle-theme", index_html)
         self.assertIn("studio shell sidebar dark active contrast", index_html)
@@ -805,6 +831,8 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("secondary-extra", canvas_html)
         self.assertIn(".canvas-secondary-actions", canvas_css)
         self.assertIn(".canvas-secondary-actions.is-open .secondary-extra", canvas_css)
+        self.assertIn('id="secondaryActionsToggle"', canvas_html)
+        self.assertIn("secondaryActionsToggle", (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8"))
         self.assertIn('onclick="addLoopNode()"', canvas_html)
         self.assertIn('content:"CANVAS"', canvas_css)
         self.assertIn(".canvas-asset-panel,\n.workflow-transfer-panel", canvas_css)
@@ -832,6 +860,8 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn('data-visibility-target="private"', html)
         self.assertIn('data-lucide="sliders-horizontal"', html)
         self.assertIn('data-workbench-generate', html)
+        self.assertIn('data-optimize-prompt', html)
+        self.assertIn('data-recent-history-target', html)
         self.assertIn('data-open-page="canvas"', html)
         self.assertIn('data-open-page="team-cloud"', html)
         self.assertIn('data-open-page="asset-manager"', html)
@@ -842,8 +872,10 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn(".preview-composer", css)
         self.assertIn("@media (max-width: 760px)", css)
         self.assertIn("button.dataset.visibilityTarget", workbench_script)
+        self.assertIn("'recentHistoryTarget' in button.dataset", workbench_script)
         self.assertIn("initialCanvasVisibilityFilter", list_script)
         self.assertIn("params.get('visibility')", list_script)
+        self.assertIn("function recentModeRequested", list_script)
 
 
 if __name__ == "__main__":
