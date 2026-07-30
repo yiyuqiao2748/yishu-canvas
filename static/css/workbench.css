@@ -237,7 +237,7 @@ button {
     position: absolute;
     left: 50%;
     top: 62px;
-    bottom: 0;
+    bottom: -12px;
     width: 64px;
     transform: translateX(-50%);
     border: 1px solid rgba(255, 255, 255, .08);
@@ -363,13 +363,14 @@ button {
 }
 
 .preview-hero {
-    min-height: 205px;
+    min-height: 213px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
     text-align: center;
     padding-top: 6px;
+    margin-bottom: 10px;
 }
 
 .hero-avatar-wrap {
@@ -459,7 +460,7 @@ button {
 
 .mini-cta {
     height: 28px;
-    margin-top: 14px;
+    margin-top: 8px;
     padding: 0 13px;
     border: 1px solid rgba(255, 231, 197, .18);
     border-radius: 999px;
@@ -584,6 +585,13 @@ textarea::placeholder {
     background: rgba(255, 255, 255, .085);
 }
 
+.select-chip:hover {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, .2), rgba(255, 255, 255, .065)),
+        linear-gradient(135deg, rgba(255, 219, 184, .15), rgba(255, 255, 255, .05)),
+        rgba(32, 21, 21, .62);
+}
+
 .tool-chip > .icon {
     width: 18px;
     height: 18px;
@@ -619,7 +627,18 @@ textarea::placeholder {
 }
 
 .select-chip {
+    position: relative;
+    border-radius: 16px;
     color: rgba(255, 245, 230, .72);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .045)),
+        linear-gradient(135deg, rgba(255, 219, 184, .11), rgba(255, 255, 255, .035)),
+        rgba(24, 18, 18, .54);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .16),
+        inset 0 -18px 38px rgba(255, 255, 255, .035),
+        0 12px 30px rgba(0, 0, 0, .16);
+    backdrop-filter: blur(22px) saturate(1.15);
     font-size: 12px;
     font-weight: 900;
 }
@@ -1425,6 +1444,17 @@ body.theme-light .select-chip {
     border-color:rgba(127,59,38,.14);
     color:#3b2a25;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.72);
+}
+
+body.theme-light .select-chip {
+    border-radius:16px;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,255,255,.56)),
+        rgba(255,249,241,.58) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.86),
+        inset 0 -18px 34px rgba(127,59,38,.035),
+        0 12px 28px rgba(127,59,38,.1);
 }
 
 body.theme-light .tool-chip.upload,

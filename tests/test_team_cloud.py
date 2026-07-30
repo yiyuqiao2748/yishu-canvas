@@ -822,6 +822,17 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn(".preview-quick-rail button:hover span", workbench_css)
         self.assertIn(".rail-tool-popover[hidden]", workbench_css)
 
+    def test_workbench_home_annotation_polish_is_preserved(self):
+        root = Path(__file__).resolve().parents[1]
+        workbench_css = (root / "static" / "css" / "workbench.css").read_text(encoding="utf-8")
+
+        self.assertIn("bottom: -12px;", workbench_css)
+        self.assertIn("min-height: 213px;", workbench_css)
+        self.assertIn("margin-bottom: 10px;", workbench_css)
+        self.assertIn("margin-top: 8px;", workbench_css)
+        self.assertIn("border-radius: 16px;", workbench_css)
+        self.assertIn("box-shadow:\n        inset 0 1px 0 rgba(255, 255, 255, .16),\n        inset 0 -18px 38px rgba(255, 255, 255, .035),\n        0 12px 30px rgba(0, 0, 0, .16);", workbench_css)
+
     def test_canvas_editors_share_workbench_visual_skin(self):
         root = Path(__file__).resolve().parents[1]
         canvas_html = (root / "static" / "canvas.html").read_text(encoding="utf-8")
