@@ -835,7 +835,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("border-radius: 16px;", workbench_css)
         self.assertIn("box-shadow:\n        inset 0 1px 0 rgba(255, 255, 255, .16),\n        inset 0 -18px 38px rgba(255, 255, 255, .035),\n        0 12px 30px rgba(0, 0, 0, .16);", workbench_css)
         self.assertEqual(html.count('data-custom-select'), 3)
-        self.assertIn("workbench.css?v=2026.07.30.4", html)
+        self.assertIn("workbench.css?v=2026.07.30.5", html)
         self.assertIn("workbench.js?v=2026.07.30.4", html)
         self.assertIn('class="select-display"', html)
         self.assertIn('class="select-menu"', html)
@@ -844,6 +844,10 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn(".select-display", workbench_css)
         self.assertIn(".select-menu", workbench_css)
         self.assertIn("pointer-events: none;", workbench_css)
+        self.assertIn("z-index: 8;", workbench_css)
+        self.assertIn("z-index: 2;", workbench_css)
+        self.assertIn(".select-chip.is-open", workbench_css)
+        self.assertIn("z-index: 80;", workbench_css)
 
     def test_canvas_editors_share_workbench_visual_skin(self):
         root = Path(__file__).resolve().parents[1]

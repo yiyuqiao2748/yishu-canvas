@@ -482,6 +482,8 @@ button {
 }
 
 .preview-composer {
+    position: relative;
+    z-index: 8;
     min-height: 265px;
     padding: 15px 15px 17px;
 }
@@ -628,6 +630,7 @@ textarea::placeholder {
 
 .select-chip {
     position: relative;
+    z-index: 2;
     border-radius: 16px;
     color: rgba(255, 245, 230, .72);
     background:
@@ -642,6 +645,10 @@ textarea::placeholder {
     font-size: 12px;
     font-weight: 900;
     overflow: visible;
+}
+
+.select-chip.is-open {
+    z-index: 80;
 }
 
 .select-chip .select-prefix {
@@ -690,7 +697,7 @@ textarea::placeholder {
     position: absolute;
     top: calc(100% + 7px);
     left: 0;
-    z-index: 12;
+    z-index: 90;
     width: max(100%, 132px);
     max-height: 220px;
     overflow: auto;
@@ -787,6 +794,8 @@ textarea::placeholder {
 }
 
 .preview-library {
+    position: relative;
+    z-index: 2;
     margin-top: 24px;
     padding: 16px;
 }
