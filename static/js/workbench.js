@@ -380,6 +380,64 @@
         return String(el?.value || '').trim();
     }
 
+    function closeCustomSelects(except = null) {
+        document.querySelectorAll('[data-custom-select]').forEach(chip => {
+            if(chip === except) return;
+            chip.classList.remove('is-open');
+            chip.querySelector('[data-select-display]')?.setAttribute('aria-expanded', 'false');
+            const menu = chip.querySelector('.select-menu');
+            if(menu) menu.hidden = true;
+        });
+    }
+
+    function setCustomSelectValue(chip, value) {
+        const select = chip.querySelector('select');
+        const label = chip.querySelector('[data-select-value]');
+        if(!select) return;
+        select.value = value;
+        if(label) label.textContent = select.options[select.selectedIndex]?.text || value;
+        chip.querySelectorAll('.select-option').forEach(option => {
+            const selected = option.dataset.value === select.value;
+            option.classList.toggle('is-selected', selected);
+            option.setAttribute('aria-selected', selected ? 'true' : 'false');
+        });
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function initCustomSelects() {
+        document.querySelectorAll('[data-custom-select]').forEach(chip => {
+            const select = chip.querySelector('select');
+            const display = chip.querySelector('[data-select-display]');
+            const menu = chip.querySelector('.select-menu');
+            const label = chip.querySelector('[data-select-value]');
+            if(!select || !display || !menu) return;
+            select.tabIndex = -1;
+            select.setAttribute('aria-hidden', 'true');
+            menu.innerHTML = Array.from(select.options).map(option => `
+                <button class="select-option" type="button" role="option" data-value="${escapeAttr(option.value)}" aria-selected="false">
+                    ${escapeHtml(option.text)}
+                </button>
+            `).join('');
+            if(label) label.textContent = select.options[select.selectedIndex]?.text || select.value;
+            chip.querySelectorAll('.select-option').forEach(option => {
+                option.addEventListener('click', event => {
+                    event.stopPropagation();
+                    setCustomSelectValue(chip, option.dataset.value || '');
+                    closeCustomSelects();
+                });
+            });
+            setCustomSelectValue(chip, select.value);
+            display.addEventListener('click', event => {
+                event.stopPropagation();
+                const open = !chip.classList.contains('is-open');
+                closeCustomSelects(open ? chip : null);
+                chip.classList.toggle('is-open', open);
+                menu.hidden = !open;
+                display.setAttribute('aria-expanded', open ? 'true' : 'false');
+            });
+        });
+    }
+
     function loadReferences() {
         try {
             const data = JSON.parse(localStorage.getItem(WORKBENCH_REFERENCES_KEY) || '[]');
@@ -742,6 +800,8 @@
     }
 
     function init() {
+        initCustomSelects();
+
         if(!(window.parent && window.parent !== window)) {
             let savedTheme = 'dark';
             try {
@@ -771,6 +831,7 @@
 
         document.addEventListener('click', event => {
             if(!event.target.closest?.('.preview-quick-rail')) setToolsOpen(false);
+            if(!event.target.closest?.('[data-custom-select]')) closeCustomSelects();
         });
 
         window.addEventListener('message', event => {
@@ -827,6 +888,10 @@
         document.addEventListener('keydown', event => {
             if(event.key === 'Escape' && !document.getElementById('urlModal')?.hidden) {
                 closeUrlModal();
+                return;
+            }
+            if(event.key === 'Escape' && document.querySelector('[data-custom-select].is-open')) {
+                closeCustomSelects();
                 return;
             }
             if(event.key === 'Escape' && !document.getElementById('feedbackModal')?.hidden) {

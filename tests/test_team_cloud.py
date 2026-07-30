@@ -824,7 +824,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
 
     def test_workbench_home_annotation_polish_is_preserved(self):
         root = Path(__file__).resolve().parents[1]
+        html = (root / "static" / "workbench.html").read_text(encoding="utf-8")
         workbench_css = (root / "static" / "css" / "workbench.css").read_text(encoding="utf-8")
+        workbench_script = (root / "static" / "js" / "workbench.js").read_text(encoding="utf-8")
 
         self.assertIn("bottom: -12px;", workbench_css)
         self.assertIn("min-height: 213px;", workbench_css)
@@ -832,6 +834,16 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("margin-top: 8px;", workbench_css)
         self.assertIn("border-radius: 16px;", workbench_css)
         self.assertIn("box-shadow:\n        inset 0 1px 0 rgba(255, 255, 255, .16),\n        inset 0 -18px 38px rgba(255, 255, 255, .035),\n        0 12px 30px rgba(0, 0, 0, .16);", workbench_css)
+        self.assertEqual(html.count('data-custom-select'), 3)
+        self.assertIn("workbench.css?v=2026.07.30.4", html)
+        self.assertIn("workbench.js?v=2026.07.30.4", html)
+        self.assertIn('class="select-display"', html)
+        self.assertIn('class="select-menu"', html)
+        self.assertIn("function initCustomSelects", workbench_script)
+        self.assertIn("select.dispatchEvent(new Event('change', { bubbles: true }))", workbench_script)
+        self.assertIn(".select-display", workbench_css)
+        self.assertIn(".select-menu", workbench_css)
+        self.assertIn("pointer-events: none;", workbench_css)
 
     def test_canvas_editors_share_workbench_visual_skin(self):
         root = Path(__file__).resolve().parents[1]
