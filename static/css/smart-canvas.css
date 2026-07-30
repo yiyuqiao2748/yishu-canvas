@@ -1799,6 +1799,60 @@ select optgroup {
     background:#1f1718 !important;
     color:#fff7ed !important;
 }
+
+/* ===== 2026-07-30 smart canvas final dock polish ===== */
+.smart-toolbar-fixed {
+    right:18px !important;
+    top:16px !important;
+    height:50px;
+    padding:6px;
+    gap:4px;
+    background:
+        linear-gradient(135deg, rgba(38,13,17,.9), rgba(15,13,14,.84) 48%, rgba(6,22,18,.84)) !important;
+    border:1px solid rgba(255,138,76,.26) !important;
+    box-shadow:0 18px 56px rgba(0,0,0,.46), inset 0 1px 0 rgba(255,255,255,.08) !important;
+    backdrop-filter:blur(18px) saturate(140%);
+    -webkit-backdrop-filter:blur(18px) saturate(140%);
+}
+.smart-home-toggle,
+.smart-log-toggle,
+.smart-history-toggle,
+.smart-shortcut-toggle,
+.smart-workflow-toggle,
+.asset-toggle {
+    height:38px;
+    min-width:42px;
+    background:rgba(255,255,255,.035) !important;
+    border-color:rgba(255,255,255,.06) !important;
+    color:rgba(255,247,237,.78) !important;
+}
+.smart-home-toggle:hover,
+.smart-log-toggle:hover,
+.smart-history-toggle:hover,
+.smart-shortcut-toggle:hover,
+.smart-workflow-toggle:hover,
+.asset-toggle:hover {
+    background:rgba(249,115,22,.16) !important;
+    border-color:rgba(255,176,93,.34) !important;
+    color:#fff7ed !important;
+}
+.smart-home-toggle.active,
+.smart-log-toggle.active,
+.smart-history-toggle.active,
+.smart-shortcut-toggle.active,
+.smart-workflow-toggle.active,
+.asset-toggle.active,
+#agentToggle.active {
+    background:linear-gradient(135deg, rgba(220,38,38,.72), rgba(249,115,22,.42)) !important;
+    border-color:rgba(255,211,141,.38) !important;
+    color:#fff !important;
+    box-shadow:0 10px 28px rgba(220,38,38,.22) !important;
+}
+.smart-home-toggle i,
+.smart-home-toggle svg {
+    width:16px;
+    height:16px;
+}
 select option:checked {
     background:#dc2626 !important;
     color:#ffffff !important;
@@ -1806,4 +1860,300 @@ select option:checked {
 select option:disabled {
     background:#2a2020 !important;
     color:#b8aaa2 !important;
+}
+
+/* ===== 2026-07-30 smart canvas submenu glass polish ===== */
+.workflow-transfer-panel,
+.shortcut-modal,
+.asset-panel {
+    background:
+        linear-gradient(135deg, rgba(38,13,17,.92), rgba(15,13,14,.9) 48%, rgba(6,22,18,.88)) !important;
+    border:1px solid rgba(255,138,76,.26) !important;
+    border-radius:18px !important;
+    box-shadow:0 24px 76px rgba(0,0,0,.52), inset 0 1px 0 rgba(255,255,255,.08) !important;
+    color:#fff7ed !important;
+    backdrop-filter:blur(20px) saturate(145%);
+    -webkit-backdrop-filter:blur(20px) saturate(145%);
+}
+.workflow-transfer-panel,
+.shortcut-modal {
+    top:76px !important;
+    right:18px !important;
+}
+.workflow-transfer-head,
+.shortcut-head,
+.asset-head,
+.log-head {
+    background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.018)) !important;
+    border-bottom:1px solid rgba(255,138,76,.2) !important;
+}
+.workflow-transfer-title,
+.shortcut-title,
+.asset-title,
+.log-title {
+    color:#fff7ed !important;
+}
+.workflow-transfer-sub,
+.workflow-transfer-card p,
+.shortcut-item,
+.asset-empty,
+.workflow-empty,
+.version-history-sub,
+.version-history-message,
+.log-empty,
+.log-subline,
+.log-prompt {
+    color:rgba(255,237,213,.68) !important;
+}
+.workflow-transfer-card,
+.workflow-transfer-meta,
+.workflow-import-drop,
+.asset-tabs,
+.asset-drop-zone,
+.asset-item,
+.asset-category-select,
+.asset-dialog,
+.shortcut-item,
+.shortcut-item kbd,
+.log-panel,
+.log-item,
+.log-chip,
+.version-history-item,
+.version-history-restore,
+.preview-icon-btn,
+.asset-mini-btn {
+    background:rgba(255,255,255,.045) !important;
+    border-color:rgba(255,138,76,.18) !important;
+    color:#fff7ed !important;
+}
+.workflow-transfer-card,
+.asset-item,
+.shortcut-item,
+.log-item,
+.version-history-item {
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.045);
+}
+.workflow-transfer-card:hover,
+.workflow-import-drop:hover,
+.workflow-import-drop.drag-over,
+.asset-item:hover,
+.shortcut-item:hover,
+.log-item:hover,
+.version-history-item:hover,
+.asset-drop-zone.drag-over {
+    background:rgba(249,115,22,.09) !important;
+    border-color:rgba(255,176,93,.36) !important;
+}
+.workflow-transfer-btn,
+.asset-tab,
+.asset-dialog-btn,
+.log-actions button {
+    background:rgba(255,255,255,.055) !important;
+    border-color:rgba(255,138,76,.2) !important;
+    color:rgba(255,247,237,.78) !important;
+}
+.workflow-transfer-btn.primary,
+.asset-tab.active,
+.asset-dialog-btn.primary,
+.version-history-current,
+.log-actions button:hover,
+.version-history-restore:hover,
+.preview-icon-btn:hover,
+.asset-mini-btn:hover {
+    background:linear-gradient(135deg, rgba(220,38,38,.82), rgba(249,115,22,.58)) !important;
+    border-color:rgba(255,211,141,.38) !important;
+    color:#fff !important;
+    box-shadow:0 10px 28px rgba(220,38,38,.2) !important;
+}
+.workflow-transfer-btn.secondary,
+.asset-tab:not(.active),
+.asset-dialog-btn.secondary {
+    color:rgba(255,237,213,.7) !important;
+}
+.workflow-transfer-meta.success,
+.version-history-item.current,
+.log-chip.status-ok {
+    background:rgba(16,185,129,.12) !important;
+    border-color:rgba(45,212,191,.3) !important;
+    color:#bbf7d0 !important;
+}
+.workflow-transfer-meta.busy {
+    background:rgba(249,115,22,.1) !important;
+    border-color:rgba(255,176,93,.28) !important;
+    color:#fed7aa !important;
+}
+.log-chip.status-failed,
+.log-actions button.danger,
+.log-error,
+.version-history-message.error {
+    background:rgba(239,68,68,.12) !important;
+    border-color:rgba(248,113,113,.3) !important;
+    color:#fecaca !important;
+}
+.log-modal {
+    background:rgba(7,8,13,.32) !important;
+    backdrop-filter:blur(16px) saturate(130%);
+    -webkit-backdrop-filter:blur(16px) saturate(130%);
+}
+.log-panel {
+    background:
+        linear-gradient(135deg, rgba(38,13,17,.94), rgba(15,13,14,.92) 50%, rgba(6,22,18,.9)) !important;
+    border-radius:18px !important;
+    box-shadow:0 30px 90px rgba(0,0,0,.58), inset 0 1px 0 rgba(255,255,255,.08) !important;
+}
+.workflow-transfer-body,
+.shortcut-list,
+.asset-grid,
+.log-list {
+    scrollbar-color:rgba(255,176,93,.42) transparent !important;
+}
+.workflow-transfer-body::-webkit-scrollbar-thumb,
+.shortcut-list::-webkit-scrollbar-thumb,
+.asset-grid::-webkit-scrollbar-thumb,
+.log-list::-webkit-scrollbar-thumb {
+    background-color:rgba(255,176,93,.42) !important;
+}
+@media (max-width:900px) {
+    .workflow-transfer-panel,
+    .shortcut-modal,
+    .asset-panel {
+        left:12px !important;
+        right:12px !important;
+        top:70px !important;
+        width:auto !important;
+        max-width:none !important;
+    }
+}
+
+/* ===== 2026-07-30 smart canvas nested panel residue sweep ===== */
+.create-menu,
+.prompt-template-panel,
+.prompt-preset-panel,
+.smart-popover,
+.mention-picker,
+.loop-number-popover,
+.asset-dialog,
+.asset-hover-preview,
+.image-edit-panel,
+.preview-modal-panel,
+.smart-node-floating-menu {
+    background:
+        linear-gradient(135deg, rgba(38,13,17,.93), rgba(16,12,14,.91) 52%, rgba(6,22,18,.88)) !important;
+    border:1px solid rgba(255,138,76,.24) !important;
+    color:#fff7ed !important;
+    box-shadow:0 24px 76px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.07) !important;
+    backdrop-filter:blur(20px) saturate(145%);
+    -webkit-backdrop-filter:blur(20px) saturate(145%);
+}
+.create-card,
+.create-card-icon,
+.prompt-template-group-panel,
+.prompt-template-detail,
+.prompt-template-card,
+.prompt-template-list-empty,
+.prompt-template-empty,
+.prompt-template-list-tools,
+.prompt-template-list-tools button,
+.prompt-template-search,
+.prompt-template-library-select,
+.prompt-template-tabs button,
+.prompt-template-manage-groups,
+.prompt-template-group-row .group-name,
+.prompt-template-group-row .group-tool,
+.prompt-template-group-tools button,
+.prompt-template-icon-actions button,
+.prompt-template-actions button,
+.prompt-template-edit-fields input,
+.prompt-template-edit-fields textarea,
+.prompt-template-edit-fields select,
+.prompt-preset-fields input,
+.prompt-preset-fields textarea,
+.prompt-preset-fields select,
+.prompt-preset-actions button,
+.mention-source-tabs,
+.mention-source-tab,
+.mention-option,
+.mention-empty,
+.smart-popover input,
+.smart-popover textarea,
+.smart-popover select,
+.smart-popover button,
+.direct-option,
+.size-picker-scope,
+.size-picker-scope button,
+.loop-number-popover button,
+.asset-dialog-input {
+    background:rgba(255,255,255,.045) !important;
+    border-color:rgba(255,138,76,.18) !important;
+    color:#fff7ed !important;
+}
+.create-card:hover,
+.prompt-template-card:hover,
+.prompt-template-tabs button:hover,
+.prompt-template-group-tools button:hover,
+.prompt-template-group-row .group-tool:hover,
+.prompt-template-icon-actions button:hover,
+.prompt-template-actions button:hover,
+.prompt-template-list-tools button:hover:not(:disabled),
+.mention-option:hover,
+.direct-option:hover,
+.size-picker-scope button:hover,
+.loop-number-popover button:hover {
+    background:rgba(249,115,22,.1) !important;
+    border-color:rgba(255,176,93,.36) !important;
+    color:#fff !important;
+}
+.prompt-template-tabs button.active,
+.prompt-template-group-row .group-name.active,
+.prompt-template-card.active,
+.prompt-template-group-tools button.primary,
+.prompt-template-actions button.primary,
+.prompt-preset-actions button.primary,
+.mention-source-tab.active,
+.size-picker-scope button.active,
+.direct-option.active {
+    background:linear-gradient(135deg, rgba(220,38,38,.82), rgba(249,115,22,.58)) !important;
+    border-color:rgba(255,211,141,.38) !important;
+    color:#fff !important;
+    box-shadow:0 10px 28px rgba(220,38,38,.18) !important;
+}
+.prompt-template-head strong,
+.prompt-template-detail-head strong,
+.prompt-template-group-title strong,
+.prompt-template-name,
+.prompt-template-section p,
+.prompt-preset-panel-head,
+.smart-popover-title,
+.create-card-title {
+    color:#fff7ed !important;
+}
+.prompt-template-head span,
+.prompt-template-detail-head span,
+.prompt-template-group-title span,
+.prompt-template-source,
+.prompt-template-scene,
+.prompt-template-tag,
+.prompt-template-section label,
+.prompt-template-edit-fields label,
+.prompt-preset-status,
+.create-card-sub,
+.mention-option-sub,
+.direct-option small {
+    color:rgba(255,237,213,.68) !important;
+}
+.prompt-template-actions button.danger,
+.prompt-template-icon-actions button.danger,
+.prompt-template-group-row .group-tool.danger,
+.prompt-preset-actions button.confirm-danger,
+.prompt-preset-actions button.danger:hover {
+    background:rgba(239,68,68,.12) !important;
+    border-color:rgba(248,113,113,.34) !important;
+    color:#fecaca !important;
+}
+.smart-log-lightbox {
+    background:rgba(7,8,13,.64) !important;
+}
+.smart-log-lightbox-close {
+    background:rgba(38,13,17,.72) !important;
+    border-color:rgba(255,138,76,.28) !important;
 }

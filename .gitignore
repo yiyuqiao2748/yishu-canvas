@@ -3,8 +3,13 @@ tests/__pycache__/
 .venv/
 server.log
 server.err.log
+server.*.log
 data/team_cloud.json
 data/team_cloud.json.tmp
 data/prompt_libraries.json
+data/projects.json
+data/canvases/
+data/agent/
 assets/team-assets/
 tmp/
+output/

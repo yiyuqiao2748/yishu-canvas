@@ -2042,3 +2042,349 @@ select option:disabled {
     background:#2a2020 !important;
     color:#b8aaa2 !important;
 }
+
+/* ===== 2026-07-30 classic canvas final theme sweep ===== */
+body.theme-dark,
+body.studio-theme-dark,
+html.theme-dark body,
+html.studio-theme-dark body {
+    --page:#070608;
+    --grid:rgba(255,255,255,.055);
+    --panel:rgba(13,10,11,.88);
+    --card:rgba(23,18,19,.92);
+    --card-solid:#171214;
+    --soft:rgba(255,255,255,.055);
+    --soft-2:rgba(255,255,255,.085);
+    --line:rgba(255,210,166,.14);
+    --line-2:rgba(255,138,76,.38);
+    --text:#fff4df;
+    --muted:rgba(255,237,213,.68);
+    --faint:rgba(255,237,213,.46);
+    --shadow:rgba(0,0,0,.42);
+    --strong:#f43f3f;
+    --strong-text:#ffffff;
+    --canvas-shell:#070608;
+    --canvas-grid:rgba(255,255,255,.055);
+    --canvas-grid-strong:rgba(255,255,255,.028);
+    --canvas-dock:rgba(13,10,11,.88);
+    --canvas-dock-2:rgba(35,24,25,.88);
+    --canvas-card:rgba(23,18,19,.92);
+    --canvas-line:rgba(255,210,166,.14);
+    --canvas-line-hot:rgba(255,138,76,.42);
+    --canvas-text:#fff4df;
+    --canvas-muted:rgba(255,237,213,.68);
+    --canvas-faint:rgba(255,237,213,.46);
+    --canvas-red:#f43f3f;
+    --canvas-orange:#ff8a4c;
+    color:var(--canvas-text);
+    color-scheme:dark;
+}
+body:not(.theme-dark):not(.studio-theme-dark),
+html:not(.theme-dark):not(.studio-theme-dark) body {
+    --page:#f8efe8;
+    --grid:rgba(120,80,60,.12);
+    --panel:rgba(255,250,244,.74);
+    --card:rgba(255,252,248,.78);
+    --card-solid:#fffaf5;
+    --soft:rgba(255,255,255,.64);
+    --soft-2:rgba(255,255,255,.84);
+    --line:rgba(127,79,58,.16);
+    --line-2:rgba(220,75,55,.28);
+    --text:#251612;
+    --muted:rgba(55,37,30,.7);
+    --faint:rgba(86,64,54,.52);
+    --shadow:rgba(104,63,40,.14);
+    --strong:#f43f3f;
+    --strong-text:#ffffff;
+    --canvas-shell:#fff5ee;
+    --canvas-grid:rgba(98,74,61,.1);
+    --canvas-grid-strong:rgba(98,74,61,.05);
+    --canvas-dock:rgba(255,250,244,.78);
+    --canvas-dock-2:rgba(255,248,240,.82);
+    --canvas-card:rgba(255,252,248,.84);
+    --canvas-line:rgba(127,79,58,.16);
+    --canvas-line-hot:rgba(220,75,55,.3);
+    --canvas-text:#251612;
+    --canvas-muted:rgba(55,37,30,.7);
+    --canvas-faint:rgba(86,64,54,.52);
+    --canvas-red:#ef4444;
+    --canvas-orange:#f97316;
+    color:var(--canvas-text);
+    color-scheme:light;
+}
+body.theme-dark,
+body.studio-theme-dark,
+body:not(.theme-dark):not(.studio-theme-dark) {
+    background:
+        radial-gradient(circle at 8% 4%, color-mix(in srgb, var(--canvas-red) 34%, transparent), transparent 31%),
+        radial-gradient(circle at 86% 12%, rgba(6,78,59,.28), transparent 34%),
+        linear-gradient(105deg, var(--canvas-shell) 0%, color-mix(in srgb, var(--canvas-shell) 88%, #000 12%) 48%, #03100d 100%) !important;
+}
+body:not(.theme-dark):not(.studio-theme-dark) {
+    background:
+        radial-gradient(circle at 8% 4%, rgba(255,203,186,.66), transparent 31%),
+        radial-gradient(circle at 86% 12%, rgba(198,230,213,.58), transparent 34%),
+        linear-gradient(105deg, #fff0e8 0%, #fffaf4 48%, #eef8f2 100%) !important;
+}
+.board,
+body.theme-dark .board,
+body.studio-theme-dark .board,
+body:not(.theme-dark):not(.studio-theme-dark) .board {
+    background-color:transparent !important;
+    background-image:
+        linear-gradient(var(--canvas-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--canvas-grid) 1px, transparent 1px),
+        linear-gradient(var(--canvas-grid-strong) 1px, transparent 1px),
+        linear-gradient(90deg, var(--canvas-grid-strong) 1px, transparent 1px) !important;
+    background-size:36px 36px, 36px 36px, 180px 180px, 180px 180px !important;
+}
+.canvas-nav,
+.canvas-secondary-actions,
+#quickToolbar.toolbar,
+.canvas-asset-panel,
+.workflow-transfer-panel,
+.log-panel,
+.asset-manager-panel,
+.image-edit-panel,
+.prompt-template-panel,
+.canvas-meta-pop,
+.error-panel,
+.create-menu {
+    background:var(--canvas-dock) !important;
+    border-color:var(--canvas-line) !important;
+    color:var(--canvas-text) !important;
+    box-shadow:0 22px 64px var(--shadow) !important;
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+}
+body:not(.theme-dark):not(.studio-theme-dark) .canvas-nav,
+body:not(.theme-dark):not(.studio-theme-dark) .canvas-secondary-actions,
+body:not(.theme-dark):not(.studio-theme-dark) #quickToolbar.toolbar,
+body:not(.theme-dark):not(.studio-theme-dark) .canvas-asset-panel,
+body:not(.theme-dark):not(.studio-theme-dark) .workflow-transfer-panel,
+body:not(.theme-dark):not(.studio-theme-dark) .log-panel,
+body:not(.theme-dark):not(.studio-theme-dark) .asset-manager-panel,
+body:not(.theme-dark):not(.studio-theme-dark) .image-edit-panel,
+body:not(.theme-dark):not(.studio-theme-dark) .prompt-template-panel,
+body:not(.theme-dark):not(.studio-theme-dark) .canvas-meta-pop,
+body:not(.theme-dark):not(.studio-theme-dark) .error-panel,
+body:not(.theme-dark):not(.studio-theme-dark) .create-menu {
+    background:var(--canvas-dock) !important;
+    border-color:var(--canvas-line) !important;
+    box-shadow:0 22px 64px rgba(104,63,40,.16) !important;
+}
+.canvas-secondary-actions .toolbar-agent {
+    border-color:rgba(255,138,76,.3);
+}
+.canvas-secondary-actions .toolbar-agent.active,
+.canvas-secondary-actions .toolbar-agent:hover {
+    background:linear-gradient(135deg, rgba(220,38,38,.78), rgba(249,115,22,.72)) !important;
+    color:#fff !important;
+}
+.node,
+.node::before,
+.node-head,
+.workflow-transfer-card,
+.canvas-asset-item,
+.asset-item,
+.log-item,
+.prompt-template-card,
+.image-edit-tools,
+.image-edit-stage,
+.model-row,
+.model-empty,
+.llm-chat-log,
+.llm-output,
+.output-img-wrap.loading-wrap,
+.generator-body .prompt-list .bg-slate-50,
+.generator-body .prompt-list [class*="bg-slate-50"],
+.node .text-slate-500.bg-slate-50 {
+    background:var(--canvas-card) !important;
+    border-color:var(--canvas-line) !important;
+    color:var(--canvas-text) !important;
+}
+.prompt-node textarea,
+.loop-field textarea,
+.llm-system,
+.llm-chat-input,
+.llm-input-area,
+.model-input,
+.node textarea,
+.node input,
+.node select,
+.workflow-transfer-meta,
+.workflow-import-drop,
+.canvas-asset-drop,
+.asset-drop-zone,
+.workflow-drop-zone {
+    background:rgba(5,6,8,.64) !important;
+    border-color:rgba(255,210,166,.14) !important;
+    color:var(--canvas-text) !important;
+}
+body:not(.theme-dark):not(.studio-theme-dark) .prompt-node textarea,
+body:not(.theme-dark):not(.studio-theme-dark) .loop-field textarea,
+body:not(.theme-dark):not(.studio-theme-dark) .llm-system,
+body:not(.theme-dark):not(.studio-theme-dark) .llm-chat-input,
+body:not(.theme-dark):not(.studio-theme-dark) .llm-input-area,
+body:not(.theme-dark):not(.studio-theme-dark) .model-input,
+body:not(.theme-dark):not(.studio-theme-dark) .node textarea,
+body:not(.theme-dark):not(.studio-theme-dark) .node input,
+body:not(.theme-dark):not(.studio-theme-dark) .node select,
+body:not(.theme-dark):not(.studio-theme-dark) .workflow-transfer-meta,
+body:not(.theme-dark):not(.studio-theme-dark) .workflow-import-drop,
+body:not(.theme-dark):not(.studio-theme-dark) .canvas-asset-drop,
+body:not(.theme-dark):not(.studio-theme-dark) .asset-drop-zone,
+body:not(.theme-dark):not(.studio-theme-dark) .workflow-drop-zone {
+    background:rgba(255,255,255,.62) !important;
+    border-color:rgba(127,79,58,.15) !important;
+    color:var(--canvas-text) !important;
+}
+.current-canvas-title,
+.node-title,
+.workflow-transfer-title,
+.asset-panel-title,
+.log-title,
+.prompt-template-head strong,
+.image-edit-title,
+.error-title {
+    color:var(--canvas-text) !important;
+}
+.current-canvas-time,
+#saveState,
+.workflow-transfer-sub,
+.workflow-transfer-card p,
+.canvas-asset-empty,
+.asset-empty,
+.log-empty,
+.hint {
+    color:var(--canvas-muted) !important;
+}
+.tool-btn,
+.workflow-transfer-btn,
+.asset-action-btn,
+.canvas-asset-button,
+.preview-icon-btn,
+.menu-btn,
+.image-edit-btn.secondary {
+    background:rgba(255,255,255,.055) !important;
+    border-color:rgba(255,255,255,.1) !important;
+    color:var(--canvas-muted) !important;
+}
+.tool-btn:hover,
+.workflow-transfer-btn:hover,
+.asset-action-btn:hover,
+.canvas-asset-button:hover,
+.preview-icon-btn:hover,
+.menu-btn:hover,
+.image-edit-btn.secondary:hover {
+    background:rgba(249,115,22,.14) !important;
+    border-color:var(--canvas-line-hot) !important;
+    color:var(--canvas-text) !important;
+}
+body:not(.theme-dark):not(.studio-theme-dark) .tool-btn,
+body:not(.theme-dark):not(.studio-theme-dark) .workflow-transfer-btn,
+body:not(.theme-dark):not(.studio-theme-dark) .asset-action-btn,
+body:not(.theme-dark):not(.studio-theme-dark) .canvas-asset-button,
+body:not(.theme-dark):not(.studio-theme-dark) .preview-icon-btn,
+body:not(.theme-dark):not(.studio-theme-dark) .menu-btn,
+body:not(.theme-dark):not(.studio-theme-dark) .image-edit-btn.secondary {
+    background:rgba(255,255,255,.52) !important;
+    border-color:rgba(127,79,58,.13) !important;
+    color:var(--canvas-muted) !important;
+}
+.workflow-transfer-btn.primary,
+.gen-btn,
+.comfy-run,
+.llm-run,
+.gen-cascade-btn,
+.image-edit-btn.primary,
+.asset-dialog-btn.primary,
+.prompt-template-actions button.primary {
+    background:linear-gradient(135deg, var(--canvas-red), var(--canvas-orange)) !important;
+    border-color:rgba(255,210,166,.32) !important;
+    color:#fff !important;
+    box-shadow:0 16px 34px rgba(244,63,63,.24) !important;
+}
+.minimap {
+    background:rgba(23,18,19,.82) !important;
+    border-color:var(--canvas-line) !important;
+}
+body:not(.theme-dark):not(.studio-theme-dark) .minimap {
+    background:rgba(255,250,244,.76) !important;
+}
+
+html.theme-dark body .shell .canvas-nav,
+html.theme-dark body .shell .canvas-secondary-actions,
+html.theme-dark body .shell #quickToolbar.toolbar,
+html.studio-theme-dark body .shell .canvas-nav,
+html.studio-theme-dark body .shell .canvas-secondary-actions,
+html.studio-theme-dark body .shell #quickToolbar.toolbar,
+body.theme-dark .shell .canvas-nav,
+body.theme-dark .shell .canvas-secondary-actions,
+body.theme-dark .shell #quickToolbar.toolbar,
+body.studio-theme-dark .shell .canvas-nav,
+body.studio-theme-dark .shell .canvas-secondary-actions,
+body.studio-theme-dark .shell #quickToolbar.toolbar {
+    background:rgba(13,10,11,.88) !important;
+    border-color:rgba(255,210,166,.14) !important;
+    box-shadow:0 22px 64px rgba(0,0,0,.42) !important;
+}
+html.theme-dark body .shell .canvas-nav:hover,
+html.theme-dark body .shell .canvas-secondary-actions:hover,
+html.studio-theme-dark body .shell .canvas-nav:hover,
+html.studio-theme-dark body .shell .canvas-secondary-actions:hover,
+body.theme-dark .shell .canvas-nav:hover,
+body.theme-dark .shell .canvas-secondary-actions:hover,
+body.studio-theme-dark .shell .canvas-nav:hover,
+body.studio-theme-dark .shell .canvas-secondary-actions:hover {
+    border-color:rgba(255,138,76,.26) !important;
+}
+html.theme-dark body .log-modal,
+html.studio-theme-dark body .log-modal,
+body.theme-dark .log-modal,
+body.studio-theme-dark .log-modal {
+    background:rgba(5,6,8,.72) !important;
+}
+html.theme-dark body .log-panel,
+html.studio-theme-dark body .log-panel,
+body.theme-dark .log-panel,
+body.studio-theme-dark .log-panel {
+    background:rgba(15,13,14,.94) !important;
+    border-color:rgba(255,210,166,.14) !important;
+}
+html.theme-dark body .shell #board.board,
+html.studio-theme-dark body .shell #board.board,
+body.theme-dark .shell #board.board,
+body.studio-theme-dark .shell #board.board {
+    border-color:rgba(255,138,76,.18) !important;
+    background-color:#070608 !important;
+    background-image:
+        linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px),
+        radial-gradient(circle at 8% 4%, rgba(127,29,29,.46), transparent 30%),
+        radial-gradient(circle at 86% 12%, rgba(6,78,59,.3), transparent 34%),
+        linear-gradient(105deg, #210506 0%, #0b0708 48%, #03100d 100%) !important;
+    background-size:36px 36px, 36px 36px, 180px 180px, 180px 180px, auto, auto, auto !important;
+}
+html.theme-dark body,
+html.studio-theme-dark body,
+body.theme-dark,
+body.studio-theme-dark {
+    background-color:#070608 !important;
+}
+html:not(.theme-dark):not(.studio-theme-dark) body .shell #board.board,
+body:not(.theme-dark):not(.studio-theme-dark) .shell #board.board {
+    border-color:rgba(145,83,58,.22) !important;
+    background-color:#fff5ee !important;
+    background-image:
+        linear-gradient(rgba(98,74,61,.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(98,74,61,.1) 1px, transparent 1px),
+        linear-gradient(rgba(98,74,61,.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(98,74,61,.05) 1px, transparent 1px),
+        radial-gradient(circle at 8% 4%, rgba(255,203,186,.66), transparent 31%),
+        radial-gradient(circle at 86% 12%, rgba(198,230,213,.58), transparent 34%),
+        linear-gradient(105deg, #fff0e8 0%, #fffaf4 48%, #eef8f2 100%) !important;
+    background-size:36px 36px, 36px 36px, 180px 180px, 180px 180px, auto, auto, auto !important;
+}

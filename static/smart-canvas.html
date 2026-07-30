@@ -16,11 +16,12 @@
             } catch(e) {}
         })();
     </script>
-    <script src="/static/vendor/js/lucide.js?v=2026.07.29.2"></script>
-    <script src="/static/js/theme.js?v=2026.07.29.3"></script>
-    <script src="/static/js/touch-mouse.js?v=2026.07.29.2"></script>
-    <script src="/static/js/i18n.js?v=2026.07.29.2"></script>
-    <link rel="stylesheet" href="/static/css/smart-canvas.css?v=2026.07.29.1">
+    <script src="/static/vendor/js/lucide.js?v=2026.07.29.1"></script>
+    <script src="/static/js/theme.js?v=2026.07.29.2"></script>
+    <script src="/static/js/touch-mouse.js?v=2026.07.29.1"></script>
+    <script src="/static/js/i18n.js?v=2026.07.29.1"></script>
+    <link rel="stylesheet" href="/static/css/smart-canvas.css?v=2026.07.30.3">
+    <link rel="stylesheet" href="/static/css/agent-panel.css?v=2026.07.30.2">
 </head>
 <body>
     <div id="shell" class="shell">
@@ -139,6 +140,8 @@
             </div>
         </div>
         <div class="smart-toolbar-fixed">
+            <button id="smartHomeToggle" class="smart-history-toggle smart-home-toggle" type="button" onclick="backToWorkbenchHome()" title="回到主页" aria-label="回到主页"><i data-lucide="home"></i><span>主页</span></button>
+            <button id="agentToggle" class="smart-history-toggle" type="button" title="AI 助手 (Ctrl+Space)" aria-label="AI 助手"><i data-lucide="bot"></i><span>AI助手</span></button>
             <button id="smartCloudHistoryToggle" class="smart-history-toggle" type="button" onclick="openSmartCloudVersionHistory()" title="版本历史" aria-label="版本历史" style="display:none"><i data-lucide="history"></i><span>历史</span></button>
             <button id="smartWorkflowToggle" class="smart-workflow-toggle" type="button" title="导入导出工作流" aria-label="导入导出工作流"><i data-lucide="package-open"></i><span>工作流</span></button>
             <button id="smartShortcutToggle" class="smart-shortcut-toggle" type="button" onclick="openSmartCanvasShortcuts()" title="快捷键" aria-label="快捷键" data-i18n-title="smart.shortcuts"><i data-lucide="keyboard"></i><span data-i18n="smart.shortcuts">快捷键</span></button>
@@ -452,10 +455,97 @@
                 </div>
             </div>
         </div>
+        <!-- Agent 面板 -->
+        <div id="agentPanel" class="hidden">
+            <div id="agentResizeHandle" title="拖拽调整高度"></div>
+            <div class="agent-chat-area">
+                <div class="agent-chat-header">
+                    <div class="agent-chat-title">
+                        <i data-lucide="bot"></i> AI 助手
+                    </div>
+                    <div class="agent-chat-actions">
+                        <button id="agentClearMemoryBtn" title="清除记忆" aria-label="清除记忆"><i data-lucide="trash-2"></i></button>
+                        <button id="agentCloseBtn" title="关闭" aria-label="关闭"><i data-lucide="chevron-down"></i></button>
+                    </div>
+                </div>
+                <div class="agent-quick-actions">
+                    <button class="agent-quick-chip" type="button" data-prompt="帮我写一个赛博朋克风格城市夜景的提示词">赛博朋克夜景</button>
+                    <button class="agent-quick-chip" type="button" data-prompt="帮我优化选中的提示词">优化提示词</button>
+                    <button class="agent-quick-chip" type="button" data-prompt="推荐最适合风景照的引擎和参数">推荐参数</button>
+                    <button class="agent-quick-chip" type="button" data-prompt="创建一组不同风格的提示词变体">批量变体</button>
+                </div>
+                <div id="agentMessages" class="agent-messages"></div>
+                <div class="agent-input-area">
+                    <textarea id="agentChatInput" placeholder="描述你想做什么，比如：写一个赛博朋克城市夜景的提示词..." rows="1"></textarea>
+                    <button id="agentSendBtn" class="agent-send-btn" type="button">
+                        <i data-lucide="send"></i> 发送
+                    </button>
+                </div>
+            </div>
+            <div class="agent-skills-area">
+                <div class="agent-skills-header">
+                    <i data-lucide="brain"></i>
+                    <span>能力面板</span>
+                </div>
+                <div class="agent-level-card">
+                    <div class="agent-level-head">
+                        <span id="agentLevelBadge" class="agent-level-badge">Lv.1</span>
+                        <span id="agentLevelTitle" class="agent-level-title">学徒</span>
+                    </div>
+                    <div id="agentLevelXp" class="agent-level-xp">0 / 200 XP</div>
+                    <div class="agent-level-bar"><div id="agentLevelBarFill" class="agent-level-bar-fill" style="width:0%"></div></div>
+                </div>
+                <div class="agent-radar-card">
+                    <div class="agent-radar-title">五维能力</div>
+                    <svg id="agentRadarSvg" viewBox="0 0 240 150"></svg>
+                </div>
+                <div class="agent-stats-card">
+                    <div class="agent-stats-title">统计数据</div>
+                    <div class="agent-stat-row">
+                        <span class="agent-stat-label">总任务</span>
+                        <span id="agentStatTotalTasks" class="agent-stat-value">0</span>
+                    </div>
+                    <div class="agent-stat-row">
+                        <span class="agent-stat-label">成功率</span>
+                        <span id="agentStatSuccessRate" class="agent-stat-value">0%</span>
+                    </div>
+                    <div class="agent-stat-row">
+                        <span class="agent-stat-label">平均评分</span>
+                        <span id="agentStatAvgRating" class="agent-stat-value">0 / 5</span>
+                    </div>
+                </div>
+                <div class="agent-stats-card">
+                    <div class="agent-stats-title">偏好分析</div>
+                    <div class="agent-stat-row">
+                        <span class="agent-stat-label">引擎</span>
+                        <span id="agentPrefEngine" class="agent-stat-pref">-</span>
+                    </div>
+                    <div class="agent-stat-row">
+                        <span class="agent-stat-label">模型</span>
+                        <span id="agentPrefModel" class="agent-stat-pref">-</span>
+                    </div>
+                    <div class="agent-stat-row">
+                        <span class="agent-stat-label">比例</span>
+                        <span id="agentPrefRatio" class="agent-stat-pref">-</span>
+                    </div>
+                </div>
+                <div class="agent-success-card">
+                    <div class="agent-success-title">最近成功</div>
+                    <div id="agentSuccessList" class="agent-success-list">
+                        <div style="color:var(--muted);font-size:11px;text-align:center;padding:12px">暂无成功案例<br>开始使用 Agent 吧！</div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div id="toast" class="toast"></div>
         <div id="mentionPreview" class="mention-preview"><img alt="preview"></div>
     </div>
     <script src="/static/js/team-assets.js?v=2026.07.29.2"></script>
-    <script src="/static/js/smart-canvas.js?v=2026.07.28.4"></script>
+    <script src="/static/js/smart-canvas.js?v=2026.07.30.2"></script>
+    <!-- Agent 模块 -->
+    <script src="/static/js/canvas-agent-memory.js?v=2026.07.30.1"></script>
+    <script src="/static/js/canvas-agent-executor.js?v=2026.07.30.1"></script>
+    <script src="/static/js/canvas-agent-learning.js?v=2026.07.30.1"></script>
+    <script src="/static/js/canvas-agent-panel.js?v=2026.07.30.1"></script>
 </body>
 </html>

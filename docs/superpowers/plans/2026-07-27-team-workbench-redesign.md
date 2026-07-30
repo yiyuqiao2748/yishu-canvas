@@ -121,6 +121,9 @@
 - [x] Apply browser annotation polish across secondary pages: darken remaining white fallback panels, add canvas-list home navigation, fix workbench history routing, support standalone theme toggle, and collapse low-frequency canvas editor toolbar actions by default.
 - [x] Sync the latest UI source/static/docs/test files to NAS and verify key file hashes while preserving `.env`, `data/`, and `output/`.
 - [x] Complete UI review follow-up: homepage auth chip opens login/admin modal, API settings are gated to owner/admin, Team Cloud no longer carries a duplicate Team API settings panel, and child pages receive shared theme classes so light/dark state can follow from the workbench.
+- [x] Integrate Smart Canvas AI Agent phase 1 shell and safeguards: authenticated `/api/canvas-agent/*` endpoints, server-side JSON plan normalization, bottom Agent panel in `smart-canvas.html`, prompt/parameter/workflow execution without automatic high-cost generation, and feedback/level memory persistence. Verified slices cover auth gating, normalized prompt card execution, selected prompt optimization, guarded parameter suggestions, backend memory/level hydration, prompt-node `node.text` persistence, and passive-panel 401 suppression.
+- [x] Align ordinary canvas with Smart Canvas Agent/theme without rewriting node logic: `canvas.html` loads the shared Agent panel through a classic bridge that calls existing public node creation APIs, and the ordinary canvas board, docks, node text surfaces, generator fields, workflow/assets/log panels, popovers, and minimap share the current red/black glass workbench skin.
+- [ ] Finish Agent phase 1 acceptance with authenticated real-model response, workflow-card UX, and feedback sync display after login.
 - [ ] Polish the right-side generation/assets panel density after browser review.
 - [ ] Recheck the promoted official homepage after Docker rebuild/restart.
 

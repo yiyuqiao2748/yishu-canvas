@@ -1217,6 +1217,16 @@ function backToCanvasList(){
     savePromptDraftForCurrent();
     window.location.href = canvasListUrlForProject(canvas?.project || sourceProjectId || 'default');
 }
+function backToWorkbenchHome(){
+    savePromptDraftForCurrent();
+    if(window.parent && window.parent !== window){
+        try {
+            window.parent.postMessage({type:'studio-open-page', page:'workbench'}, window.location.origin);
+            return;
+        } catch(e){}
+    }
+    window.location.href = '/static/workbench.html?v=2026.07.29.3';
+}
 function promptPlainText(){
     return originalPromptTextFromParts(collectPromptParts());
 }
@@ -5498,6 +5508,13 @@ function startCanvasMetaPoll(){
 }
 function connectAssetLibrarySyncSocket(){
     if(window.parent && window.parent !== window) return;
+    let liveStatsEnabled = false;
+    try { liveStatsEnabled = localStorage.getItem('smartCanvasLiveStats') === '1'; } catch(e) {}
+    const shouldConnect = params.get('liveStats') === '1' || liveStatsEnabled;
+    if(!shouldConnect){
+        startCanvasMetaPoll();
+        return;
+    }
     const host = window.location.host;
     if(!host) return;
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -16919,6 +16936,11 @@ window.addEventListener('keydown', e => {
         e.preventDefault();
         groupSelectedNodes();
     }
+    // Agent 快捷键 Ctrl+Space
+    if((e.ctrlKey || e.metaKey) && e.key === ' ' && !isEditableTarget(e.target)){
+        e.preventDefault();
+        if(typeof toggleAgentPanel === 'function') toggleAgentPanel();
+    }
 });
 window.addEventListener('keyup', e => {
     if(String(e.key || '').toLowerCase() === 'r') isRKeyDown = false;
@@ -17733,4 +17755,10 @@ window.onload = async () => {
     await loadCanvas();
     syncApiKindToggleVisibility();
     render();
+    // 初始化 Agent 面板（延迟加载，不阻塞画布渲染）
+    setTimeout(function(){
+        if(window.AgentMemory && window.AgentLearning && typeof refreshAgentSkillsPanel === 'function'){
+            refreshAgentSkillsPanel();
+        }
+    }, 200);
 };

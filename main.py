@@ -32,7 +32,7 @@ from threading import Lock, RLock, Thread
 import httpx
 from PIL import Image, ImageOps
 from io import BytesIO
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Header, Request
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Header, Request, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response, StreamingResponse, JSONResponse
@@ -44,6 +44,7 @@ if BASE_IMPORT_DIR not in sys.path:
     sys.path.insert(0, BASE_IMPORT_DIR)
 
 from team_cloud import (
+    CurrentUser,
     record_team_generation_log,
     require_user,
     resolve_team_api_provider_config,
@@ -15814,6 +15815,355 @@ async def canvas_llm(payload: CanvasLLMRequest, request: Request):
     raw_data = unwrap_apimart_response(raw) if isinstance(raw, dict) else {}
     await log_team_generation(payload, user, _provider, model, "succeeded", {"text_length": len(text or "")})
     return {"text": text, "model": model, "raw_usage": raw_data.get("usage")}
+
+# --- Canvas Agent API ---
+
+AGENT_DATA_DIR = os.path.join(DATA_DIR, "agent")
+AGENT_ACTIONS = {"create_prompt", "optimize_prompt", "suggest_params", "create_workflow", "chat"}
+AGENT_CARD_TYPES = {"prompt", "image", "loop"}
+AGENT_CARD_TYPE_ALIASES = {"smart-prompt": "prompt", "smart-image": "image", "smart-loop": "loop"}
+AGENT_ENGINE_SUGGESTIONS = {"api", "volcengine", "modelscope", "comfy", "runninghub"}
+AGENT_RATIOS = {"auto", "智能比例", "1:1", "16:9", "9:16", "4:3", "3:4", "custom"}
+AGENT_RESOLUTIONS = {"", "auto", "1K", "2K", "4K"}
+AGENT_MAX_CARDS = 8
+
+def _ensure_agent_dir():
+    os.makedirs(AGENT_DATA_DIR, exist_ok=True)
+
+def _agent_user_file(user_id, filename):
+    user_dir = os.path.join(AGENT_DATA_DIR, user_id)
+    os.makedirs(user_dir, exist_ok=True)
+    return os.path.join(user_dir, filename)
+
+def _load_agent_json(user_id, filename, default=None):
+    try:
+        path = _agent_user_file(user_id, filename)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return default if default is not None else {}
+
+def _save_agent_json(user_id, filename, data):
+    path = _agent_user_file(user_id, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def _safe_agent_text(value, max_len=3000):
+    if value is None:
+        return ""
+    return str(value).strip()[:max_len]
+
+def _extract_agent_json(text):
+    raw = _safe_agent_text(text, 12000)
+    if not raw:
+        return {}
+    fenced = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", raw, flags=re.IGNORECASE)
+    if fenced:
+        raw = fenced.group(1)
+    else:
+        found = re.search(r"\{[\s\S]*\}", raw)
+        raw = found.group(0) if found else raw
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+def _normalize_agent_cards(cards):
+    cleaned = []
+    if not isinstance(cards, list):
+        return cleaned
+    for raw_card in cards[:AGENT_MAX_CARDS]:
+        if not isinstance(raw_card, dict):
+            continue
+        card_type = _safe_agent_text(raw_card.get("type"), 40)
+        card_type = AGENT_CARD_TYPE_ALIASES.get(card_type, card_type)
+        if card_type not in AGENT_CARD_TYPES:
+            continue
+        card = {
+            "type": card_type,
+            "text": _safe_agent_text(raw_card.get("text") or raw_card.get("content"), 3000),
+            "label": _safe_agent_text(raw_card.get("label") or raw_card.get("title"), 80),
+        }
+        cleaned.append(card)
+    return cleaned
+
+def _normalize_agent_plan(text, fallback_message):
+    parsed = _extract_agent_json(text)
+    action = _safe_agent_text(parsed.get("action"), 40)
+    if action not in AGENT_ACTIONS:
+        action = "chat"
+
+    params = parsed.get("params") if isinstance(parsed.get("params"), dict) else {}
+    cleaned_params = {}
+    ratio = _safe_agent_text(params.get("ratio"), 32)
+    resolution = _safe_agent_text(params.get("resolution"), 32)
+    if ratio in AGENT_RATIOS:
+        cleaned_params["ratio"] = ratio
+    if resolution in AGENT_RESOLUTIONS:
+        cleaned_params["resolution"] = resolution
+
+    engine = _safe_agent_text(parsed.get("engine_suggestion"), 60)
+    model = _safe_agent_text(parsed.get("model_suggestion"), 120)
+
+    plan = {
+        "action": action,
+        "prompt_text": _safe_agent_text(parsed.get("prompt_text"), 3000),
+        "engine_suggestion": engine if engine in AGENT_ENGINE_SUGGESTIONS else "",
+        "model_suggestion": model,
+        "params": cleaned_params,
+        "cards": _normalize_agent_cards(parsed.get("cards")),
+        "reply": _safe_agent_text(parsed.get("reply"), 1200),
+    }
+    if not plan["reply"]:
+        plan["reply"] = "已收到你的需求，我先整理成可执行的画布操作。"
+    if action in {"create_prompt", "optimize_prompt"} and not plan["prompt_text"] and not plan["cards"]:
+        plan["prompt_text"] = _safe_agent_text(fallback_message, 3000)
+    return plan
+
+def _agent_context_value(context, *names):
+    if not isinstance(context, dict):
+        return ""
+    for name in names:
+        value = context.get(name)
+        if value:
+            return _safe_agent_text(value, 200)
+    return ""
+
+class CanvasAgentSuggestRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=LLM_MESSAGE_MAX_LENGTH)
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+class CanvasAgentFeedbackRequest(BaseModel):
+    session_id: str = ""
+    rating: int = Field(default=0, ge=0, le=5)
+    accepted: bool = True
+    action_taken: str = ""
+    result: Dict[str, Any] = Field(default_factory=dict)
+
+class CanvasAgentMemoryUpdate(BaseModel):
+    preferences: Dict[str, Any] = Field(default_factory=dict)
+    experience: int = 0
+    patterns: Dict[str, Any] = Field(default_factory=dict)
+
+@app.post("/api/canvas-agent/suggest")
+async def canvas_agent_suggest(payload: CanvasAgentSuggestRequest, request: Request, user: CurrentUser = Depends(require_user)):
+    """Agent 意图解析：必须登录后使用，返回经过清洗的画布操作计划。"""
+    user_id = safe_user_id(user.id, request)
+    _ensure_agent_dir()
+
+    # 加载记忆
+    mem = _load_agent_json(user_id, "memory.json", {})
+    level = mem.get("level", 1)
+    prefs = mem.get("preferences", {})
+
+    # 构建 System Prompt
+    level_titles = {1:"学徒",2:"工匠",3:"专家",4:"大师",5:"传奇"}
+    level_title = level_titles.get(level, "学徒")
+
+    system_prompt = f"你是智能画布 AI 助手（能力等级：{level_title} Lv.{level}）。\n"
+    system_prompt += "你需要理解用户的自然语言，返回 JSON 格式的操作计划。\n\n"
+    system_prompt += "可用 action：create_prompt, optimize_prompt, suggest_params, create_workflow, chat\n"
+    system_prompt += "引擎可选：api, volcengine, modelscope, comfy, runninghub\n"
+    system_prompt += "卡片类型可选：prompt, image, loop\n"
+
+    if level >= 3:
+        system_prompt += "你可以创建循环节点和批量工作流。\n"
+    if prefs.get("preferred_engine"):
+        system_prompt += f"用户偏好引擎：{prefs['preferred_engine']}\n"
+    if prefs.get("preferred_model"):
+        system_prompt += f"用户偏好模型：{prefs['preferred_model']}\n"
+
+    system_prompt += "\n返回纯 JSON：\n"
+    system_prompt += '{"action":"create_prompt","prompt_text":"生成的提示词","engine_suggestion":"volcengine","model_suggestion":"","params":{"ratio":"16:9","resolution":"2K"},"cards":[{"type":"prompt","content":"提示词内容","title":"卡片标题"}],"reply":"友好回复"}'
+
+    # 构建用户消息
+    user_msg = f"用户输入：{payload.message}\n"
+    ctx = payload.context or {}
+    if ctx.get("engine"):
+        user_msg += f"当前引擎：{ctx['engine']}\n"
+    if ctx.get("model"):
+        user_msg += f"当前模型：{ctx['model']}\n"
+    if ctx.get("ratio"):
+        user_msg += f"当前比例：{ctx['ratio']}\n"
+    if ctx.get("nodeCount"):
+        user_msg += f"画布节点数：{ctx['nodeCount']}\n"
+    if ctx.get("selectedNodeCount"):
+        user_msg += f"已选节点数：{ctx['selectedNodeCount']}\n"
+    selected_nodes = ctx.get("selectedNodes") if isinstance(ctx.get("selectedNodes"), list) else []
+    if selected_nodes:
+        user_msg += "选中节点摘要：\n"
+        for item in selected_nodes[:6]:
+            if not isinstance(item, dict):
+                continue
+            title = _safe_agent_text(item.get("title"), 80)
+            node_type = _safe_agent_text(item.get("type"), 40)
+            text = _safe_agent_text(item.get("text"), 500)
+            user_msg += f"- {node_type} {title}: {text}\n"
+
+    try:
+        # 复用现有 LLM 基础设施
+        llm_provider = _agent_context_value(ctx, "llm_provider", "chat_provider") or "comfly"
+        llm_payload = CanvasLLMRequest(
+            provider=llm_provider,
+            model=_agent_context_value(ctx, "llm_model", "chat_model"),
+            team_id=_agent_context_value(ctx, "team_id", "teamId"),
+            project_id=_agent_context_value(ctx, "project_id", "projectId"),
+            canvas_id=_agent_context_value(ctx, "canvas_id", "canvasId"),
+            message=user_msg,
+            messages=[],
+            images=[],
+            videos=[],
+            system_prompt=system_prompt,
+            ms_model=""
+        )
+        result = await canvas_llm(llm_payload, request)
+        text = result.get("text", "")
+        plan = _normalize_agent_plan(text, payload.message)
+
+        # 保存到记忆
+        memory_entry = {
+            "timestamp": now_ms(),
+            "message": payload.message,
+            "action": plan.get("action", "chat"),
+            "response": text[:500]
+        }
+        history = _load_agent_json(user_id, "history.json", [])
+        history.append(memory_entry)
+        if len(history) > 50:
+            history = history[-50:]
+        _save_agent_json(user_id, "history.json", history)
+
+        return {"plan": plan, "text": json.dumps(plan, ensure_ascii=False), "model": result.get("model", "")}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[canvas-agent] suggest error: {e}")
+        # 降级返回
+        fallback_plan = {"action": "chat", "prompt_text": "", "engine_suggestion": "", "model_suggestion": "", "params": {}, "cards": [], "reply": "AI 服务暂时不可用，请尝试使用快捷操作或手动创建节点。"}
+        return {"plan": fallback_plan, "text": json.dumps(fallback_plan, ensure_ascii=False), "model": "fallback"}
+
+@app.post("/api/canvas-agent/feedback")
+async def canvas_agent_feedback(payload: CanvasAgentFeedbackRequest, request: Request, user: CurrentUser = Depends(require_user)):
+    """记录用户反馈"""
+    user_id = safe_user_id(user.id, request)
+    _ensure_agent_dir()
+
+    feedback = _load_agent_json(user_id, "feedback.json", [])
+    entry = {
+        "session_id": payload.session_id,
+        "rating": payload.rating,
+        "accepted": payload.accepted,
+        "action": payload.action_taken,
+        "result": payload.result,
+        "timestamp": now_ms()
+    }
+    feedback.append(entry)
+    if len(feedback) > 200:
+        feedback = feedback[-200:]
+    _save_agent_json(user_id, "feedback.json", feedback)
+
+    # 更新统计数据
+    stats = _load_agent_json(user_id, "stats.json", {"total_tasks":0,"total_successes":0,"total_failures":0,"avg_rating":0,"rating_count":0})
+    stats["total_tasks"] = stats.get("total_tasks", 0) + 1
+    if payload.accepted:
+        stats["total_successes"] = stats.get("total_successes", 0) + 1
+    else:
+        stats["total_failures"] = stats.get("total_failures", 0) + 1
+    if payload.rating > 0:
+        total_stars = stats.get("avg_rating", 0) * stats.get("rating_count", 0) + payload.rating
+        stats["rating_count"] = stats.get("rating_count", 0) + 1
+        stats["avg_rating"] = round(total_stars / stats["rating_count"], 2)
+    _save_agent_json(user_id, "stats.json", stats)
+
+    return {"status": "ok"}
+
+@app.get("/api/canvas-agent/level")
+async def canvas_agent_level(request: Request, user: CurrentUser = Depends(require_user)):
+    """获取当前用户的能力等级"""
+    user_id = safe_user_id(user.id, request)
+    _ensure_agent_dir()
+
+    stats = _load_agent_json(user_id, "stats.json", {"total_tasks":0,"total_successes":0,"total_failures":0,"avg_rating":0,"rating_count":0})
+    feedback = _load_agent_json(user_id, "feedback.json", [])
+    mem = _load_agent_json(user_id, "memory.json", {"level":1,"experience":0,"skill_values":{"creativity":25,"accuracy":30,"structure":20,"breadth":25,"responsiveness":50}})
+
+    # 计算等级
+    tasks = stats.get("total_tasks", 0)
+    successes = stats.get("total_successes", 0)
+    success_rate = successes / max(tasks, 1)
+    avg_rating = stats.get("avg_rating", 0)
+    level = mem.get("level", 1)
+
+    # 自动升级检查
+    if tasks >= 200 and success_rate >= 0.85:
+        level = max(level, 5)
+    elif tasks >= 100 and success_rate >= 0.70:
+        level = max(level, 4)
+    elif tasks >= 50 and avg_rating >= 3.5:
+        level = max(level, 3)
+    elif tasks >= 20 and avg_rating >= 3.0:
+        level = max(level, 2)
+
+    if level != mem.get("level", 1):
+        mem["level"] = level
+        _save_agent_json(user_id, "memory.json", mem)
+
+    level_titles = {1:"学徒",2:"工匠",3:"专家",4:"大师",5:"传奇"}
+    level_thresholds = {1:0,2:200,3:500,4:1000,5:2000}
+    current_exp = mem.get("experience", 0)
+    next_exp = level_thresholds.get(level + 1, 3000)
+    current_threshold = level_thresholds.get(level, 0)
+    range_val = next_exp - current_threshold
+    progress = min(100, round(((current_exp - current_threshold) / range_val) * 100)) if range_val > 0 else 100
+
+    recent_successes = [
+        {"timestamp": f["timestamp"], "action": f.get("action",""), "rating": f["rating"]}
+        for f in feedback if f.get("accepted") and f.get("rating",0) >= 3
+    ][-5:]
+
+    return {
+        "level": level,
+        "title": level_titles.get(level, "学徒"),
+        "experience": current_exp,
+        "progress": max(0, progress),
+        "skill_radar": mem.get("skill_values", {}),
+        "stats": {
+            "total_tasks": tasks,
+            "success_rate": round(success_rate * 100),
+            "avg_rating": avg_rating
+        },
+        "preferences": mem.get("preferences", {}),
+        "recent_successes": recent_successes
+    }
+
+@app.get("/api/canvas-agent/memory")
+async def get_canvas_agent_memory(request: Request, user: CurrentUser = Depends(require_user)):
+    """获取 Agent 记忆"""
+    user_id = safe_user_id(user.id, request)
+    _ensure_agent_dir()
+
+    mem = _load_agent_json(user_id, "memory.json", {"level":1,"experience":0,"preferences":{},"patterns":{},"skill_values":{"creativity":25,"accuracy":30,"structure":20,"breadth":25,"responsiveness":50}})
+    return mem
+
+@app.post("/api/canvas-agent/memory")
+async def update_canvas_agent_memory(payload: CanvasAgentMemoryUpdate, request: Request, user: CurrentUser = Depends(require_user)):
+    """更新 Agent 记忆"""
+    user_id = safe_user_id(user.id, request)
+    _ensure_agent_dir()
+
+    mem = _load_agent_json(user_id, "memory.json", {"level":1,"experience":0,"preferences":{},"patterns":{},"skill_values":{"creativity":25,"accuracy":30,"structure":20,"breadth":25,"responsiveness":50}})
+    if payload.preferences:
+        mem.setdefault("preferences", {}).update(payload.preferences)
+    if payload.experience:
+        mem["experience"] = mem.get("experience", 0) + payload.experience
+    if payload.patterns:
+        mem.setdefault("patterns", {}).update(payload.patterns)
+    _save_agent_json(user_id, "memory.json", mem)
+
+    return mem
 
 # --- 对话管理 ---
 
