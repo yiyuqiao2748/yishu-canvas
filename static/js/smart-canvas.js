@@ -1225,7 +1225,7 @@ function backToWorkbenchHome(){
             return;
         } catch(e){}
     }
-    window.location.href = '/static/workbench.html?v=2026.07.29.3';
+    window.location.href = '/static/workbench.html?v=2026.07.29.4';
 }
 function promptPlainText(){
     return originalPromptTextFromParts(collectPromptParts());

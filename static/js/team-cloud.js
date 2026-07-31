@@ -41,7 +41,7 @@
             window.parent.postMessage({ type: "studio-open-page", page: "workbench" }, window.location.origin);
             return;
         }
-        window.location.href = "/static/workbench.html?v=2026.07.29.3";
+        window.location.href = "/static/workbench.html?v=2026.07.29.4";
     }
 
     function iconRefresh(){
