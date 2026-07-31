@@ -36,6 +36,14 @@
         video: { key: "video_models", listId: "apiVideoModelList" },
     };
 
+    function goHome(){
+        if(window.parent && window.parent !== window){
+            window.parent.postMessage({ type: "studio-open-page", page: "workbench" }, window.location.origin);
+            return;
+        }
+        window.location.href = "/static/workbench.html?v=2026.07.29.3";
+    }
+
     function iconRefresh(){
         if(window.lucide && typeof window.lucide.createIcons === "function"){
             window.lucide.createIcons();
@@ -1356,6 +1364,7 @@
             if(restore) restoreCanvasVersion(restore.dataset.versionRestore);
         });
         $("logoutBtn").addEventListener("click", logout);
+        $("homeBtn")?.addEventListener("click", goHome);
 
         try {
             state.config = await api("/config");

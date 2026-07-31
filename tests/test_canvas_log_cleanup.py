@@ -422,5 +422,55 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["canvas"]["updated_at"], 201)
 
 
+    def test_agnes_ai_provider_is_available_as_builtin_api_node(self):
+        providers = main.merge_default_api_providers([], inject_missing=True)
+        agnes = next(item for item in providers if item["id"] == "agnes-ai")
+
+        self.assertEqual(agnes["name"], "Agnes AI")
+        self.assertEqual(agnes["base_url"], main.AGNES_DEFAULT_BASE_URL)
+        self.assertEqual(agnes["protocol"], "openai")
+        self.assertEqual(agnes["image_request_mode"], "openai-json")
+        self.assertIn("agnes-image-2.1-flash", agnes["image_models"])
+        self.assertIn("agnes-video-v2.0", agnes["video_models"])
+        self.assertEqual(main.effective_image_request_mode(agnes, "agnes-image-2.1-flash"), "openai-json")
+
+    def test_legacy_agnes_provider_is_migrated_to_stable_builtin_id(self):
+        providers = main.merge_default_api_providers([
+            {
+                "id": "agnes",
+                "name": "Agnes AI old",
+                "base_url": "https://apihub.agnes-ai.com/v1",
+                "protocol": "openai",
+                "image_models": ["agnes-image-2.0-flash"],
+                "video_models": [],
+            }
+        ], inject_missing=True)
+        agnes_items = [item for item in providers if item.get("id") == "agnes-ai"]
+
+        self.assertEqual(len(agnes_items), 1)
+        self.assertEqual(agnes_items[0]["base_url"], "https://apihub.agnes-ai.com/v1")
+        self.assertEqual(agnes_items[0]["image_request_mode"], "openai-json")
+        self.assertIn("agnes-image-2.1-flash", agnes_items[0]["image_models"])
+        self.assertIn("agnes-video-v2.0", agnes_items[0]["video_models"])
+
+    def test_grsai_provider_uses_documented_image_endpoint_and_models(self):
+        provider = {
+            "id": "custom-api",
+            "base_url": "https://grsai.dakka.com.cn/v1",
+            "protocol": "openai",
+            "model_protocols": {"nano-banana-pro": "gemini"},
+        }
+
+        self.assertTrue(main.is_grsai_provider(provider))
+        self.assertEqual(main.effective_protocol(provider, "nano-banana-pro"), "openai")
+        self.assertEqual(main.grsai_endpoint_url(provider, "/api/generate"), "https://grsai.dakka.com.cn/v1/api/generate")
+
+        payload = main.grsai_models_payload()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["protocol"], "openai")
+        self.assertIn("gpt-image-2", payload["image_models"])
+        self.assertIn("nano-banana-pro", payload["image_models"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -204,6 +204,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 GLOBAL_LOOP = None
 APP_VERSION = "2026.06.03"
+UPSTREAM_FORCE_IPV4 = os.environ.get("UPSTREAM_FORCE_IPV4", "1").strip().lower() not in {"0", "false", "no", "off"}
 GITHUB_REPO_URL = "https://github.com/hero8152/Infinite-Canvas"
 GITHUB_VERSION_URL = "https://raw.githubusercontent.com/hero8152/Infinite-Canvas/main/VERSION"
 GITHUB_TREE_URL = "https://api.github.com/repos/hero8152/Infinite-Canvas/git/trees/main?recursive=1"
@@ -217,6 +218,28 @@ MODELSCOPE_FILE_API_ROOT = "https://www.modelscope.ai/api/v1/studio/daniel8152/I
 MODELSCOPE_VERSION_URL = MODELSCOPE_FILE_API_ROOT + "VERSION"
 MODELSCOPE_UPDATE_NOTES_URL = MODELSCOPE_FILE_API_ROOT + "static/update-notes.json"
 MODELSCOPE_TREE_URL = "https://www.modelscope.ai/api/v1/studio/daniel8152/Infinite-Canvas/repo/files?Revision=master&Recursive=true"
+
+def upstream_async_client(timeout=None, follow_redirects=False, headers=None):
+    kwargs = {"timeout": timeout, "follow_redirects": follow_redirects}
+    if headers is not None:
+        kwargs["headers"] = headers
+    if UPSTREAM_FORCE_IPV4:
+        kwargs["transport"] = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+    return httpx.AsyncClient(**kwargs)
+
+def upstream_sync_client(timeout=None, follow_redirects=False, headers=None):
+    kwargs = {"timeout": timeout, "follow_redirects": follow_redirects}
+    if headers is not None:
+        kwargs["headers"] = headers
+    if UPSTREAM_FORCE_IPV4:
+        kwargs["transport"] = httpx.HTTPTransport(local_address="0.0.0.0")
+    return httpx.Client(**kwargs)
+
+def upstream_http_error_message(exc, base_url=""):
+    message = str(exc).strip() or exc.__class__.__name__
+    target = f" ({base_url})" if base_url else ""
+    ipv4 = "forced IPv4" if UPSTREAM_FORCE_IPV4 else "system network stack"
+    return f"Upstream connection failed{target}; {ipv4}; {message[:300]}"
 
 @app.on_event("startup")
 async def startup_event():
@@ -407,6 +430,9 @@ try:
 except Exception:
     GEMINI_CLI_DEFAULT_TIMEOUT = 900
 AGNES_DEFAULT_VIDEO_MODELS = ["agnes-video-v2.0"]
+AGNES_DEFAULT_BASE_URL = "https://apihub.agnes-ai.com"
+AGNES_DEFAULT_IMAGE_MODELS = ["agnes-image-2.1-flash", "agnes-image-2.0-flash"]
+AGNES_DEFAULT_CHAT_MODELS = []
 OPENAI_ASYNC_IMAGE_DEFAULT_MODELS = ["gpt-image-2-all"]
 JIMENG_LEGACY_IMAGE_MODELS = {
     "jimeng-image-2k",
@@ -881,6 +907,22 @@ def default_api_providers():
             "volcengine_project_name": VOLCENGINE_DEFAULT_PROJECT_NAME,
             "volcengine_region": VOLCENGINE_DEFAULT_REGION,
         },
+        {
+            "id": "agnes-ai",
+            "name": "Agnes AI",
+            "base_url": AGNES_DEFAULT_BASE_URL,
+            "protocol": "openai",
+            "image_request_mode": "openai-json",
+            "image_generation_endpoint": "",
+            "image_edit_endpoint": "",
+            "enabled": True,
+            "primary": False,
+            "image_models": AGNES_DEFAULT_IMAGE_MODELS,
+            "chat_models": AGNES_DEFAULT_CHAT_MODELS,
+            "video_models": AGNES_DEFAULT_VIDEO_MODELS,
+            "ms_loras": [],
+            "ms_defaults_version": 0,
+        },
     ]
 
 def merge_default_api_providers(providers, inject_missing=True):
@@ -945,6 +987,25 @@ def merge_default_api_providers(providers, inject_missing=True):
             current["volcengine_project_name"] = str(current.get("volcengine_project_name") or VOLCENGINE_DEFAULT_PROJECT_NAME).strip() or VOLCENGINE_DEFAULT_PROJECT_NAME
             current["volcengine_region"] = str(current.get("volcengine_region") or VOLCENGINE_DEFAULT_REGION).strip() or VOLCENGINE_DEFAULT_REGION
     # 即梦 CLI 不再是强制保留的默认平台：仅在用户已添加了即梦协议的平台时，规范化其默认模型/地址。
+    agnes_default = next((d for d in default_api_providers() if d["id"] == "agnes-ai"), None)
+    if agnes_default:
+        current = next((item for item in merged if item.get("id") == "agnes-ai"), None)
+        legacy = next((item for item in merged if item.get("id") != "agnes-ai" and "apihub.agnes-ai.com" in str(item.get("base_url") or "").lower()), None)
+        if not current:
+            if legacy:
+                legacy["id"] = "agnes-ai"
+                current = legacy
+            elif inject_missing:
+                current = dict(agnes_default)
+                merged.append(current)
+        if current:
+            if not current.get("base_url"):
+                current["base_url"] = agnes_default["base_url"]
+            current["protocol"] = "openai"
+            current["image_request_mode"] = "openai-json"
+            current["image_models"] = model_list_from_values([*(current.get("image_models") or []), *AGNES_DEFAULT_IMAGE_MODELS])
+            current["chat_models"] = model_list_from_values([*(current.get("chat_models") or []), *AGNES_DEFAULT_CHAT_MODELS])
+            current["video_models"] = model_list_from_values([*(current.get("video_models") or []), *AGNES_DEFAULT_VIDEO_MODELS])
     for current in merged:
         if not is_jimeng_provider(current):
             continue
@@ -4459,10 +4520,20 @@ def normalize_model_name_map(value):
                 normalized[model] = label
     return normalized
 
+def is_grsai_base_url(base_url=""):
+    try:
+        host = urllib.parse.urlsplit(str(base_url or "").strip()).netloc.lower()
+    except Exception:
+        host = ""
+    return host in {"grsai.dakka.com.cn", "grsaiapi.com"}
+
 def effective_protocol(provider, model=""):
-    """返回某模型实际生效的协议：优先单模型覆盖，否则用平台全局协议。"""
+    """Return the effective upstream protocol for one model."""
     base = provider_protocol(provider)
     pid = str((provider or {}).get("id") or "").strip().lower()
+    model_id = str(model or "").strip().lower()
+    if is_grsai_base_url((provider or {}).get("base_url")) and (model_id.startswith("nano-banana") or model_id.startswith("gpt-image-2")):
+        return "openai"
     if pid in FIXED_PROTOCOL_PROVIDER_IDS:
         return base
     overrides = (provider or {}).get("model_protocols")
@@ -4471,6 +4542,25 @@ def effective_protocol(provider, model=""):
         if val in PER_MODEL_PROTOCOL_OPTIONS:
             return val
     return base
+def grsai_models_payload(status=200, message=""):
+    models = ["gpt-image-2", "nano-banana-2", "nano-banana-pro"]
+    return {
+        "ok": True,
+        "protocol": "openai",
+        "status": status,
+        "status_code": status,
+        "message": message or "grsai domestic image endpoint recognized; /v1/models is not required, using built-in image models.",
+        "model_count": len(models),
+        "total": len(models),
+        "image_models": models,
+        "chat_models": [],
+        "video_models": [],
+        "all": models,
+        "image_request_mode": "openai",
+    }
+
+def is_grsai_provider(provider):
+    return is_grsai_base_url((provider or {}).get("base_url"))
 
 def is_apimart_provider(provider):
     base_url = str((provider or {}).get("base_url") or "").lower()
@@ -11067,6 +11157,89 @@ async def generate_runninghub_video(payload, provider):
         local_urls = [await save_remote_video_to_output(url, prefix="rh_video_") for url in urls]
         return {"videos": local_urls, "task_id": task_id, "raw": result}
 
+def grsai_endpoint_url(provider, path):
+    base_url = str((provider or {}).get("base_url") or "").strip().rstrip("/")
+    if not base_url:
+        raise HTTPException(status_code=400, detail="grsai Base URL is empty")
+    if base_url.endswith("/v1"):
+        return f"{base_url}{path}"
+    return f"{base_url}/v1{path}"
+
+def grsai_aspect_ratio(size, aspect_ratio, model):
+    model_id = str(model or "").lower()
+    raw_size = str(size or "").strip().lower().replace("*", "x").replace("×", "x")
+    raw_ratio = str(aspect_ratio or "").strip()
+    if model_id.startswith("gpt-image-2"):
+        return raw_size if re.match(r"^\d+\s*x\s*\d+$", raw_size) else "1024x1024"
+    if raw_ratio in {"1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"}:
+        return raw_ratio
+    if re.match(r"^\d+\s*x\s*\d+$", raw_size):
+        w, h = [int(part) for part in re.split(r"\s*x\s*", raw_size)[:2]]
+        if w and h:
+            value = w / h
+            candidates = {"1:1": 1.0, "16:9": 16/9, "9:16": 9/16, "4:3": 4/3, "3:4": 3/4, "3:2": 3/2, "2:3": 2/3}
+            return min(candidates.items(), key=lambda item: abs(item[1] - value))[0]
+    return "1:1"
+
+def grsai_image_size(size, resolution):
+    text = f"{size or ''} {resolution or ''}".lower()
+    if "4k" in text or "4096" in text:
+        return "4K"
+    if "2k" in text or "2048" in text:
+        return "2K"
+    return "1K"
+
+async def generate_grsai_provider_image(prompt, size, model, reference_images=None, provider=None, aspect_ratio="", resolution=""):
+    provider = provider or {}
+    endpoint = grsai_endpoint_url(provider, "/api/generate")
+    refs = [ref for ref in (reference_images or []) if ref.get("url")]
+    images = [reference_to_data_url(ref, max_size=1536) for ref in refs[:ONLINE_IMAGE_REFERENCE_MAX]]
+    images = [item for item in images if item]
+    model_id = selected_model(model, "gpt-image-2")
+    body = {
+        "model": model_id,
+        "prompt": prompt,
+        "images": images,
+        "aspectRatio": grsai_aspect_ratio(size, aspect_ratio, model_id),
+        "replyType": "json",
+    }
+    if str(model_id).lower().startswith("nano-banana"):
+        body["imageSize"] = grsai_image_size(size, resolution)
+    timeout = httpx.Timeout(connect=20.0, read=1800.0, write=120.0, pool=20.0)
+    async with upstream_async_client(timeout=timeout) as client:
+        response = await client.post(endpoint, headers=api_headers(provider=provider, model=model_id), json=body)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(status_code=exc.response.status_code, detail=f"grsai image API error (HTTP {exc.response.status_code}): {(exc.response.text or '')[:500]}") from exc
+        raw = response.json() if response.text else {}
+        try:
+            return extract_image(raw), raw
+        except HTTPException:
+            task_id = extract_task_id(raw)
+            if not task_id:
+                raise
+        deadline = time.monotonic() + IMAGE_TASK_TIMEOUT
+        last_payload = raw
+        result_url = grsai_endpoint_url(provider, "/api/result")
+        while time.monotonic() < deadline:
+            await asyncio.sleep(min(IMAGE_POLL_INTERVAL, max(0.0, deadline - time.monotonic())))
+            poll = await client.get(result_url, headers=api_headers(provider=provider, model=model_id), params={"id": task_id})
+            poll.raise_for_status()
+            last_payload = poll.json() if poll.text else {}
+            status = str(image_task_status(last_payload) or last_payload.get("status") or "").lower()
+            if status in {"succeeded", "success", "completed", "complete", "done", "ok", "ready"}:
+                return extract_image(last_payload), last_payload
+            if status in {"failed", "fail", "error", "canceled", "cancelled", "timeout", "rejected", "expired"}:
+                raise HTTPException(status_code=502, detail=f"grsai image task failed: {image_task_fail_reason(last_payload)}")
+            try:
+                image = extract_image(last_payload)
+                if image:
+                    return image, last_payload
+            except HTTPException:
+                pass
+        raw_text = json.dumps(last_payload, ensure_ascii=False)[:800] if last_payload else ""
+        raise HTTPException(status_code=504, detail=f"grsai image task timeout, task_id={task_id}, last={raw_text}")
 async def generate_ai_image(prompt, size, quality, model, reference_images=None, provider_id="comfly", aspect_ratio="", resolution="", provider_config=None):
     provider = provider_config or get_api_provider(provider_id)
     if provider["id"] == "modelscope":
@@ -11107,7 +11280,7 @@ async def generate_ai_image(prompt, size, quality, model, reference_images=None,
     mask_refs = [ref for ref in refs if str(ref.get("role") or "").strip().lower() == "mask" or str(ref.get("name") or "").lower().endswith("_mask.png")]
     image_refs = [ref for ref in refs if ref not in mask_refs]
     request_timeout = httpx.Timeout(connect=20.0, read=1800.0, write=120.0, pool=20.0) if (is_gpt2 or is_apimart or image_request_mode in {"openai-json", "openai-video-proxy", "openai-responses", "openai-async-image"}) else AI_REQUEST_TIMEOUT
-    async with httpx.AsyncClient(timeout=request_timeout) as client:
+    async with upstream_async_client(timeout=request_timeout) as client:
         response = None
         async def post_openai_edits(edit_files=None):
             data = {"model": model, "prompt": prompt, "size": size}
@@ -11153,7 +11326,7 @@ async def generate_ai_image(prompt, size, quality, model, reference_images=None,
                     files.append(("images", (os.path.basename(local_path), content, content_type_for_path(local_path))))
                 headers = api_headers(json_body=False, provider=provider, model=model)
                 def post_video_proxy_multipart():
-                    with httpx.Client(timeout=request_timeout) as sync_client:
+                    with upstream_sync_client(timeout=request_timeout) as sync_client:
                         return sync_client.post(video_url, headers=headers, data=form_data, files=files)
                 response = await asyncio.to_thread(post_video_proxy_multipart)
             else:
@@ -13484,9 +13657,11 @@ async def test_provider_connection(payload: TestConnectionPayload):
     if not api_key:
         key_name = "方舟 API Key" if protocol == "volcengine" else "API Key"
         raise HTTPException(status_code=400, detail=f"请先填写或保存 {key_name}")
+    if is_grsai_base_url(base_url):
+        return grsai_models_payload(message="grsai domestic image endpoint recognized; this provider does not require /v1/models. Save it and run a small image generation to verify key/balance.")
     url = upstream_models_url(base_url, protocol)
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with upstream_async_client(timeout=15) as client:
             resp = await client.get(url, headers=upstream_model_headers(api_key, protocol))
             if resp.status_code in (301, 302, 303, 307, 308):
                 location = resp.headers.get("Location") or resp.headers.get("location") or ""
@@ -13538,14 +13713,14 @@ async def test_provider_connection(payload: TestConnectionPayload):
     except httpx.HTTPError as e:
         if protocol == "volcengine":
             try:
-                async with httpx.AsyncClient(timeout=15) as client:
+                async with upstream_async_client(timeout=15) as client:
                     detected, probe = await probe_volcengine_auto_detect(client, base_url, api_key)
                     if detected:
                         message = f"{probe.get('message') or '方舟任务接口可达'}；但模型列表请求失败。请按实际方舟控制台模型名称手动填写视频模型。"
                         return volcengine_default_model_payload(status=probe.get("status") or 0, message=message, raw={"models_error": str(e)[:300], **(probe.get("raw") or {})})
             except Exception:
                 pass
-        return {"ok": False, "status": 0, "message": str(e)[:300]}
+        return {"ok": False, "status": 0, "message": upstream_http_error_message(e, base_url)}
 
 @app.post("/api/providers/probe-async")
 async def probe_async_endpoint(payload: TestConnectionPayload):
@@ -13576,10 +13751,12 @@ async def probe_async_endpoint(payload: TestConnectionPayload):
     api_key = api_key_from_payload(payload, protocol)
     if not api_key:
         raise HTTPException(status_code=400, detail="请先填写或保存 API Key")
+    if is_grsai_base_url(base_url):
+        return grsai_models_payload(message="grsai protocol recognized: use /v1/api/generate, do not auto-switch to Ark or Gemini.")
     openai_async_probe = is_openai_async_image_context(base_url, [], getattr(payload, "image_request_mode", ""))
     if protocol == "volcengine":
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with upstream_async_client(timeout=15) as client:
                 task_ok, task_probe = await probe_volcengine_task_endpoint(client, base_url, api_key)
                 if task_ok:
                     return {
@@ -13606,11 +13783,11 @@ async def probe_async_endpoint(payload: TestConnectionPayload):
                     "raw": {"task_probe": task_probe, "openai_compat_probe": compat_probe.get("raw")},
                 }
         except httpx.HTTPError as e:
-            raise HTTPException(status_code=502, detail=str(e)[:300])
+            raise HTTPException(status_code=502, detail=upstream_http_error_message(e, base_url))
     tasks_base = base_url if base_url.endswith("/v1") else f"{base_url}/v1"
     probe_url = f"{tasks_base}/tasks/healthcheck_probe_do_not_submit"
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with upstream_async_client(timeout=15) as client:
             resp = await client.get(probe_url, headers={"Authorization": bearer_auth_value(api_key), "Accept": "application/json"})
             try:
                 body = resp.json()
@@ -13711,7 +13888,7 @@ async def probe_async_endpoint(payload: TestConnectionPayload):
                 "image_request_mode": detect_image_request_mode(base_url, openai_probe.get("all") or []) or normalize_image_request_mode(getattr(payload, "image_request_mode", "")),
             }
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=str(e)[:300])
+        raise HTTPException(status_code=502, detail=upstream_http_error_message(e, base_url))
 
 async def fetch_models_from_upstream(base_url: str, api_key: str, protocol: str = "openai", image_request_mode: str = "openai"):
     """从上游模型列表端点拉取模型，并按名称做轻量分类。"""
@@ -13746,9 +13923,11 @@ async def fetch_models_from_upstream(base_url: str, api_key: str, protocol: str 
     if not api_key:
         key_name = "方舟 API Key" if protocol == "volcengine" else "API Key"
         raise HTTPException(status_code=400, detail=f"请先填写或保存 {key_name}")
+    if is_grsai_base_url(base_url):
+        return grsai_models_payload(message="grsai domestic image endpoint recognized; this provider does not require /v1/models. Save it and run a small image generation to verify key/balance.")
     url = upstream_models_url(base_url, protocol)
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with upstream_async_client(timeout=30) as client:
             resp = await client.get(url, headers=upstream_model_headers(api_key, protocol))
             endpoint_label = "/v1beta/models" if protocol == "gemini" else "/api/v3/models" if protocol == "volcengine" else "/openapi/v2/models" if protocol == "runninghub" else "/v1/models"
             if resp.status_code in (301, 302, 303, 307, 308):
@@ -13807,7 +13986,7 @@ async def fetch_models_from_upstream(base_url: str, api_key: str, protocol: str 
     except httpx.HTTPError as e:
         if protocol == "volcengine":
             try:
-                async with httpx.AsyncClient(timeout=15) as client:
+                async with upstream_async_client(timeout=15) as client:
                     detected, probe = await probe_volcengine_auto_detect(client, base_url, api_key)
                     if detected:
                         payload = volcengine_default_model_payload(
@@ -18191,7 +18370,7 @@ async def poll_angle_cloud(req: CloudPollRequest):
     print(f"Resuming polling for Angle Task: {task_id}")
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with upstream_async_client(timeout=30) as client:
             for i in range(300):
                 await asyncio.sleep(2)
                 result = await client.get(
@@ -18270,7 +18449,7 @@ async def generate_angle_cloud(req: CloudGenRequest):
         payload["loras"] = req.loras
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with upstream_async_client(timeout=30) as client:
             submit_res = await client.post(f"{api_root}/images/generations", headers=headers, json=payload)
             if submit_res.status_code != 200:
                 try:
@@ -18361,7 +18540,7 @@ async def generate_cloud(req: CloudGenRequest):
         payload["loras"] = req.loras
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with upstream_async_client(timeout=30) as client:
             submit_res = await client.post(
                 f"{api_root}/images/generations",
                 headers={**headers, "X-ModelScope-Async-Mode": "true"},
@@ -18457,7 +18636,7 @@ async def ms_generate(req: MsGenerateRequest):
         payload["loras"] = req.loras
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with upstream_async_client(timeout=30) as client:
             submit_res = await client.post(
                 f"{api_root}/images/generations",
                 headers=headers,

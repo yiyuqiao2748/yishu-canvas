@@ -329,6 +329,7 @@ const RECOMMENDED_APIS = [
         advantages:['免费额度可用', '需要绑定阿里云账号', '适合基础图像与 LLM 测试']
     },
     {
+        id:'agnes-ai',
         name:'Agnes AI',
         category:'free',
         base_url:'https://apihub.agnes-ai.com',
@@ -2411,7 +2412,7 @@ async function saveRecommendedApi(index){
     if(ok) setStatus(trf('api.recommendSaved', {name:api.name}));
 }
 function sortedProviders(){
-    const order = ['modelscope', 'runninghub', 'volcengine'];
+    const order = ['modelscope', 'agnes-ai', 'runninghub', 'volcengine'];
     return visibleProviders().sort((a, b) => {
         const ai = order.indexOf(a.id);
         const bi = order.indexOf(b.id);

@@ -82,6 +82,14 @@
             margin-bottom: 18px;
         }
 
+        .topbar-actions {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
         .title-wrap {
             min-width: 0;
         }
@@ -899,9 +907,15 @@
                 <h1>团队画布</h1>
                 <div class="sub" id="userLine">未登录</div>
             </div>
-            <div class="status" id="systemStatus">
-                <i data-lucide="loader-circle" width="16" height="16"></i>
-                <span>连接中</span>
+            <div class="topbar-actions">
+                <button class="btn ghost" id="homeBtn" type="button" aria-label="返回主页">
+                    <i data-lucide="home" width="16" height="16"></i>
+                    <span>主页</span>
+                </button>
+                <div class="status" id="systemStatus">
+                    <i data-lucide="loader-circle" width="16" height="16"></i>
+                    <span>连接中</span>
+                </div>
             </div>
         </header>
 
