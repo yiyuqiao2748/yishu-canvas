@@ -471,6 +471,27 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("gpt-image-2", payload["image_models"])
         self.assertIn("nano-banana-pro", payload["image_models"])
 
+    async def test_team_canvas_uses_global_api_provider_config(self):
+        class Payload:
+            team_id = "team-1"
+
+        user = object()
+        global_provider = {
+            "id": "grsai",
+            "name": "grsai",
+            "base_url": "https://grsai.dakka.com.cn/v1",
+            "api_key": "global-key",
+        }
+
+        with patch.object(main, "get_api_provider", return_value=global_provider) as get_provider:
+            with patch.object(main, "resolve_team_api_provider_config") as team_provider:
+                provider, resolved_user = await main.request_api_provider("grsai", Payload(), None, user)
+
+        get_provider.assert_called_once_with("grsai")
+        team_provider.assert_not_called()
+        self.assertEqual(provider["api_key"], "global-key")
+        self.assertIs(resolved_user, user)
+
 
 if __name__ == "__main__":
     unittest.main()

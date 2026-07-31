@@ -3650,17 +3650,7 @@ async def request_api_provider(provider_id: str, payload, request: Optional[Requ
         return provider, None
     if user is None:
         user = await team_user_for_payload(payload, request)
-    team_provider = await resolve_team_api_provider_config(user, team_id, provider["id"])
-    merged = {**provider}
-    if team_provider.get("label"):
-        merged["name"] = team_provider["label"]
-    if team_provider.get("base_url"):
-        merged["base_url"] = team_provider["base_url"]
-    if team_provider.get("protocol"):
-        merged["protocol"] = team_provider["protocol"]
-    merged["api_key"] = team_provider.get("api_key") or ""
-    merged["wallet_api_key"] = team_provider.get("wallet_api_key") or ""
-    return merged, user
+    return provider, user
 
 
 async def log_team_generation(payload, user, provider, model="", status="succeeded", result_summary=None, error=""):
