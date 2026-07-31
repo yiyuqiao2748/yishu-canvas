@@ -7886,7 +7886,7 @@ async function runJimengUpscale(node, index){
             n:1,
             reference_images:[{url:item.url, name:item.name || 'upscale-input.png'}]
         };
-        const task = await fetch('/api/canvas-image-tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(async r => {
+        const task = await teamCloudFetch('/api/canvas-image-tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(async r => {
             if(!r.ok) throw new Error(await r.text());
             return r.json();
         });
@@ -15285,7 +15285,7 @@ async function runPromptLLMNode(nodeId){
         const mediaRefs = promptNodeInputMediaForLLM(node);
         const images = imageRefsOnly(mediaRefs).map(img => img.url).filter(Boolean);
         const videos = videoRefsOnly(mediaRefs).map(video => video.url).filter(Boolean);
-        const result = await fetch('/api/canvas-llm', {
+        const result = await teamCloudFetch('/api/canvas-llm', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({
@@ -15324,7 +15324,7 @@ async function runApiGeneration(prompt, refs, runSettings=settings){
     if(!runSettings.provider_id || !runSettings.model) throw new Error(tr('smart.errNoApiModel'));
     const count = Math.max(1, Math.min(8, Number(runSettings.count || 1)));
     const payload = {...teamCloudRequestMeta(), prompt, provider_id:runSettings.provider_id, model:runSettings.model, size:sizeForRun(runSettings), aspect_ratio:runSettings.ratio === 'custom' ? (runSettings.customRatio || '') : (runSettings.ratio || ''), resolution:runSettings.resolution || '', quality:runSettings.quality || 'auto', n:1, reference_images:imageRefsOnly(refs).slice(0, SMART_REFERENCE_IMAGE_MAX)};
-    const tasks = await Promise.all(Array.from({length:count}, () => fetch('/api/canvas-image-tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(async r => {
+    const tasks = await Promise.all(Array.from({length:count}, () => teamCloudFetch('/api/canvas-image-tasks', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(async r => {
         if(!r.ok) throw new Error(await r.text());
         return r.json();
     })));
@@ -15788,7 +15788,7 @@ function providerIdForSmartTask(node, task){
     return task?.providerId || node?.runSettings?.provider_id || settings.provider_id || 'comfly';
 }
 async function fetchImageTaskQuery(providerId, taskId){
-    return fetch('/api/image-task-query', {
+    return teamCloudFetch('/api/image-task-query', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({...teamCloudRequestMeta(), provider_id:providerId || 'comfly', task_id:taskId})

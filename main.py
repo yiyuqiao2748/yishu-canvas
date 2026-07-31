@@ -3639,6 +3639,7 @@ async def team_user_for_payload(payload, request: Optional[Request]):
     return await require_user(
         request.headers.get("authorization"),
         request.cookies.get(team_cloud_settings.cookie_name),
+        request.headers.get("cf-access-jwt-assertion"),
     )
 
 
