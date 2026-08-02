@@ -7,6 +7,12 @@ tests/__pycache__/
 *.log
 .env
 .env.*
+API/.env
+deploy/fnos/.env
+deploy/fnos/api-env/
+deploy/fnos/data/
+deploy/fnos/output/
+deploy/fnos/team-assets/
 
 python/
 packages/

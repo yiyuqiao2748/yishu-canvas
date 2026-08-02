@@ -13,6 +13,7 @@ services:
       YISHU_OUTPUT_DIR: /app/output
     volumes:
       - ./data:/app/data
+      - ./api-env:/app/API
       - ./team-assets:/app/assets/team-assets
       - ./output:/app/output
     ports:

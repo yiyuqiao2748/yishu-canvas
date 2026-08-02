@@ -650,6 +650,22 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("html.studio-scale-managed body.show-recommend-mode .provider-onboarding-card.recommend-inline-card", api_settings_css)
         self.assertIn("html.studio-scale-managed body.show-recommend-mode .recommend-card.recommend-platform-card", api_settings_css)
 
+    def test_fnos_deploy_persists_runtime_api_env(self):
+        root = Path(__file__).resolve().parents[1]
+        compose = (root / "deploy" / "fnos" / "docker-compose.yml").read_text(encoding="utf-8")
+        dockerignore = (root / ".dockerignore").read_text(encoding="utf-8")
+
+        self.assertIn("./api-env:/app/API", compose)
+        self.assertIn("./data:/app/data", compose)
+        self.assertIn("./output:/app/output", compose)
+        self.assertNotIn("./:/app", compose)
+        self.assertIn("deploy/fnos/api-env/", dockerignore)
+        self.assertIn("deploy/fnos/.env", dockerignore)
+        self.assertIn("deploy/fnos/data/", dockerignore)
+        self.assertIn("deploy/fnos/output/", dockerignore)
+        self.assertIn("deploy/fnos/team-assets/", dockerignore)
+        self.assertIn("API/.env", dockerignore)
+
     def test_cloud_canvas_kind_is_per_canvas_and_defaults_classic(self):
         root = Path(__file__).resolve().parents[1]
         script = (root / "static" / "js" / "canvas-list.js").read_text(encoding="utf-8")

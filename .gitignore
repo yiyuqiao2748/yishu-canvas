@@ -10,6 +10,12 @@ data/prompt_libraries.json
 data/projects.json
 data/canvases/
 data/agent/
+API/.env
+deploy/fnos/.env
+deploy/fnos/api-env/
+deploy/fnos/data/
+deploy/fnos/output/
+deploy/fnos/team-assets/
 assets/team-assets/
 tmp/
 output/
