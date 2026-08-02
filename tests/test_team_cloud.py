@@ -887,7 +887,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn(".canvas-secondary-actions.is-open .secondary-extra", canvas_css)
         self.assertIn('id="secondaryActionsToggle"', canvas_html)
         self.assertIn('id="agentToggle"', canvas_html)
-        self.assertIn('/static/css/agent-panel.css?v=2026.08.02.1', canvas_html)
+        self.assertIn('/static/css/agent-panel.css?v=2026.08.02.2', canvas_html)
         self.assertIn('/static/js/canvas-agent-classic-bridge.js?v=2026.07.30.1', canvas_html)
         self.assertIn("secondaryActionsToggle", (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8"))
         self.assertIn('onclick="addLoopNode()"', canvas_html)
@@ -971,8 +971,8 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         smart_html = (root / "static" / "smart-canvas.html").read_text(encoding="utf-8")
         canvas_html = (root / "static" / "canvas.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/js/canvas-agent-panel.js?v=2026.08.02.1", smart_html)
-        self.assertIn("/static/css/agent-panel.css?v=2026.08.02.1", smart_html)
+        self.assertIn("/static/js/canvas-agent-panel.js?v=2026.08.02.2", smart_html)
+        self.assertIn("/static/css/agent-panel.css?v=2026.08.02.2", smart_html)
         self.assertIn("/api/canvas-agent/suggest", panel_script)
         self.assertIn("/api/canvas-agent/feedback", panel_script)
         self.assertIn("teamCloudAuthHeaders", panel_script)
@@ -996,6 +996,30 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function resolveProviderForModel", executor_script)
         self.assertIn("node.text = text;", executor_script)
         self.assertIn("setNodePromptText(node.id, plan.prompt_text);", executor_script)
+
+    def test_canvas_agent_renders_workflow_plan_cards_and_feedback_sync_state(self):
+        root = Path(__file__).resolve().parents[1]
+        panel_script = (root / "static" / "js" / "canvas-agent-panel.js").read_text(encoding="utf-8")
+        panel_css = (root / "static" / "css" / "agent-panel.css").read_text(encoding="utf-8")
+
+        self.assertIn("function renderAgentPlanCard", panel_script)
+        self.assertIn("agent-plan-card workflow", panel_script)
+        self.assertIn("plan.cards.forEach", panel_script)
+        self.assertIn("agentProviderLabel(plan.provider_id || '')", panel_script)
+        self.assertIn("'custom-api': 'custom-api'", panel_script)
+        self.assertIn("if (isWorkflow && !stepsRendered)", panel_script)
+        self.assertIn("nano-banana-2", panel_script)
+        self.assertIn("create_workflow", panel_script)
+        self.assertIn("function setFeedbackSyncStatus", panel_script)
+        self.assertIn("agent-feedback-sync", panel_script)
+        self.assertIn("setFeedbackSyncStatus(ratingDiv, 'syncing')", panel_script)
+        self.assertIn("setFeedbackSyncStatus(ratingDiv, 'synced', sync)", panel_script)
+        self.assertIn(".agent-plan-card", panel_css)
+        self.assertIn(".agent-plan-step", panel_css)
+        self.assertIn("text-overflow: ellipsis;", panel_css)
+        self.assertIn("min-width: 0;", panel_css)
+        self.assertIn(".agent-feedback-sync.synced", panel_css)
+        self.assertIn(".agent-feedback-sync.local", panel_css)
 
 
 if __name__ == "__main__":

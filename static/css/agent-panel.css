@@ -467,6 +467,7 @@ body:not(.theme-dark) #agentPanel {
 .agent-rating-bar {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 4px;
     padding: 4px 0;
     margin-top: 2px;
@@ -492,6 +493,91 @@ body:not(.theme-dark) #agentPanel {
     font-size: 10px;
     color: var(--muted, #8f9aab);
     margin-left: 4px;
+}
+
+.agent-plan-card {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(148,163,184,.22);
+    background:
+        linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.03)),
+        var(--agent-card);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+}
+.agent-plan-card.workflow {
+    border-color: rgba(59,130,246,.34);
+    background:
+        linear-gradient(135deg, rgba(59,130,246,.14), rgba(34,197,94,.07)),
+        var(--agent-card);
+}
+.agent-plan-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--text, #e5e9f0);
+}
+.agent-plan-head span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.agent-plan-head em {
+    min-width: 0;
+    flex-shrink: 0;
+    max-width: 58%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 700;
+    color: var(--muted, #8f9aab);
+}
+.agent-plan-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+.agent-plan-step {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 6px 8px;
+    align-items: start;
+    padding: 7px 8px;
+    border: 1px solid rgba(148,163,184,.14);
+    border-radius: 8px;
+    background: rgba(2,6,23,.18);
+}
+.agent-plan-step strong {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(59,130,246,.18);
+    color: #93c5fd;
+    font-size: 10px;
+}
+.agent-plan-step span {
+    min-width: 0;
+    color: var(--text, #e5e9f0);
+    font-size: 11px;
+    font-weight: 700;
+}
+.agent-plan-step small {
+    grid-column: 2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted, #8f9aab);
+    font-size: 10px;
 }
 
 /* --- 反馈按钮 --- */
@@ -522,6 +608,33 @@ body:not(.theme-dark) #agentPanel {
     border-color: #22c55e;
     color: #22c55e;
     background: rgba(34,197,94,.1);
+}
+.agent-feedback-sync {
+    margin-left: auto;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid rgba(148,163,184,.2);
+    background: rgba(15,23,42,.28);
+    color: var(--muted, #8f9aab);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+.agent-feedback-sync.syncing {
+    color: #93c5fd;
+    border-color: rgba(59,130,246,.34);
+    background: rgba(59,130,246,.12);
+}
+.agent-feedback-sync.synced {
+    color: #86efac;
+    border-color: rgba(34,197,94,.36);
+    background: rgba(34,197,94,.12);
+}
+.agent-feedback-sync.local,
+.agent-feedback-sync.auth {
+    color: #fbbf24;
+    border-color: rgba(251,191,36,.35);
+    background: rgba(251,191,36,.1);
 }
 
 /* --- 成功案例卡片 --- */

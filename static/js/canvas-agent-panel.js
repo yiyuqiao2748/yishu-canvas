@@ -282,9 +282,9 @@
     window.hideAgentPanel = hidePanel;
 
     // --- 消息管理 ---
-    function addMessage(role, content, showRating) {
+    function addMessage(role, content, showRating, plan) {
         messages.push({ role: role, content: content, timestamp: Date.now() });
-        renderMessage(role, content, showRating);
+        renderMessage(role, content, showRating, plan);
         scrollToBottom();
     }
 
@@ -303,7 +303,7 @@
             });
     }
 
-    function renderMessage(role, content, showRating) {
+    function renderMessage(role, content, showRating, plan) {
         if (!chatMessages) return;
 
         var msgDiv = document.createElement('div');
@@ -342,6 +342,11 @@
             bubble.appendChild(tag);
         }
 
+        if (role === 'assistant' && plan) {
+            var planCard = renderAgentPlanCard(plan);
+            if (planCard) bubble.appendChild(planCard);
+        }
+
         // 评分栏
         if (showRating !== false && role === 'assistant') {
             var ratingDiv = document.createElement('div');
@@ -354,7 +359,7 @@
                     star.textContent = '\u2605';
                     star.setAttribute('title', starValue + ' 星');
                     star.addEventListener('click', function() {
-                        submitRating(starValue);
+                        submitRating(starValue, plan, ratingDiv);
                         ratingDiv.querySelectorAll('.agent-star').forEach(function(s, idx) {
                             s.classList.toggle('active', idx < starValue);
                         });
@@ -366,6 +371,10 @@
             label.className = 'agent-rating-label';
             label.textContent = '评分';
             ratingDiv.appendChild(label);
+            var syncStatus = document.createElement('span');
+            syncStatus.className = 'agent-feedback-sync idle';
+            syncStatus.textContent = '待反馈';
+            ratingDiv.appendChild(syncStatus);
 
             // 采纳/拒绝按钮
             var fbBtns = document.createElement('div');
@@ -376,21 +385,23 @@
             acceptBtn.addEventListener('click', function() {
                 acceptBtn.classList.add('accepted');
                 acceptBtn.disabled = true;
+                setFeedbackSyncStatus(ratingDiv, 'syncing');
                 postAgentFeedback({
                     rating: 5,
                     accepted: true,
-                    action_taken: 'create_prompt',
+                    action_taken: plan && plan.action ? plan.action : 'create_prompt',
                     session_id: currentSessionId,
                     result: {}
                 }).then(function(sync) {
                     acceptBtn.textContent = syncLabel(sync);
                     acceptBtn.title = syncTitle(sync);
+                    setFeedbackSyncStatus(ratingDiv, 'synced', sync);
                 });
                 if (window.AgentLearning) {
                     window.AgentLearning.processFeedback({
                         rating: 5,
                         accepted: true,
-                        action: 'create_prompt',
+                        action: plan && plan.action ? plan.action : 'create_prompt',
                         sessionId: currentSessionId
                     });
                     updateSkillsPanel();
@@ -401,21 +412,23 @@
             rejectBtn.textContent = '\u{1F44E} 拒绝';
             rejectBtn.addEventListener('click', function() {
                 rejectBtn.disabled = true;
+                setFeedbackSyncStatus(ratingDiv, 'syncing');
                 postAgentFeedback({
                     rating: 1,
                     accepted: false,
-                    action_taken: 'create_prompt',
+                    action_taken: plan && plan.action ? plan.action : 'create_prompt',
                     session_id: currentSessionId,
                     result: {}
                 }).then(function(sync) {
                     rejectBtn.textContent = syncLabel(sync);
                     rejectBtn.title = syncTitle(sync);
+                    setFeedbackSyncStatus(ratingDiv, 'synced', sync);
                 });
                 if (window.AgentLearning) {
                     window.AgentLearning.processFeedback({
                         rating: 1,
                         accepted: false,
-                        action: 'create_prompt',
+                        action: plan && plan.action ? plan.action : 'create_prompt',
                         sessionId: currentSessionId
                     });
                     updateSkillsPanel();
@@ -429,6 +442,70 @@
 
         msgDiv.appendChild(bubble);
         chatMessages.appendChild(msgDiv);
+    }
+
+    function renderAgentPlanCard(plan) {
+        if (!plan || plan.action === 'chat') return null;
+        var isWorkflow = plan.action === 'create_workflow';
+        var card = document.createElement('div');
+        card.className = isWorkflow ? 'agent-plan-card workflow' : 'agent-plan-card';
+
+        var actionNames = {
+            create_prompt: '提示词卡片',
+            optimize_prompt: '优化提示词',
+            suggest_params: '参数建议',
+            create_workflow: '工作流计划'
+        };
+        var route = plan.provider_id || plan.model
+            ? agentProviderLabel(plan.provider_id || '') + (plan.model ? ' · ' + plan.model : '')
+            : 'custom-api · nano-banana-2';
+        if (plan.fallback_used) route = 'Agnes AI 兜底' + (plan.model ? ' · ' + plan.model : '');
+
+        card.innerHTML =
+            '<div class="agent-plan-head">' +
+                '<span>' + escapeAgentHtml(actionNames[plan.action] || plan.action) + '</span>' +
+                '<em>' + escapeAgentHtml(route) + '</em>' +
+            '</div>';
+
+        if (Array.isArray(plan.cards) && plan.cards.length) {
+            var steps = document.createElement('div');
+            steps.className = 'agent-plan-steps';
+            var stepsRendered = false;
+            plan.cards.forEach(function(step, index) {
+                var item = document.createElement('div');
+                item.className = 'agent-plan-step';
+                var label = step.label || step.title || step.type || ('步骤 ' + (index + 1));
+                var detail = step.text || step.content || step.type || '';
+                item.innerHTML =
+                    '<strong>' + (index + 1) + '</strong>' +
+                    '<span>' + escapeAgentHtml(label) + '</span>' +
+                    (detail && detail !== label ? '<small>' + escapeAgentHtml(String(detail).slice(0, 80)) + '</small>' : '');
+                steps.appendChild(item);
+                stepsRendered = true;
+            });
+            if (isWorkflow && !stepsRendered) {
+                steps.appendChild(renderFallbackPlanStep(plan));
+            }
+            card.appendChild(steps);
+        } else if (isWorkflow) {
+            var fallbackSteps = document.createElement('div');
+            fallbackSteps.className = 'agent-plan-steps';
+            fallbackSteps.appendChild(renderFallbackPlanStep(plan));
+            card.appendChild(fallbackSteps);
+        }
+
+        return card;
+    }
+
+    function renderFallbackPlanStep(plan) {
+        var item = document.createElement('div');
+        item.className = 'agent-plan-step';
+        var detail = plan.prompt_text || plan.reply || '确认需求后创建提示词和循环控制节点';
+        item.innerHTML =
+            '<strong>1</strong>' +
+            '<span>工作流步骤</span>' +
+            '<small>' + escapeAgentHtml(String(detail).slice(0, 80)) + '</small>';
+        return item;
     }
 
     function scrollToBottom() {
@@ -474,7 +551,7 @@
             hideThinking();
 
             if (plan && plan.reply) {
-                addMessage('assistant', plan.reply, true);
+                addMessage('assistant', plan.reply, true, plan);
             } else {
                 addMessage('assistant', '\u26A0\uFE0F 未能解析你的意图，请换个方式描述。', true);
                 return;
@@ -509,7 +586,7 @@
                 var heuristicPlan = window.CanvasAgent
                     ? window.CanvasAgent.heuristicParse(text)
                     : { action: 'chat', reply: '\u26A0\uFE0F AI 服务暂时不可用。你可以：\n\u2022 手动创建提示词卡片\n\u2022 在 Composer 中直接输入提示词\n\u2022 稍后再试' };
-                addMessage('assistant', heuristicPlan.reply, true);
+                addMessage('assistant', heuristicPlan.reply, true, heuristicPlan);
                 if (heuristicPlan.action !== 'chat' && window.CanvasAgent) {
                     await window.CanvasAgent.executePlan(heuristicPlan);
                 }
@@ -605,7 +682,7 @@
     function agentProviderLabel(providerId) {
         var labels = {
             'modelscope': 'ModelScope',
-            'custom-api': 'grsai',
+            'custom-api': 'custom-api',
             'agnes-ai': 'Agnes AI',
             'runninghub': 'RunningHub'
         };
@@ -712,11 +789,14 @@
     }
 
     // --- 评分 ---
-    function submitRating(rating) {
+    function submitRating(rating, plan, ratingBar) {
+        var latestRatingBar = ratingBar || (chatMessages
+            ? chatMessages.querySelector('.agent-msg.assistant:last-child .agent-rating-bar')
+            : null);
         var payload = {
             rating: rating,
             accepted: rating >= 3,
-            action_taken: 'manual_rating',
+            action_taken: plan && plan.action ? plan.action : 'manual_rating',
             session_id: currentSessionId,
             result: {}
         };
@@ -724,12 +804,15 @@
             window.AgentLearning.processFeedback({
                 rating: rating,
                 accepted: rating >= 3,
-                action: 'manual_rating',
+                action: plan && plan.action ? plan.action : 'manual_rating',
                 sessionId: currentSessionId
             });
             updateSkillsPanel();
         }
-        postAgentFeedback(payload);
+        if (latestRatingBar) setFeedbackSyncStatus(latestRatingBar, 'syncing');
+        postAgentFeedback(payload).then(function(sync) {
+            if (latestRatingBar) setFeedbackSyncStatus(latestRatingBar, 'synced', sync);
+        });
         if (typeof toast === 'function') {
             toast('\u2B50 感谢评分！Agent 已记录你的反馈。');
         }
@@ -760,6 +843,24 @@
         if (sync && sync.synced) return '反馈已同步到账号记忆';
         if (sync && sync.authRequired) return '未登录，反馈只保存在本地记忆';
         return '反馈同步失败，已保存在本地记忆';
+    }
+
+    function setFeedbackSyncStatus(container, state, sync) {
+        if (!container) return;
+        var status = container.querySelector('.agent-feedback-sync');
+        if (!status) return;
+        status.className = 'agent-feedback-sync ' + state;
+        if (state === 'syncing') {
+            status.textContent = '同步中';
+            status.title = '正在同步反馈';
+            return;
+        }
+        status.textContent = syncLabel(sync);
+        status.title = syncTitle(sync);
+        if (!sync || !sync.synced) {
+            status.classList.remove('synced');
+            status.classList.add(sync && sync.authRequired ? 'auth' : 'local');
+        }
     }
 
     // --- 更新技能面板 ---
