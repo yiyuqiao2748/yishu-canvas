@@ -16053,6 +16053,14 @@ def _agent_provider_supports_model(provider, model_key, model):
     models = [str(item or "").strip() for item in (provider.get(model_key) or []) if str(item or "").strip()]
     return bool(model and model in models)
 
+def _agent_provider_has_key(provider):
+    if not isinstance(provider, dict):
+        return False
+    provider_id = str(provider.get("id") or "").strip().lower()
+    if provider_id == "modelscope":
+        return bool(modelscope_api_key())
+    return bool(strip_auth_scheme(provider.get("api_key") or provider_env_key_value(provider_id)))
+
 def _agent_first_provider_model(providers, provider_id, model_key):
     provider = _agent_provider_from_list(providers, provider_id)
     if not provider:
@@ -16066,7 +16074,7 @@ def _agent_route_payload(provider_id, model, fallback_used=False):
         "fallback_used": bool(fallback_used),
     }
 
-def resolve_agent_model_route(action, context=None, providers=None):
+def resolve_agent_model_route(action, context=None, providers=None, require_credentials=False):
     providers = providers if providers is not None else load_api_providers()
     ctx = context if isinstance(context, dict) else {}
     action = str(action or "chat").strip()
@@ -16090,14 +16098,27 @@ def resolve_agent_model_route(action, context=None, providers=None):
     requested_provider = _agent_context_value(ctx, "llm_provider", "chat_provider") or AGENT_CHAT_PROVIDER
     requested_model = _agent_context_value(ctx, "llm_model", "chat_model") or AGENT_CHAT_MODEL
     provider = _agent_provider_from_list(providers, requested_provider)
+    primary_missing = f"Agent primary chat provider {requested_provider}/{requested_model} is not configured."
     if _agent_provider_supports_model(provider, "chat_models", requested_model):
-        return _agent_route_payload(requested_provider, requested_model, False)
+        primary_missing = f"Agent primary chat provider {requested_provider}/{requested_model} has no API key configured."
+        if require_credentials and not _agent_provider_has_key(provider):
+            pass
+        else:
+            return _agent_route_payload(requested_provider, requested_model, False)
     fallback_provider = _agent_provider_from_list(providers, AGENT_FALLBACK_PROVIDER)
     if _agent_provider_supports_model(fallback_provider, "chat_models", AGENT_FALLBACK_CHAT_MODEL):
+        if require_credentials and not _agent_provider_has_key(fallback_provider):
+            raise HTTPException(status_code=400, detail=f"{primary_missing} Agnes fallback is also missing an API key.")
         return _agent_route_payload(AGENT_FALLBACK_PROVIDER, AGENT_FALLBACK_CHAT_MODEL, True)
     first_fallback = _agent_first_provider_model(providers, AGENT_FALLBACK_PROVIDER, "chat_models")
     if first_fallback:
+        if require_credentials and not _agent_provider_has_key(fallback_provider):
+            raise HTTPException(status_code=400, detail=f"{primary_missing} Agnes fallback is also missing an API key.")
         return _agent_route_payload(AGENT_FALLBACK_PROVIDER, first_fallback, True)
+    if require_credentials:
+        raise HTTPException(status_code=400, detail=primary_missing)
+    if _agent_provider_supports_model(provider, "chat_models", requested_model):
+        return _agent_route_payload(requested_provider, requested_model, False)
     raise HTTPException(status_code=400, detail="未配置 Agent 聊天模型，请配置 modelscope 或 agnes-ai 聊天模型。")
 
 def _safe_agent_text(value, max_len=3000):
@@ -16330,7 +16351,7 @@ async def canvas_agent_suggest(payload: CanvasAgentSuggestRequest, request: Requ
     if not isinstance(history, list):
         history = []
     history_messages = _sanitize_agent_messages(payload.messages) or _agent_history_messages(user_id)
-    chat_route = resolve_agent_model_route("chat", ctx)
+    chat_route = resolve_agent_model_route("chat", ctx, require_credentials=True)
 
     try:
         # 复用现有 LLM 基础设施
@@ -16356,6 +16377,7 @@ async def canvas_agent_suggest(payload: CanvasAgentSuggestRequest, request: Requ
             fallback_route = resolve_agent_model_route(
                 "chat",
                 {"chat_provider": AGENT_FALLBACK_PROVIDER, "chat_model": AGENT_FALLBACK_CHAT_MODEL},
+                require_credentials=True,
             )
             fallback_route["fallback_used"] = True
             chat_route = fallback_route

@@ -413,6 +413,31 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(route["model"], "Qwen/Qwen3-235B-A22B")
         self.assertFalse(route["fallback_used"])
 
+    def test_agent_chat_route_requires_credentials_before_fallback(self):
+        providers = [
+            {"id": "modelscope", "enabled": True, "chat_models": ["Qwen/Qwen3-235B-A22B"]},
+            {"id": "agnes-ai", "enabled": True, "chat_models": ["agnes-2.5-flash"]},
+        ]
+
+        with self.assertRaises(main.HTTPException) as raised:
+            main.resolve_agent_model_route("chat", {}, providers, require_credentials=True)
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIn("modelscope/Qwen/Qwen3-235B-A22B", str(raised.exception.detail))
+        self.assertIn("Agnes fallback is also missing an API key", str(raised.exception.detail))
+
+    def test_agent_chat_route_uses_agnes_fallback_only_with_key(self):
+        providers = [
+            {"id": "modelscope", "enabled": True, "chat_models": ["Qwen/Qwen3-235B-A22B"]},
+            {"id": "agnes-ai", "enabled": True, "api_key": "sk-test", "chat_models": ["agnes-2.5-flash"]},
+        ]
+
+        route = main.resolve_agent_model_route("chat", {}, providers, require_credentials=True)
+
+        self.assertEqual(route["provider_id"], "agnes-ai")
+        self.assertEqual(route["model"], "agnes-2.5-flash")
+        self.assertTrue(route["fallback_used"])
+
     async def test_cleanup_preserves_media_when_json_is_unreadable(self):
         path, url = self.generated_file()
         (self.canvases / "being-written.json").write_text("{", encoding="utf-8")
