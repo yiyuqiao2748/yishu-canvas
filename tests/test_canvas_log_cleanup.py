@@ -377,6 +377,42 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["removed_files"], [path.name])
         self.assertEqual(json.loads(self.history.read_text(encoding="utf-8")), [])
 
+    def test_agent_plain_text_reply_is_preserved(self):
+        plan = main._normalize_agent_plan("我可以继续帮你优化提示词。", "帮我看看")
+
+        self.assertEqual(plan["action"], "chat")
+        self.assertEqual(plan["reply"], "我可以继续帮你优化提示词。")
+        self.assertEqual(plan["cards"], [])
+
+    def test_agent_default_routes_avoid_unverified_runninghub_fallback(self):
+        providers = [
+            {"id": "runninghub", "enabled": True, "chat_models": []},
+            {"id": "agnes-ai", "enabled": True, "chat_models": ["agnes-2.5-flash"]},
+            {"id": "custom-api", "enabled": True, "image_models": ["nano-banana-2", "nano-banana-pro"]},
+        ]
+
+        chat_route = main.resolve_agent_model_route("chat", {}, providers)
+        image_route = main.resolve_agent_model_route("generate_image", {}, providers)
+
+        self.assertEqual(chat_route["provider_id"], "agnes-ai")
+        self.assertEqual(chat_route["model"], "agnes-2.5-flash")
+        self.assertTrue(chat_route["fallback_used"])
+        self.assertNotEqual(chat_route["provider_id"], "runninghub")
+        self.assertEqual(image_route["provider_id"], "custom-api")
+        self.assertEqual(image_route["model"], "nano-banana-2")
+
+    def test_agent_chat_route_prefers_modelscope_when_available(self):
+        providers = [
+            {"id": "modelscope", "enabled": True, "chat_models": ["Qwen/Qwen3-235B-A22B"]},
+            {"id": "agnes-ai", "enabled": True, "chat_models": ["agnes-2.5-flash"]},
+        ]
+
+        route = main.resolve_agent_model_route("chat", {"model": "nano-banana-2"}, providers)
+
+        self.assertEqual(route["provider_id"], "modelscope")
+        self.assertEqual(route["model"], "Qwen/Qwen3-235B-A22B")
+        self.assertFalse(route["fallback_used"])
+
     async def test_cleanup_preserves_media_when_json_is_unreadable(self):
         path, url = self.generated_file()
         (self.canvases / "being-written.json").write_text("{", encoding="utf-8")

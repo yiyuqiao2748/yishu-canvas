@@ -12,7 +12,7 @@
     var isThinking = false;
 
     // --- DOM 引用 ---
-    var panel, chatMessages, chatInput, sendBtn, toggleBtn;
+    var panel, chatMessages, chatInput, sendBtn, toggleBtn, agentModelLabel;
     var levelBadge, levelTitle, levelXp, levelBarFill;
     var statsTotalTasks, statsSuccessRate, statsAvgRating;
     var prefEngine, prefModel, prefRatio;
@@ -38,6 +38,7 @@
         chatInput = document.getElementById('agentChatInput');
         sendBtn = document.getElementById('agentSendBtn');
         toggleBtn = document.getElementById('agentToggle');
+        agentModelLabel = document.getElementById('agentModelLabel');
         levelBadge = document.getElementById('agentLevelBadge');
         levelTitle = document.getElementById('agentLevelTitle');
         levelXp = document.getElementById('agentLevelXp');
@@ -285,6 +286,21 @@
         messages.push({ role: role, content: content, timestamp: Date.now() });
         renderMessage(role, content, showRating);
         scrollToBottom();
+    }
+
+    function recentAgentMessagesForBackend() {
+        return messages
+            .slice(0, -1)
+            .slice(-10)
+            .map(function(item) {
+                return {
+                    role: item.role,
+                    content: String(item.content || '').slice(0, 1200)
+                };
+            })
+            .filter(function(item) {
+                return (item.role === 'user' || item.role === 'assistant') && item.content;
+            });
     }
 
     function renderMessage(role, content, showRating) {
@@ -565,7 +581,8 @@
                 headers: teamCloudAuthHeaders(),
                 body: JSON.stringify({
                     message: message,
-                    context: context
+                    context: context,
+                    messages: recentAgentMessagesForBackend()
                 })
             });
 
@@ -576,12 +593,37 @@
             }
 
             var data = await response.json();
+            updateAgentModelLabel(data.plan || {}, data.model || '');
             if (data.plan) return data.plan;
             return parseAgentResponse(data.text || '', message);
         } catch (e) {
             console.warn('[AgentPanel] API call failed, using heuristic:', e.message);
             throw e;
         }
+    }
+
+    function agentProviderLabel(providerId) {
+        var labels = {
+            'modelscope': 'ModelScope',
+            'custom-api': 'grsai',
+            'agnes-ai': 'Agnes AI',
+            'runninghub': 'RunningHub'
+        };
+        return labels[providerId] || providerId || '未选择';
+    }
+
+    function updateAgentModelLabel(plan, fallbackModel) {
+        if (!agentModelLabel) return;
+        var providerId = plan.provider_id || '';
+        var model = plan.model || fallbackModel || '';
+        var text = providerId || model
+            ? agentProviderLabel(providerId) + (model ? ' · ' + model : '')
+            : '模型待连接';
+        if (plan.fallback_used) {
+            text = 'Agnes AI 兜底' + (model ? ' · ' + model : '');
+        }
+        agentModelLabel.textContent = text;
+        agentModelLabel.title = text;
     }
 
     /**

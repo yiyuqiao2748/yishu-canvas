@@ -15996,6 +15996,17 @@ AGENT_ENGINE_SUGGESTIONS = {"api", "volcengine", "modelscope", "comfy", "running
 AGENT_RATIOS = {"auto", "智能比例", "1:1", "16:9", "9:16", "4:3", "3:4", "custom"}
 AGENT_RESOLUTIONS = {"", "auto", "1K", "2K", "4K"}
 AGENT_MAX_CARDS = 8
+AGENT_CHAT_PROVIDER = os.getenv("AGENT_CHAT_PROVIDER", "modelscope")
+AGENT_CHAT_MODEL = os.getenv("AGENT_CHAT_MODEL", MODELSCOPE_DEFAULT_CHAT_MODEL)
+AGENT_IMAGE_PROVIDER = os.getenv("AGENT_IMAGE_PROVIDER", "custom-api")
+AGENT_IMAGE_MODEL = os.getenv("AGENT_IMAGE_MODEL", "nano-banana-2")
+AGENT_IMAGE_PRO_MODEL = os.getenv("AGENT_IMAGE_PRO_MODEL", "nano-banana-pro")
+AGENT_FALLBACK_PROVIDER = os.getenv("AGENT_FALLBACK_PROVIDER", "agnes-ai")
+AGENT_FALLBACK_CHAT_MODEL = os.getenv("AGENT_FALLBACK_CHAT_MODEL", "agnes-2.5-flash")
+AGENT_IMAGE_ACTIONS = {"generate_image", "create_image", "image"}
+AGENT_IMAGE_KEYWORDS = (
+    "生图", "生成图片", "生成一张", "画一张", "出图", "海报", "插画", "图片", "照片", "视觉", "设计图",
+)
 
 def _ensure_agent_dir():
     os.makedirs(AGENT_DATA_DIR, exist_ok=True)
@@ -16019,6 +16030,75 @@ def _save_agent_json(user_id, filename, data):
     path = _agent_user_file(user_id, filename)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+def _agent_context_value(context, *names):
+    if not isinstance(context, dict):
+        return ""
+    for name in names:
+        value = context.get(name)
+        if value:
+            return _safe_agent_text(value, 200)
+    return ""
+
+def _agent_provider_from_list(providers, provider_id):
+    target = str(provider_id or "").strip().lower()
+    if not target:
+        return None
+    return next((item for item in (providers or []) if str(item.get("id") or "").strip().lower() == target and item.get("enabled", True)), None)
+
+def _agent_provider_supports_model(provider, model_key, model):
+    if not isinstance(provider, dict):
+        return False
+    model = str(model or "").strip()
+    models = [str(item or "").strip() for item in (provider.get(model_key) or []) if str(item or "").strip()]
+    return bool(model and model in models)
+
+def _agent_first_provider_model(providers, provider_id, model_key):
+    provider = _agent_provider_from_list(providers, provider_id)
+    if not provider:
+        return ""
+    return next((str(item or "").strip() for item in (provider.get(model_key) or []) if str(item or "").strip()), "")
+
+def _agent_route_payload(provider_id, model, fallback_used=False):
+    return {
+        "provider_id": str(provider_id or "").strip(),
+        "model": str(model or "").strip(),
+        "fallback_used": bool(fallback_used),
+    }
+
+def resolve_agent_model_route(action, context=None, providers=None):
+    providers = providers if providers is not None else load_api_providers()
+    ctx = context if isinstance(context, dict) else {}
+    action = str(action or "chat").strip()
+
+    if action in AGENT_IMAGE_ACTIONS:
+        requested_provider = _agent_context_value(ctx, "image_provider", "provider_id", "provider") or AGENT_IMAGE_PROVIDER
+        requested_model = _agent_context_value(ctx, "image_model", "model") or AGENT_IMAGE_MODEL
+        provider = _agent_provider_from_list(providers, requested_provider)
+        if _agent_provider_supports_model(provider, "image_models", requested_model):
+            return _agent_route_payload(requested_provider, requested_model, False)
+        provider = _agent_provider_from_list(providers, AGENT_IMAGE_PROVIDER)
+        if _agent_provider_supports_model(provider, "image_models", AGENT_IMAGE_MODEL):
+            return _agent_route_payload(AGENT_IMAGE_PROVIDER, AGENT_IMAGE_MODEL, False)
+        if _agent_provider_supports_model(provider, "image_models", AGENT_IMAGE_PRO_MODEL):
+            return _agent_route_payload(AGENT_IMAGE_PROVIDER, AGENT_IMAGE_PRO_MODEL, False)
+        fallback_image = _agent_first_provider_model(providers, AGENT_FALLBACK_PROVIDER, "image_models")
+        if fallback_image:
+            return _agent_route_payload(AGENT_FALLBACK_PROVIDER, fallback_image, True)
+        raise HTTPException(status_code=400, detail="未配置 Agent 生图模型，请配置 custom-api / nano-banana-2。")
+
+    requested_provider = _agent_context_value(ctx, "llm_provider", "chat_provider") or AGENT_CHAT_PROVIDER
+    requested_model = _agent_context_value(ctx, "llm_model", "chat_model") or AGENT_CHAT_MODEL
+    provider = _agent_provider_from_list(providers, requested_provider)
+    if _agent_provider_supports_model(provider, "chat_models", requested_model):
+        return _agent_route_payload(requested_provider, requested_model, False)
+    fallback_provider = _agent_provider_from_list(providers, AGENT_FALLBACK_PROVIDER)
+    if _agent_provider_supports_model(fallback_provider, "chat_models", AGENT_FALLBACK_CHAT_MODEL):
+        return _agent_route_payload(AGENT_FALLBACK_PROVIDER, AGENT_FALLBACK_CHAT_MODEL, True)
+    first_fallback = _agent_first_provider_model(providers, AGENT_FALLBACK_PROVIDER, "chat_models")
+    if first_fallback:
+        return _agent_route_payload(AGENT_FALLBACK_PROVIDER, first_fallback, True)
+    raise HTTPException(status_code=400, detail="未配置 Agent 聊天模型，请配置 modelscope 或 agnes-ai 聊天模型。")
 
 def _safe_agent_text(value, max_len=3000):
     if value is None:
@@ -16062,6 +16142,20 @@ def _normalize_agent_cards(cards):
 
 def _normalize_agent_plan(text, fallback_message):
     parsed = _extract_agent_json(text)
+    if not parsed:
+        reply = _safe_agent_text(text, 1200)
+        return {
+            "action": "chat",
+            "prompt_text": "",
+            "engine_suggestion": "",
+            "model_suggestion": "",
+            "params": {},
+            "cards": [],
+            "reply": reply or "已收到你的需求，我先整理成可执行的画布操作。",
+            "provider_id": "",
+            "model": "",
+            "fallback_used": False,
+        }
     action = _safe_agent_text(parsed.get("action"), 40)
     if action not in AGENT_ACTIONS:
         action = "chat"
@@ -16086,6 +16180,9 @@ def _normalize_agent_plan(text, fallback_message):
         "params": cleaned_params,
         "cards": _normalize_agent_cards(parsed.get("cards")),
         "reply": _safe_agent_text(parsed.get("reply"), 1200),
+        "provider_id": _safe_agent_text(parsed.get("provider_id"), 80),
+        "model": _safe_agent_text(parsed.get("model"), 160),
+        "fallback_used": bool(parsed.get("fallback_used", False)),
     }
     if not plan["reply"]:
         plan["reply"] = "已收到你的需求，我先整理成可执行的画布操作。"
@@ -16093,18 +16190,71 @@ def _normalize_agent_plan(text, fallback_message):
         plan["prompt_text"] = _safe_agent_text(fallback_message, 3000)
     return plan
 
-def _agent_context_value(context, *names):
-    if not isinstance(context, dict):
-        return ""
-    for name in names:
-        value = context.get(name)
-        if value:
-            return _safe_agent_text(value, 200)
-    return ""
+def _sanitize_agent_messages(messages, limit=10):
+    cleaned = []
+    if not isinstance(messages, list):
+        return cleaned
+    for item in messages[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        role = _safe_agent_text(item.get("role"), 20)
+        content = _safe_agent_text(item.get("content"), 1200)
+        if role in {"user", "assistant"} and content:
+            cleaned.append({"role": role, "content": content})
+    return cleaned
+
+def _agent_history_messages(user_id, limit=10):
+    history = _load_agent_json(user_id, "history.json", [])
+    if not isinstance(history, list):
+        return []
+    messages = []
+    for item in history[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        user_text = _safe_agent_text(item.get("message"), 1200)
+        assistant_text = _safe_agent_text(item.get("reply") or item.get("response"), 1200)
+        if assistant_text.startswith("{"):
+            assistant_text = _normalize_agent_plan(assistant_text, "").get("reply") or assistant_text
+        if user_text:
+            messages.append({"role": "user", "content": user_text})
+        if assistant_text:
+            messages.append({"role": "assistant", "content": assistant_text})
+    return messages[-limit:]
+
+def _agent_recent_replies(history, limit=3):
+    replies = []
+    if not isinstance(history, list):
+        return replies
+    for item in reversed(history):
+        if not isinstance(item, dict):
+            continue
+        reply = _safe_agent_text(item.get("reply") or item.get("response"), 1200)
+        if reply.startswith("{"):
+            reply = _normalize_agent_plan(reply, "").get("reply") or ""
+        if reply:
+            replies.append(reply)
+        if len(replies) >= limit:
+            break
+    return replies
+
+def _agent_reply_needs_retry(reply, history):
+    reply = _safe_agent_text(reply, 1200)
+    if not reply:
+        return False
+    recent = _agent_recent_replies(history, 3)
+    return len(recent) >= 3 and all(item == reply for item in recent)
+
+def _agent_plan_needs_image_route(message, plan):
+    action = str((plan or {}).get("action") or "").strip()
+    if action in AGENT_IMAGE_ACTIONS:
+        return True
+    text = f"{message or ''} {(plan or {}).get('prompt_text') or ''} {(plan or {}).get('reply') or ''}"
+    return any(keyword in text for keyword in AGENT_IMAGE_KEYWORDS)
 
 class CanvasAgentSuggestRequest(BaseModel):
     message: str = Field(min_length=1, max_length=LLM_MESSAGE_MAX_LENGTH)
     context: Dict[str, Any] = Field(default_factory=dict)
+    messages: List[Dict[str, str]] = Field(default_factory=list)
 
 class CanvasAgentFeedbackRequest(BaseModel):
     session_id: str = ""
@@ -16138,6 +16288,9 @@ async def canvas_agent_suggest(payload: CanvasAgentSuggestRequest, request: Requ
     system_prompt += "可用 action：create_prompt, optimize_prompt, suggest_params, create_workflow, chat\n"
     system_prompt += "引擎可选：api, volcengine, modelscope, comfy, runninghub\n"
     system_prompt += "卡片类型可选：prompt, image, loop\n"
+
+    system_prompt += "Agent model routing: chat uses modelscope/Qwen/Qwen3-235B-A22B first; image plans use custom-api/nano-banana-2; Agnes AI is fallback only.\n"
+    system_prompt += "Do not route default Agent work to comfly, runninghub, or gpt-4o-mini unless explicitly verified later.\n"
 
     if level >= 3:
         system_prompt += "你可以创建循环节点和批量工作流。\n"
@@ -16173,40 +16326,80 @@ async def canvas_agent_suggest(payload: CanvasAgentSuggestRequest, request: Requ
             text = _safe_agent_text(item.get("text"), 500)
             user_msg += f"- {node_type} {title}: {text}\n"
 
+    history = _load_agent_json(user_id, "history.json", [])
+    if not isinstance(history, list):
+        history = []
+    history_messages = _sanitize_agent_messages(payload.messages) or _agent_history_messages(user_id)
+    chat_route = resolve_agent_model_route("chat", ctx)
+
     try:
         # 复用现有 LLM 基础设施
-        llm_provider = _agent_context_value(ctx, "llm_provider", "chat_provider") or "comfly"
+        llm_provider = chat_route["provider_id"]
         llm_payload = CanvasLLMRequest(
             provider=llm_provider,
-            model=_agent_context_value(ctx, "llm_model", "chat_model"),
+            model=chat_route["model"],
             team_id=_agent_context_value(ctx, "team_id", "teamId"),
             project_id=_agent_context_value(ctx, "project_id", "projectId"),
             canvas_id=_agent_context_value(ctx, "canvas_id", "canvasId"),
             message=user_msg,
-            messages=[],
+            messages=history_messages,
             images=[],
             videos=[],
             system_prompt=system_prompt,
             ms_model=""
         )
-        result = await canvas_llm(llm_payload, request)
+        try:
+            result = await canvas_llm(llm_payload, request)
+        except HTTPException:
+            if chat_route.get("fallback_used"):
+                raise
+            fallback_route = resolve_agent_model_route(
+                "chat",
+                {"chat_provider": AGENT_FALLBACK_PROVIDER, "chat_model": AGENT_FALLBACK_CHAT_MODEL},
+            )
+            fallback_route["fallback_used"] = True
+            chat_route = fallback_route
+            llm_payload.provider = fallback_route["provider_id"]
+            llm_payload.model = fallback_route["model"]
+            result = await canvas_llm(llm_payload, request)
         text = result.get("text", "")
         plan = _normalize_agent_plan(text, payload.message)
+        if _agent_reply_needs_retry(plan.get("reply"), history):
+            retry_msg = user_msg + "\n\n最近 3 次助手回复完全重复。请换一个角度回答，避免复述欢迎语、能力介绍或上一轮原文。"
+            try:
+                llm_payload.message = retry_msg
+                result = await canvas_llm(llm_payload, request)
+                text = result.get("text", "")
+                plan = _normalize_agent_plan(text, payload.message)
+            except HTTPException:
+                llm_payload.message = user_msg
+        route_for_plan = chat_route
+        if _agent_plan_needs_image_route(payload.message, plan):
+            try:
+                route_for_plan = resolve_agent_model_route("generate_image", ctx)
+            except HTTPException:
+                route_for_plan = chat_route
+        plan["provider_id"] = route_for_plan.get("provider_id") or ""
+        plan["model"] = route_for_plan.get("model") or result.get("model", "")
+        plan["fallback_used"] = bool(route_for_plan.get("fallback_used"))
 
         # 保存到记忆
         memory_entry = {
             "timestamp": now_ms(),
             "message": payload.message,
             "action": plan.get("action", "chat"),
-            "response": text[:500]
+            "reply": plan.get("reply", ""),
+            "response": text[:500],
+            "provider_id": plan.get("provider_id", ""),
+            "model": plan.get("model", ""),
+            "fallback_used": plan.get("fallback_used", False),
         }
-        history = _load_agent_json(user_id, "history.json", [])
         history.append(memory_entry)
         if len(history) > 50:
             history = history[-50:]
         _save_agent_json(user_id, "history.json", history)
 
-        return {"plan": plan, "text": json.dumps(plan, ensure_ascii=False), "model": result.get("model", "")}
+        return {"plan": plan, "text": json.dumps(plan, ensure_ascii=False), "model": plan.get("model") or result.get("model", "")}
     except HTTPException:
         raise
     except Exception as e:
