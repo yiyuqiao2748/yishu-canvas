@@ -438,6 +438,22 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(route["model"], "agnes-2.5-flash")
         self.assertTrue(route["fallback_used"])
 
+    def test_agent_image_route_detection_uses_user_request_not_chat_reply(self):
+        plan = {
+            "action": "chat",
+            "reply": "\u6211\u4f1a\u5e2e\u4f60\u68b3\u7406\u8fd9\u4e2a\u8bbe\u8ba1\u9879\u76ee\u7684\u4e0b\u4e00\u6b65\u3002",
+            "prompt_text": "\u5982\u9700\u751f\u6210\u56fe\u7247\uff0c\u53ef\u4ee5\u518d\u660e\u786e\u63d0\u51fa\u3002",
+        }
+
+        self.assertFalse(main._agent_plan_needs_image_route(
+            "\u8bb0\u4f4f\u6211\u521a\u624d\u8bf4\u7684\u9879\u76ee\u540d\u53eb\u6668\u661f\uff0c\u4e0b\u4e00\u53e5\u53ea\u56de\u7b54\u8fd9\u4e2a\u9879\u76ee\u540d\u662f\u4ec0\u4e48\u3002",
+            plan,
+        ))
+        self.assertTrue(main._agent_plan_needs_image_route(
+            "\u751f\u6210\u4e00\u5f20\u9910\u5385\u5f00\u4e1a\u6d77\u62a5\uff0c\u6696\u8272\u706f\u5149\uff0c\u9002\u5408\u516c\u4f17\u53f7\u9996\u56fe\u3002",
+            {"action": "chat", "reply": "\u597d\u7684\u3002"},
+        ))
+
     async def test_cleanup_preserves_media_when_json_is_unreadable(self):
         path, url = self.generated_file()
         (self.canvases / "being-written.json").write_text("{", encoding="utf-8")

@@ -16269,7 +16269,7 @@ def _agent_plan_needs_image_route(message, plan):
     action = str((plan or {}).get("action") or "").strip()
     if action in AGENT_IMAGE_ACTIONS:
         return True
-    text = f"{message or ''} {(plan or {}).get('prompt_text') or ''} {(plan or {}).get('reply') or ''}"
+    text = str(message or "")
     return any(keyword in text for keyword in AGENT_IMAGE_KEYWORDS)
 
 class CanvasAgentSuggestRequest(BaseModel):
