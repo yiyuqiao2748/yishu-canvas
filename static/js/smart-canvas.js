@@ -918,14 +918,14 @@ async function exportSelectedSmartWorkflow(includeResources=false){
         toast(err.message || '导出工作流失败');
     }
 }
-function insertSmartWorkflowIntoCanvas(imported){
+function insertSmartWorkflowIntoCanvas(imported, targetPoint=null){
     const srcNodes = (imported.nodes || []).filter(Boolean);
     const srcConnections = (imported.connections || []).filter(Boolean);
     if(!canvas || !srcNodes.length) throw new Error('工作流中没有可导入的节点');
     pushUndo();
     const minX = Math.min(...srcNodes.map(n => Number(n.x || 0)));
     const minY = Math.min(...srcNodes.map(n => Number(n.y || 0)));
-    const target = viewportCenter();
+    const target = targetPoint || viewportCenter();
     const dx = target.x - minX;
     const dy = target.y - minY;
     const idMap = new Map();
@@ -5082,7 +5082,30 @@ function itemsForAssetSmartClass(optionId=''){
     });
 }
 function workflowAssetCategories(){
-    return assetCategories('workflow');
+    const builtin = builtinWorkflowCategory();
+    return [builtin, ...assetCategories('workflow')].filter(cat => cat && (!cat.builtin || (cat.items || []).length));
+}
+function builtinWorkflowCategory(){
+    const templates = window.CanvasWorkflowBuilder?.templates?.() || [];
+    return {
+        id:'__builtin_workflows__',
+        name:'内置工作流',
+        type:'workflow',
+        readonly:true,
+        builtin:true,
+        items:templates.map(item => ({
+            id:item.id,
+            name:item.name,
+            url:`builtin:${item.id}`,
+            kind:'builtin-workflow',
+            type:'workflow',
+            templateId:item.id,
+            description:item.description,
+            provider_id:item.provider_id,
+            model:item.model,
+            requiresImage:Boolean(item.requiresImage),
+        }))
+    };
 }
 function assetLibraries(){
     return Array.isArray(assetLibrary.libraries) && assetLibrary.libraries.length ? assetLibrary.libraries : [{id:'default', name:'默认资产库', categories:assetLibrary.categories || []}];
@@ -5590,6 +5613,7 @@ function assetCategoryForMention(){
 }
 function assetMediaKind(item){
     if(!item) return 'image';
+    if(item.kind === 'builtin-workflow') return 'builtin-workflow';
     if(item.kind === 'workflow' || item.type === 'workflow') return 'workflow';
     if(item.kind === 'video' || item.type === 'video') return 'video';
     if(item.kind === 'audio' || item.type === 'audio') return 'audio';
@@ -5606,6 +5630,9 @@ function assetNodeImageFromItem(item, fallbackName='asset'){
         name:item?.name || fallbackName,
         kind:item?.kind || assetMediaKind(item)
     };
+    if(item?.templateId) image.templateId = item.templateId;
+    if(item?.provider_id) image.provider_id = item.provider_id;
+    if(item?.model) image.model = item.model;
     copyMediaSizeFields(item, image);
     if(item?.asset_uris && typeof item.asset_uris === 'object') image.asset_uris = {...item.asset_uris};
     return image;
@@ -5620,7 +5647,7 @@ function assetThumbHtml(item){
     if(kind === 'audio'){
         return `<div class="asset-thumb-wrap media-thumb audio-thumb asset-thumb"><i data-lucide="file-audio"></i><span>${escapeHtml(item.name || 'Audio')}</span></div>`;
     }
-    if(kind === 'workflow'){
+    if(kind === 'workflow' || kind === 'builtin-workflow'){
         return `<div class="asset-thumb-wrap media-thumb workflow-thumb asset-thumb"><i data-lucide="workflow"></i><span>${escapeHtml(item.name || 'Workflow')}</span></div>`;
     }
     // 网格缩略图用较小尺寸 + 懒加载/异步解码：素材多时滚动不再一次性加载解码全部图片。
@@ -5663,13 +5690,15 @@ function renderAssetLibrary(){
     if(assetAddCategoryBtn) assetAddCategoryBtn.disabled = Boolean(smartClass) || teamMode;
     if(assetRenameCategoryBtn) assetRenameCategoryBtn.disabled = !cat || Boolean(smartClass) || teamMode || (localMode && (cat.id === '__root__' || !cat.id));
     assetGrid.innerHTML = items.length ? items.map(item => `
-        <div class="asset-item ${workflowMode ? 'workflow-asset-item' : ''}" draggable="${workflowMode ? 'false' : 'true'}" data-asset-id="${escapeHtml(item.id)}" data-url="${escapeHtml(item.url)}" data-name="${escapeHtml(item.name || 'asset')}" data-kind="${escapeHtml(assetMediaKind(item))}">
+        <div class="asset-item ${workflowMode ? 'workflow-asset-item' : ''}" draggable="${workflowMode && item.kind !== 'builtin-workflow' ? 'false' : 'true'}" data-asset-id="${escapeHtml(item.id)}" data-url="${escapeHtml(item.url)}" data-name="${escapeHtml(item.name || 'asset')}" data-kind="${escapeHtml(item.kind || assetMediaKind(item))}" data-template-id="${escapeHtml(item.templateId || '')}">
             ${assetThumbHtml(item)}
             <div class="asset-meta">
                 <span class="asset-name" ${localMode ? `data-rename-local-asset="${escapeHtml(item.id)}"` : ''} title="${escapeHtml(item.name || '')}">${escapeHtml(item.name || 'asset')}</span>
                 ${workflowMode
-                    ? `<button class="asset-mini-btn" type="button" data-rename-workflow-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('smart.assetRename'))}"><i data-lucide="pencil"></i></button>
-                       <button class="asset-mini-btn" type="button" data-delete-workflow-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('common.delete'))}"><i data-lucide="trash-2"></i></button>`
+                    ? item.kind === 'builtin-workflow'
+                        ? `<span class="asset-local-tag">${escapeHtml(item.model || 'template')}</span>`
+                        : `<button class="asset-mini-btn" type="button" data-rename-workflow-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('smart.assetRename'))}"><i data-lucide="pencil"></i></button>
+                           <button class="asset-mini-btn" type="button" data-delete-workflow-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('common.delete'))}"><i data-lucide="trash-2"></i></button>`
                     : teamMode ? `<span class="asset-local-tag">团队</span>`
                     : localMode ? `<button class="asset-mini-btn" type="button" data-rename-local-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('smart.assetRename'))}"><i data-lucide="pencil"></i></button>
                        <button class="asset-mini-btn" type="button" data-delete-local-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('common.delete'))}"><i data-lucide="trash-2"></i></button>` : `<button class="asset-mini-btn" type="button" data-rename-asset="${escapeHtml(item.id)}" title="${escapeHtml(tr('smart.assetRename'))}"><i data-lucide="pencil"></i></button>
@@ -5680,7 +5709,7 @@ function renderAssetLibrary(){
     if(workflowMode) bindWorkflowAssetItemEvents();
     else bindAssetItemEvents();
     bindSmartPreviewImageFallbacks(assetGrid);
-    bindAssetItemDragGuard(assetGrid, '.asset-item', card => ({url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || ''}));
+    bindAssetItemDragGuard(assetGrid, '.asset-item', card => ({url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || '', templateId:card.dataset.templateId || ''}));
     refreshIcons();
 }
 function openAssetNameDialog({title='', value='', placeholder='', cancelValue='', multiline=false }={}){
@@ -12939,6 +12968,52 @@ function imagesForNode(node){
     }
     return (node?.images || []).map((img, index) => ({...imageForDisplay(img), nodeId:node.id, imageIndex:index}));
 }
+function selectedSmartWorkflowImage(){
+    if(selectedImage?.nodeId){
+        const node = nodes.find(n => n.id === selectedImage.nodeId);
+        const index = Number.isFinite(Number(selectedImage.index)) ? Number(selectedImage.index) : 0;
+        const img = imagesForNode(node)[index];
+        if(img?.url) return {...img, name:img.name || node?.title || 'selected-image', kind:img.kind || assetMediaKind(img)};
+    }
+    const ids = selectedNodeIds();
+    for(const id of ids){
+        const node = nodes.find(n => n.id === id);
+        const img = imagesForNode(node).find(item => item?.url && assetMediaKind(item) === 'image');
+        if(img?.url) return {...img, name:img.name || node?.title || 'selected-image', kind:img.kind || 'image'};
+    }
+    return null;
+}
+function insertBuiltinSmartWorkflowTemplate(templateId, targetPoint=null){
+    const builder = window.CanvasWorkflowBuilder;
+    if(!builder){ toast('工作流模板未加载'); return false; }
+    let templateItem = null;
+    try {
+        templateItem = builder.template(templateId);
+    } catch(err) {
+        toast('未知工作流模板');
+        return false;
+    }
+    const selectedImageRef = templateItem.requiresImage ? selectedSmartWorkflowImage() : null;
+    if(templateItem.requiresImage && !selectedImageRef){
+        toast('请先选择图片节点');
+        return false;
+    }
+    const beforeNodes = nodes.slice();
+    const beforeConnections = (canvas?.connections || []).slice();
+    try {
+        const payload = builder.buildSmartWorkflow(templateId, {selectedImage:selectedImageRef, point:targetPoint});
+        if(!builder.markOperationProcessed(payload.operation_id)) return false;
+        insertSmartWorkflowIntoCanvas(payload, targetPoint);
+        return true;
+    } catch(err) {
+        nodes = beforeNodes;
+        if(canvas) canvas.connections = beforeConnections;
+        render();
+        scheduleSave();
+        toast(err.message === 'selected image node required' ? '请先选择图片节点' : (err.message || '创建工作流失败'));
+        return false;
+    }
+}
 function nodeHasReferenceContent(node){
     return imagesForNode(node).some(img => img?.url);
 }
@@ -16840,6 +16915,10 @@ shell.ondrop = async e => {
     if(assetRaw){
         try {
             const asset = JSON.parse(assetRaw);
+            if(asset?.kind === 'builtin-workflow'){
+                insertBuiltinSmartWorkflowTemplate(asset.templateId, p);
+                return;
+            }
             if(asset?.url) {
                 pushUndo();
                 createImageNodeAt(p, [assetNodeImageFromItem(asset)], {skipUndo:true});

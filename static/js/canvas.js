@@ -6967,10 +6967,12 @@ function activeCanvasAssetLibrary(){
     return libs.find(lib => lib.id === activeCanvasAssetLibraryId) || libs[0] || null;
 }
 function canvasAssetCategories(){
-    return (activeCanvasAssetLibrary()?.categories || canvasAssetLibrary.categories || []).filter(cat => {
+    const cats = (activeCanvasAssetLibrary()?.categories || canvasAssetLibrary.categories || []).filter(cat => {
         const type = String(cat.type || 'image').toLowerCase();
         return type === 'image' || type === 'media' || type === 'workflow';
     });
+    const builtin = builtinCanvasWorkflowCategory();
+    return [...cats, builtin].filter(Boolean);
 }
 function canvasMediaCategories(){
     return (activeCanvasAssetLibrary()?.categories || canvasAssetLibrary.categories || []).filter(cat => {
@@ -6987,7 +6989,32 @@ function activeCanvasMediaCategory(){
     return cats.find(cat => cat.id === activeCanvasAssetCategoryId) || cats[0] || null;
 }
 function canvasWorkflowCategories(){
-    return (activeCanvasAssetLibrary()?.categories || canvasAssetLibrary.categories || []).filter(cat => String(cat.type || '').toLowerCase() === 'workflow');
+    const builtin = builtinCanvasWorkflowCategory();
+    const cats = (activeCanvasAssetLibrary()?.categories || canvasAssetLibrary.categories || []).filter(cat => String(cat.type || '').toLowerCase() === 'workflow');
+    return [builtin, ...cats].filter(Boolean);
+}
+function builtinCanvasWorkflowCategory(){
+    const templates = window.CanvasWorkflowBuilder?.templates?.() || [];
+    if(!templates.length) return null;
+    return {
+        id:'__builtin_workflows__',
+        name:'内置工作流',
+        type:'workflow',
+        readonly:true,
+        builtin:true,
+        items:templates.map(item => ({
+            id:item.id,
+            name:item.name,
+            url:`builtin:${item.id}`,
+            kind:'builtin-workflow',
+            type:'workflow',
+            templateId:item.id,
+            description:item.description,
+            provider_id:item.provider_id,
+            model:item.model,
+            requiresImage:Boolean(item.requiresImage),
+        }))
+    };
 }
 function activeCanvasWorkflowCategory(){
     const cats = canvasWorkflowCategories();
@@ -7001,7 +7028,7 @@ function currentCanvasAssetItem(itemId){
 }
 function canvasAssetItemKind(item){
     const explicit = String(item?.kind || item?.mediaKind || '').toLowerCase();
-    if(['image','video','audio','text','file','workflow'].includes(explicit)) return explicit;
+    if(['image','video','audio','text','file','workflow','builtin-workflow'].includes(explicit)) return explicit;
     if(String(item?.type || '').toLowerCase() === 'workflow') return 'workflow';
     const url = String(item?.url || item || '');
     if(/\.(json|zip)(\?|#|$)/i.test(url)) return 'workflow';
@@ -7019,7 +7046,7 @@ function canvasAssetThumbHtml(item){
     if(kind === 'audio'){
         return `<div class="canvas-asset-thumb-wrap canvas-asset-file-thumb"><i data-lucide="file-audio" class="w-6 h-6"></i><span>${escapeHtml(item?.name || 'audio')}</span></div>`;
     }
-    if(kind === 'workflow'){
+    if(kind === 'workflow' || kind === 'builtin-workflow'){
         return `<div class="canvas-asset-thumb-wrap canvas-asset-file-thumb workflow-thumb"><i data-lucide="workflow" class="w-6 h-6"></i><span>${escapeHtml(item?.name || 'workflow')}</span></div>`;
     }
     return `<div class="canvas-asset-thumb-wrap">${canvasPreviewImgHtml(thumbUrl, 512, 'class="canvas-asset-thumb" alt=""')}</div>`;
@@ -7166,7 +7193,7 @@ function renderCanvasAssetLibrary(){
     }
     const items = cat?.items || [];
     canvasAssetGrid.innerHTML = items.length ? items.map(item => `
-        <div class="canvas-asset-item" draggable="true" data-asset-id="${escapeAttr(item.id || '')}" data-url="${escapeAttr(item.url)}" data-name="${escapeAttr(item.name || 'asset')}" data-kind="${escapeAttr(canvasAssetItemKind(item))}">
+        <div class="canvas-asset-item" draggable="true" data-asset-id="${escapeAttr(item.id || '')}" data-url="${escapeAttr(item.url)}" data-name="${escapeAttr(item.name || 'asset')}" data-kind="${escapeAttr(canvasAssetItemKind(item))}" data-template-id="${escapeAttr(item.templateId || '')}">
             ${canvasAssetThumbHtml(item)}
             <div class="canvas-asset-meta">
                 <span class="canvas-asset-name" title="${escapeAttr(item.name || '')}">${escapeHtml(item.name || 'asset')}</span>
@@ -7174,20 +7201,23 @@ function renderCanvasAssetLibrary(){
                     ? `<span class="canvas-asset-local-tag">本地</span>`
                     : teamMode
                     ? `<span class="canvas-asset-local-tag">团队</span>`
+                    : item.kind === 'builtin-workflow'
+                    ? `<span class="canvas-asset-local-tag">${escapeHtml(item.model || 'template')}</span>`
                     : `<button class="canvas-asset-action" type="button" data-canvas-asset-rename="${escapeAttr(item.id || '')}" title="重命名" aria-label="重命名"><i data-lucide="pencil" class="w-4 h-4"></i></button>
                        <button class="canvas-asset-action danger" type="button" data-canvas-asset-delete="${escapeAttr(item.id || '')}" title="删除" aria-label="删除"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`}
             </div>
         </div>
     `).join('') : `<div class="canvas-asset-empty">${escapeHtml(localMode ? '暂无本地素材，请在素材库管理中上传' : (teamMode ? '暂无团队素材，可以拖入文件上传' : '当前分组还没有资产'))}</div>`;
     bindCanvasPreviewImageFallbacks(canvasAssetGrid);
-    bindAssetItemDragGuard(canvasAssetGrid, '.canvas-asset-item', card => ({url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || ''}));
+    bindAssetItemDragGuard(canvasAssetGrid, '.canvas-asset-item', card => ({url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || '', templateId:card.dataset.templateId || ''}));
     canvasAssetGrid.querySelectorAll('.canvas-asset-item').forEach(card => {
         card.addEventListener('dragstart', event => {
             event.stopPropagation();
-            setCanvasAssetDragData(event.dataTransfer, {url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || ''});
+            setCanvasAssetDragData(event.dataTransfer, {url:card.dataset.url, name:card.dataset.name, kind:card.dataset.kind || '', templateId:card.dataset.templateId || ''});
         });
         card.addEventListener('dblclick', () => {
-            if(card.dataset.kind === 'workflow') importWorkflowAssetUrl(card.dataset.url, card.dataset.name || 'workflow');
+            if(card.dataset.kind === 'builtin-workflow') insertBuiltinCanvasWorkflowTemplate(card.dataset.templateId, defaultPoint(0, 0));
+            else if(card.dataset.kind === 'workflow') importWorkflowAssetUrl(card.dataset.url, card.dataset.name || 'workflow');
             else createImageCardFromUrl(card.dataset.url, defaultPoint(0, 0), card.dataset.name || 'asset');
         });
         const item = items.find(entry => entry.id === card.dataset.assetId);
@@ -13275,7 +13305,8 @@ function setCanvasAssetDragData(dataTransfer, item){
     const payload = {
         url: String(item?.url || ''),
         name: String(item?.name || ''),
-        kind: String(item?.kind || '')
+        kind: String(item?.kind || ''),
+        templateId: String(item?.templateId || '')
     };
     dataTransfer.effectAllowed = 'copy';
     dataTransfer.clearData();
@@ -14206,14 +14237,59 @@ function normalizeImportedWorkflow(data){
     if(Array.isArray(data?.workflow?.nodes)) return {nodes:data.workflow.nodes, connections:Array.isArray(data.workflow.connections) ? data.workflow.connections : []};
     return {nodes:[], connections:[]};
 }
-function insertWorkflowIntoCanvas(imported){
+function selectedCanvasWorkflowImage(){
+    for(const id of selected){
+        const node = nodes.find(n => n.id === id);
+        if(node?.type === 'image' && node.url && mediaKindForNode(node) === 'image'){
+            return {url:node.url, name:node.name || outputImageName(node.url) || 'selected-image', kind:'image'};
+        }
+        if(node?.type === 'group'){
+            const img = groupImageItems(node)[0];
+            if(img?.url) return img;
+        }
+    }
+    return null;
+}
+function insertBuiltinCanvasWorkflowTemplate(templateId, targetPoint=null){
+    const builder = window.CanvasWorkflowBuilder;
+    if(!builder){ setStatus('工作流模板未加载'); return false; }
+    let templateItem = null;
+    try {
+        templateItem = builder.template(templateId);
+    } catch(err) {
+        setStatus('未知工作流模板');
+        return false;
+    }
+    const selectedImageRef = templateItem.requiresImage ? selectedCanvasWorkflowImage() : null;
+    if(templateItem.requiresImage && !selectedImageRef){
+        setStatus('请先选择图片节点');
+        return false;
+    }
+    const beforeNodes = nodes.slice();
+    const beforeConnections = connections.slice();
+    try {
+        const payload = builder.buildClassicWorkflow(templateId, {selectedImage:selectedImageRef, point:targetPoint});
+        if(!builder.markOperationProcessed(payload.operation_id)) return false;
+        insertWorkflowIntoCanvas(payload, targetPoint);
+        return true;
+    } catch(err) {
+        nodes = beforeNodes;
+        connections = beforeConnections;
+        if(canvas) canvas.connections = connections;
+        render();
+        scheduleSave();
+        setStatus(err.message === 'selected image node required' ? '请先选择图片节点' : (err.message || '创建工作流失败'));
+        return false;
+    }
+}
+function insertWorkflowIntoCanvas(imported, targetPoint=null){
     const srcNodes = (imported.nodes || []).filter(Boolean);
     const srcConnections = (imported.connections || []).filter(Boolean);
     if(!canvas || !srcNodes.length) throw new Error('工作流中没有可导入的节点');
     pushUndo();
     const minX = Math.min(...srcNodes.map(n => Number(n.x || 0)));
     const minY = Math.min(...srcNodes.map(n => Number(n.y || 0)));
-    const target = lastMouseBoard && Number.isFinite(lastMouseBoard.x) ? lastMouseBoard : defaultPoint(0, 0);
+    const target = targetPoint || (lastMouseBoard && Number.isFinite(lastMouseBoard.x) ? lastMouseBoard : defaultPoint(0, 0));
     const dx = target.x - minX;
     const dy = target.y - minY;
     const idMap = new Map();
@@ -15102,8 +15178,11 @@ board.addEventListener('drop', async e => {
     if(Array.from(e.dataTransfer?.types || []).includes('application/x-canvas-asset')){
         try {
             const payload = JSON.parse(e.dataTransfer.getData('application/x-canvas-asset') || '{}');
-            if(payload?.url) {
-                if(String(payload.kind || '').toLowerCase() === 'workflow') await importWorkflowAssetUrl(payload.url, payload.name || 'workflow');
+            const kind = String(payload.kind || '').toLowerCase();
+            if(kind === 'builtin-workflow'){
+                insertBuiltinCanvasWorkflowTemplate(payload.templateId, screenToWorld(e.clientX, e.clientY));
+            } else if(payload?.url) {
+                if(kind === 'workflow') await importWorkflowAssetUrl(payload.url, payload.name || 'workflow');
                 else createImageCardFromUrl(payload.url, screenToWorld(e.clientX, e.clientY), payload.name || 'asset');
             }
         } catch(err) {}
