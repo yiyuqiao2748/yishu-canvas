@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import main
@@ -551,6 +551,32 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(main.grsai_image_size("3840x2160", ""), "4K")
         self.assertEqual(main.grsai_image_size("2048x1152", ""), "2K")
         self.assertEqual(main.grsai_image_size("1024x1024", "4k"), "4K")
+
+    async def test_grsai_provider_routes_to_documented_generate_api(self):
+        provider = {
+            "id": "custom-api",
+            "name": "grsai",
+            "base_url": "https://grsai.dakka.com.cn/v1",
+            "protocol": "openai",
+            "model_protocols": {"nano-banana-2": "gemini"},
+        }
+        route = AsyncMock(return_value=({"type": "url", "value": "https://example.test/out.png"}, {"status": "succeeded"}))
+
+        with patch.object(main, "generate_grsai_provider_image", route):
+            result = await main.generate_ai_image(
+                "一只狗",
+                "4096x4096",
+                "",
+                "nano-banana-2",
+                [],
+                "custom-api",
+                "1:1",
+                "4k",
+                provider_config=provider,
+            )
+
+        self.assertEqual(result[0]["type"], "url")
+        route.assert_awaited_once_with("一只狗", "4096x4096", "nano-banana-2", [], provider, "1:1", "4k")
 
     async def test_team_canvas_uses_global_api_provider_config(self):
         class Payload:
