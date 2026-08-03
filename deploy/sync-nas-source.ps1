@@ -5,11 +5,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$source = (Resolve-Path $SourceRoot).Path.TrimEnd("\")
+$source = (Resolve-Path $SourceRoot).ProviderPath.TrimEnd("\")
 if (-not (Test-Path -LiteralPath $TargetRoot)) {
     throw "NAS target does not exist: $TargetRoot"
 }
-$target = (Resolve-Path $TargetRoot).Path.TrimEnd("\")
+$target = (Resolve-Path $TargetRoot).ProviderPath.TrimEnd("\")
 
 if ($target -notmatch "(^|[\\\/])yishu-canvas-fnos$") {
     throw "Refusing to mirror into unexpected target: $target"
