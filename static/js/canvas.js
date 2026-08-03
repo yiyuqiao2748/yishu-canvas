@@ -61,12 +61,38 @@ function canvasMediaPreviewUrl(url, size=512){
     const width = Math.max(64, Math.min(2048, Math.round(Number(size) || 512)));
     return `/api/media-preview?w=${width}&url=${encodeURIComponent(raw)}`;
 }
-function canvasPreviewImgHtml(url, size=512, attrs=''){
+function canvasDerivedLocalOutputFallback(url){
+    const raw = String(url || '').trim();
+    if(!/^https?:\/\//i.test(raw)) return '';
+    try {
+        const parsed = new URL(raw);
+        const name = parsed.pathname.split('/').filter(Boolean).pop() || '';
+        if(!/\.(png|jpe?g|webp|gif|bmp|avif|tiff?)$/i.test(name)) return '';
+        return `/assets/output/${encodeURIComponent(decodeURIComponent(name))}`;
+    } catch(e) {
+        return '';
+    }
+}
+function mediaFallbackUrlsForItem(item){
+    const fallbacks = [];
+    const add = value => {
+        const url = canvasOriginalMediaUrl(value || '');
+        if(url && !fallbacks.includes(url)) fallbacks.push(url);
+    };
+    if(item && typeof item === 'object'){
+        ['fallback_url','fallbackUrl','local_url','localUrl','source_url','sourceUrl','original_url','originalUrl','remote_url','remoteUrl'].forEach(key => add(item[key]));
+    }
+    add(canvasDerivedLocalOutputFallback(outputUrlValue(item)));
+    return fallbacks.filter(url => url !== outputUrlValue(item));
+}
+function canvasPreviewImgHtml(url, size=512, attrs='', fallbackUrls=[]){
     const original = canvasOriginalMediaUrl(url);
     const preview = canvasMediaPreviewUrl(original, size);
+    const fallbacks = (fallbackUrls || []).map(canvasOriginalMediaUrl).filter((item, index, arr) => item && item !== original && arr.indexOf(item) === index);
+    const fallbackAttr = fallbacks.length ? ` data-fallback-srcs="${escapeAttr(JSON.stringify(fallbacks))}"` : '';
     // loading=lazy：画布内容多时，视口外的缩略图不加载/不解码，避免一次性解码上百张图卡顿；
     // decoding=async：解码放到主线程外，渲染时不阻塞。
-    return `<img loading="lazy" decoding="async" draggable="false" data-native-drag-guard="true" src="${escapeAttr(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" data-url="${escapeAttr(original)}"${attrs ? ` ${attrs}` : ''}>`;
+    return `<img loading="lazy" decoding="async" draggable="false" data-native-drag-guard="true" src="${escapeAttr(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" data-url="${escapeAttr(original)}"${fallbackAttr}${attrs ? ` ${attrs}` : ''}>`;
 }
 function loadCanvasOriginalImageDimensions(url){
     const src = String(url || '');
@@ -135,7 +161,25 @@ function bindCanvasPreviewImageFallbacks(root=document){
                 img.replaceWith(video.content.firstElementChild);
                 return;
             }
-            if(original && img.getAttribute('src') !== original) img.src = original;
+            let extra = [];
+            try { extra = JSON.parse(img.dataset.fallbackSrcs || '[]'); } catch(e) { extra = []; }
+            const candidates = [original, ...extra]
+                .map(canvasOriginalMediaUrl)
+                .filter((url, index, arr) => url && arr.indexOf(url) === index);
+            const index = Number(img.dataset.fallbackIndex || 0);
+            const current = img.getAttribute('src') || '';
+            const next = candidates.slice(index).find(url => url !== current);
+            if(next){
+                img.dataset.fallbackIndex = String(candidates.indexOf(next) + 1);
+                img.src = next;
+                return;
+            }
+            const missingUrl = original || img.dataset.url || current;
+            if(missingUrl) missingAssetUrls.add(missingUrl);
+            const tpl = document.createElement('template');
+            tpl.innerHTML = missingAssetHtml(missingUrl, true);
+            img.replaceWith(tpl.content.firstElementChild);
+            if(window.lucide?.createIcons) window.lucide.createIcons();
         });
     });
 }
@@ -2046,7 +2090,7 @@ function openSmartCanvasPage(id){
     if(!id) return;
     const project = canvas?.project || requestedCanvasListProject() || rememberedCanvasListProject();
     const cloud = TEAM_CLOUD_CANVAS ? '&cloud=1' : '';
-    window.location.href = `/static/smart-canvas.html?id=${encodeURIComponent(id)}&project=${encodeURIComponent(project)}${cloud}&v=2026.08.03.2`;
+    window.location.href = `/static/smart-canvas.html?id=${encodeURIComponent(id)}&project=${encodeURIComponent(project)}${cloud}&v=2026.08.03.3`;
 }
 function toggleEmojiPicker(id, event){
     event?.preventDefault();
@@ -10318,7 +10362,7 @@ async function runRhModelNode(node, opts={}){
             let outputs = [];
             for(const task of taskInfos){
                 const result = await waitCanvasImageTaskResult(task.task_id, {cascadeTargetId});
-                outputs.push(...(result.images || []));
+                outputs.push(...resultImageItems(result));
                 run.request = requestMetaFromResult(result);
             }
             if(!outputs.length) throw new Error(tr('canvas.generationFailed'));
@@ -10831,7 +10875,7 @@ async function runGenerator(genId, opts={}){
             let outputs = [];
             for(const task of taskInfos){
                 const result = await waitCanvasImageTaskResult(task.task_id, {cascadeTargetId});
-                outputs.push(...(result.images || []));
+                outputs.push(...resultImageItems(result));
                 run.request = requestMetaFromResult(result);
             }
             if(!outputs.length) throw new Error(tr('canvas.generationFailed'));
@@ -10919,7 +10963,7 @@ async function runGeneratorLegacy(genId, opts={}){
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify(payload)
         }).then(async r => { if(!r.ok) throw new Error(await responseErrorMessage(r, tr('canvas.generationFailed'))); return r.json(); })));
-        const images = results.flatMap(result => result.images || []);
+        const images = results.flatMap(result => resultImageItems(result));
         const metas = collectRunMetas(out, pendingIds);
         run.request = results[0] ? requestMetaFromResult(results[0]) : {};
         if(out) out._pending = (out._pending||[]).filter(p => !pendingIds.includes(p.id));
@@ -11084,6 +11128,10 @@ function resultMediaUrls(result){
         const url = outputUrlValue(item);
         return url && !seen.has(url) && seen.add(url);
     });
+}
+function resultImageItems(result){
+    const items = Array.isArray(result?.image_items) ? result.image_items.filter(item => outputUrlValue(item)) : [];
+    return items.length ? items : (result?.images || []);
 }
 function ltxDirectorSyncSeconds(node){
     const fps = Math.max(1, Number(node?.frameRate) || 24);
@@ -12663,7 +12711,15 @@ function mergeGeneratedOutputs(node, outputs, append=false){
                 ? 'video'
                 : mediaKindForOutputItem(item);
         if(!keepGeneratedMedia && kind !== 'image') return null;
-        return kind === 'image' ? url : {url, kind};
+        if(kind !== 'image') return {url, kind};
+        if(item && typeof item === 'object'){
+            const cleanItem = {url};
+            ['name','fallback_url','fallbackUrl','local_url','localUrl','source_url','sourceUrl','original_url','originalUrl','remote_url','remoteUrl'].forEach(key => {
+                if(item[key]) cleanItem[key] = item[key];
+            });
+            return cleanItem;
+        }
+        return url;
     }).filter(Boolean);
     if(!append){
         node.generatedOutputs = clean;
@@ -12751,7 +12807,7 @@ function providerIdForPending(pending){
 }
 function completeRecoverPendingOutput(out, pending, result){
     if(!out || !pending || !result) return;
-    const images = result.images || [];
+    const images = resultImageItems(result);
     if(!images.length) return;
     const meta = {
         runMs: nowMs() - Number(pending.startedAt || nowMs()),
@@ -12875,7 +12931,7 @@ function completeCanvasImageTask(taskId, result){
         run: pending.run || {},
     };
     meta.run.request = requestMetaFromResult(result);
-    const images = result.images || [];
+    const images = resultImageItems(result);
     out._pending = (out._pending || []).filter(p => p.id !== pending.id);
     appendOutputImages(out, images, meta.run?.refs?.[0], [meta]);
     const gen = nodes.find(n => n.id === meta.run?.node?.id);
@@ -12955,7 +13011,7 @@ function renderOutputMedia(item, useGridLayout=false){
         const label = kind === 'text' ? 'TEXT' : 'FILE';
         return `<div class="output-img-wrap output-file-wrap" data-output-url="${safe}"${gridStyle}><div class="output-file-card"><i data-lucide="${icon}" class="w-7 h-7"></i><span>${escapeHtml(meta.name || outputImageName(url))}</span><small>${label}</small></div>${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
     }
-    return `<div class="output-img-wrap" data-output-url="${safe}"${gridStyle}>${canvasPreviewImgHtml(url, useGridLayout ? 512 : 768, 'alt="generated output"')}${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
+    return `<div class="output-img-wrap" data-output-url="${safe}"${gridStyle}>${canvasPreviewImgHtml(url, useGridLayout ? 512 : 768, 'alt="generated output"', mediaFallbackUrlsForItem(item))}${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
 }
 function outputGridLayout(node){
     const images = node?.images || [];
@@ -13003,14 +13059,18 @@ function appendOutputImages(out, images, compareRef, metas=[], layout=null){
         const item = {url:outputUrlValue(url), viewed:false, runMs:meta.runMs || 0, run:meta.run || null};
         if(source.name) item.name = source.name;
         if(source.kind || source.mediaKind) item.kind = source.kind || source.mediaKind;
+        ['fallback_url','fallbackUrl','local_url','localUrl','source_url','sourceUrl','original_url','originalUrl','remote_url','remoteUrl'].forEach(key => {
+            if(source[key]) item[key] = source[key];
+        });
         if(meta.kind) item.kind = meta.kind;
         if(meta.grid) item.grid = meta.grid;
         return item;
     })];
     if(compareRef?.url){
         out.imageComparisons = out.imageComparisons || {};
-        list.forEach(url => {
-            out.imageComparisons[url] = {url:compareRef.url, name:compareRef.name || 'input image'};
+        list.forEach(item => {
+            const url = outputUrlValue(item);
+            if(url) out.imageComparisons[url] = {url:compareRef.url, name:compareRef.name || 'input image'};
         });
     }
 }

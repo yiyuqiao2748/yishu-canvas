@@ -732,8 +732,8 @@ function openCanvas(c, workbenchDraftId=''){
     const cloud = (teamCloud.enabled || c.is_cloud) ? '&cloud=1' : '';
     const draft = workbenchDraftId ? `&workbenchDraft=${encodeURIComponent(workbenchDraftId)}` : '';
     window.location.href = (c.kind === 'smart')
-        ? `/static/smart-canvas.html?id=${enc}&project=${project}${cloud}${draft}&v=2026.08.03.2`
-        : `/static/canvas.html?id=${enc}&project=${project}${cloud}${draft}&v=2026.08.03.2`;
+        ? `/static/smart-canvas.html?id=${enc}&project=${project}${cloud}${draft}&v=2026.08.03.3`
+        : `/static/canvas.html?id=${enc}&project=${project}${cloud}${draft}&v=2026.08.03.3`;
 }
 
 /* ===== Card create flow ===== */

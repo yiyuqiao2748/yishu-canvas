@@ -708,9 +708,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         html = (root / "static" / "canvas-list.html").read_text(encoding="utf-8")
         index_html = (root / "static" / "index.html").read_text(encoding="utf-8")
 
-        self.assertIn("canvas-list.html?v=2026.08.03.2", index_html)
+        self.assertIn("canvas-list.html?v=2026.08.03.3", index_html)
         self.assertIn("canvas-list.css?v=2026.07.28.6", html)
-        self.assertIn("canvas-list.js?v=2026.08.03.2", html)
+        self.assertIn("canvas-list.js?v=2026.08.03.3", html)
         self.assertIn('id="backHomeBtn"', html)
         self.assertIn("studio-open-page", html)
         self.assertIn("AI designer workbench skin", css)
@@ -873,7 +873,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         smart_css = (root / "static" / "css" / "smart-canvas.css").read_text(encoding="utf-8")
 
         self.assertIn("canvas.css?v=2026.07.30.1", canvas_html)
-        self.assertIn("canvas.js?v=2026.08.03.2", canvas_html)
+        self.assertIn("canvas.js?v=2026.08.03.3", canvas_html)
         self.assertIn("smart-canvas.css?v=2026.07.30.3", smart_html)
         self.assertIn("smart-canvas.js?v=2026.07.30.3", smart_html)
         self.assertIn("2026-07-28 secondary canvas workbench alignment", canvas_css)

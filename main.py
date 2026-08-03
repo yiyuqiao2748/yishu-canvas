@@ -9460,7 +9460,14 @@ def image_output_meta(url, source_item=None):
     parsed_name = os.path.basename(urllib.parse.urlparse(str(url)).path)
     if parsed_name:
         meta["name"] = parsed_name
+        local_fallback = output_url_for(parsed_name, "output")
+        if local_fallback != url and output_file_from_url(local_fallback):
+            meta["fallback_url"] = local_fallback
     if isinstance(source_item, dict):
+        for key in ("source_url", "sourceUrl", "original_url", "originalUrl", "remote_url", "remoteUrl", "fallback_url", "fallbackUrl"):
+            value = source_item.get(key)
+            if value and value != url:
+                meta.setdefault("fallback_url", str(value))
         for key in ("natural_w", "natural_h", "width", "height", "w", "h", "layout_w", "layout_h"):
             try:
                 value = int(float(source_item.get(key) or 0))
