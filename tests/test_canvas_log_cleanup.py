@@ -547,6 +547,10 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["protocol"], "openai")
         self.assertIn("gpt-image-2", payload["image_models"])
         self.assertIn("nano-banana-pro", payload["image_models"])
+        self.assertEqual(main.grsai_image_size("4096x4096", ""), "4K")
+        self.assertEqual(main.grsai_image_size("3840x2160", ""), "4K")
+        self.assertEqual(main.grsai_image_size("2048x1152", ""), "2K")
+        self.assertEqual(main.grsai_image_size("1024x1024", "4k"), "4K")
 
     async def test_team_canvas_uses_global_api_provider_config(self):
         class Payload:

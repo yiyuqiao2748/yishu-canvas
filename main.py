@@ -11173,8 +11173,22 @@ def grsai_aspect_ratio(size, aspect_ratio, model):
     return "1:1"
 
 def grsai_image_size(size, resolution):
-    text = f"{size or ''} {resolution or ''}".lower()
-    if "4k" in text or "4096" in text:
+    res = str(resolution or "").strip().lower()
+    if res in {"4k", "uhd"}:
+        return "4K"
+    if res in {"2k", "qhd"}:
+        return "2K"
+    text = str(size or "").strip().lower().replace("*", "x").replace("脳", "x")
+    match = re.search(r"(\d+)\s*x\s*(\d+)", text)
+    if match:
+        width, height = int(match.group(1)), int(match.group(2))
+        long_side = max(width, height)
+        pixels = width * height
+        if long_side >= 3500 or pixels >= 7_000_000:
+            return "4K"
+        if long_side >= 1900 or pixels >= 3_000_000:
+            return "2K"
+    if "4k" in text or "4096" in text or "3840" in text:
         return "4K"
     if "2k" in text or "2048" in text:
         return "2K"

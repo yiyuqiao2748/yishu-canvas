@@ -2046,7 +2046,7 @@ function openSmartCanvasPage(id){
     if(!id) return;
     const project = canvas?.project || requestedCanvasListProject() || rememberedCanvasListProject();
     const cloud = TEAM_CLOUD_CANVAS ? '&cloud=1' : '';
-    window.location.href = `/static/smart-canvas.html?id=${encodeURIComponent(id)}&project=${encodeURIComponent(project)}${cloud}&v=2026.05.22.1`;
+    window.location.href = `/static/smart-canvas.html?id=${encodeURIComponent(id)}&project=${encodeURIComponent(project)}${cloud}&v=2026.08.03.2`;
 }
 function toggleEmojiPicker(id, event){
     event?.preventDefault();
