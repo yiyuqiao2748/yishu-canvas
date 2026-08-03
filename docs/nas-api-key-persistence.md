@@ -51,3 +51,9 @@ deploy/fnos/team-assets/
 
 Only source files should be copied during routine updates. Docker rebuilds can
 replace the container, but these NAS-mounted paths must remain in place.
+
+Use the guarded sync helper instead of hand-writing a `robocopy /MIR` command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\sync-nas-source.ps1
+```
