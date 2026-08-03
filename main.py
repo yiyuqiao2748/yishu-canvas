@@ -11216,7 +11216,10 @@ async def generate_grsai_provider_image(prompt, size, model, reference_images=No
         "replyType": "json",
     }
     if str(model_id).lower().startswith("nano-banana"):
-        body["imageSize"] = grsai_image_size(size, resolution)
+        image_size = grsai_image_size(size, resolution)
+        body["imageSize"] = image_size
+        if image_size in {"2K", "4K"}:
+            body["replyType"] = "async"
     timeout = httpx.Timeout(connect=20.0, read=1800.0, write=120.0, pool=20.0)
     async with upstream_async_client(timeout=timeout) as client:
         response = await client.post(endpoint, headers=api_headers(provider=provider, model=model_id), json=body)

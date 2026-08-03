@@ -578,6 +578,62 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0]["type"], "url")
         route.assert_awaited_once_with("一只狗", "4096x4096", "nano-banana-2", [], provider, "1:1", "4k")
 
+    async def test_grsai_four_k_uses_async_without_switching_model(self):
+        class FakeResponse:
+            def __init__(self, payload, status_code=200):
+                self.payload = payload
+                self.status_code = status_code
+                self.text = json.dumps(payload)
+
+            def json(self):
+                return self.payload
+
+            def raise_for_status(self):
+                return None
+
+        class FakeClient:
+            def __init__(self):
+                self.post_body = None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return False
+
+            async def post(self, _url, headers=None, json=None):
+                self.post_body = json
+                return FakeResponse({"id": "task-1", "status": "running"})
+
+            async def get(self, _url, headers=None, params=None):
+                return FakeResponse({"status": "succeeded", "results": [{"url": "https://example.test/out.png"}]})
+
+        provider = {
+            "id": "custom-api",
+            "name": "grsai",
+            "base_url": "https://grsai.dakka.com.cn/v1",
+            "protocol": "openai",
+            "api_key": "test-key",
+        }
+        fake_client = FakeClient()
+
+        with patch.object(main, "upstream_async_client", return_value=fake_client), \
+             patch.object(main, "IMAGE_POLL_INTERVAL", 0):
+            image, raw = await main.generate_grsai_provider_image(
+                "一只狗",
+                "4096x4096",
+                "nano-banana-2",
+                [],
+                provider,
+                "1:1",
+                "4k",
+            )
+
+        self.assertEqual(fake_client.post_body["model"], "nano-banana-2")
+        self.assertEqual(fake_client.post_body["imageSize"], "4K")
+        self.assertEqual(fake_client.post_body["replyType"], "async")
+        self.assertEqual(image["value"], "https://example.test/out.png")
+
     async def test_team_canvas_uses_global_api_provider_config(self):
         class Payload:
             team_id = "team-1"
