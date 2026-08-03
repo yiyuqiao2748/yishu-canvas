@@ -11201,6 +11201,12 @@ def grsai_image_size(size, resolution):
         return "2K"
     return "1K"
 
+def grsai_task_id(data):
+    if not isinstance(data, dict):
+        return ""
+    value = data.get("id") or data.get("task_id") or data.get("taskId") or extract_task_id(data)
+    return str(value or "").strip()
+
 async def generate_grsai_provider_image(prompt, size, model, reference_images=None, provider=None, aspect_ratio="", resolution=""):
     provider = provider or {}
     endpoint = grsai_endpoint_url(provider, "/api/generate")
@@ -11231,7 +11237,7 @@ async def generate_grsai_provider_image(prompt, size, model, reference_images=No
         try:
             return extract_image(raw), raw
         except HTTPException:
-            task_id = extract_task_id(raw)
+            task_id = grsai_task_id(raw)
             if not task_id:
                 raise
         deadline = time.monotonic() + IMAGE_TASK_TIMEOUT
