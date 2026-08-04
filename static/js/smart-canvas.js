@@ -12994,14 +12994,10 @@ function insertBuiltinSmartWorkflowTemplate(templateId, targetPoint=null){
         return false;
     }
     const selectedImageRef = templateItem.requiresImage ? selectedSmartWorkflowImage() : null;
-    if(templateItem.requiresImage && !selectedImageRef){
-        toast('请先选择图片节点');
-        return false;
-    }
     const beforeNodes = nodes.slice();
     const beforeConnections = (canvas?.connections || []).slice();
     try {
-        const payload = builder.buildSmartWorkflow(templateId, {selectedImage:selectedImageRef, point:targetPoint});
+        const payload = builder.buildSmartWorkflow(templateId, {selectedImage:selectedImageRef, point:targetPoint, allowEmptyImage:true});
         if(!builder.markOperationProcessed(payload.operation_id)) return false;
         insertSmartWorkflowIntoCanvas(payload, targetPoint);
         return true;
@@ -13010,7 +13006,7 @@ function insertBuiltinSmartWorkflowTemplate(templateId, targetPoint=null){
         if(canvas) canvas.connections = beforeConnections;
         render();
         scheduleSave();
-        toast(err.message === 'selected image node required' ? '请先选择图片节点' : (err.message || '创建工作流失败'));
+        toast(err.message || '创建工作流失败');
         return false;
     }
 }

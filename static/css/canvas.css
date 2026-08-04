@@ -1807,6 +1807,11 @@ body,
 .canvas-secondary-actions:not(.is-open) {
     max-width:min(430px, calc(100vw - 520px));
 }
+.canvas-secondary-actions.is-open {
+    max-width:min(760px, calc(100vw - 360px));
+    flex-wrap:wrap;
+    overflow:visible;
+}
 .canvas-secondary-actions::-webkit-scrollbar {
     display:none;
 }
@@ -1824,8 +1829,11 @@ body,
 .canvas-secondary-actions .secondary-actions-toggle svg {
     transition:transform .18s ease;
 }
+.canvas-secondary-actions.is-open .secondary-actions-toggle {
+    order:99;
+}
 .canvas-secondary-actions.is-open .secondary-actions-toggle svg {
-    transform:rotate(180deg);
+    transform:none;
 }
 .canvas-secondary-actions .tool-btn {
     flex:0 0 auto;
@@ -2013,6 +2021,10 @@ body,
     .canvas-secondary-actions:not(.is-open) {
         max-width:min(220px, calc(100vw - 28px));
     }
+    .canvas-secondary-actions.is-open {
+        max-width:calc(100vw - 28px);
+        border-radius:24px;
+    }
     .canvas-secondary-actions .tool-btn {
         height:34px;
         min-width:34px;
@@ -2020,6 +2032,9 @@ body,
     }
     .canvas-secondary-actions .tool-btn span {
         display:none;
+    }
+    .canvas-secondary-actions.is-open .secondary-actions-toggle span {
+        display:inline-flex;
     }
 }
 

@@ -861,11 +861,14 @@ function openCardMenu(canvasId, anchorBtn){
     if(!c) return;
     const pop = document.createElement('div');
     pop.className = 'ws-card-pop';
-    const isPrivateCloudCanvas = (teamCloud.enabled || c.is_cloud) && normalizeCloudCanvasVisibility(c.visibility) === 'private';
-    pop.innerHTML = (teamCloud.enabled || c.is_cloud) ? `
+    const isCloudCanvas = teamCloud.enabled || c.is_cloud;
+    const isPrivateCloudCanvas = isCloudCanvas && normalizeCloudCanvasVisibility(c.visibility) === 'private';
+    pop.innerHTML = isCloudCanvas ? `
         <button class="ws-pop-item" data-act="rename"><i data-lucide="pencil" class="w-4 h-4"></i><span>${L('重命名','Rename')}</span></button>
         ${isPrivateCloudCanvas ? `<button class="ws-pop-item" data-act="publish"><i data-lucide="share-2" class="w-4 h-4"></i><span>${L('发布到团队','Publish to team')}</span></button>` : ''}
-        <button class="ws-pop-item" data-act="export"><i data-lucide="download" class="w-4 h-4"></i><span>${L('导出画布','Export canvas')}</span></button>` : `
+        <button class="ws-pop-item" data-act="export"><i data-lucide="download" class="w-4 h-4"></i><span>${L('导出画布','Export canvas')}</span></button>
+        <div class="ws-pop-sep"></div>
+        <button class="ws-pop-item danger" data-act="delete"><i data-lucide="trash-2" class="w-4 h-4"></i><span>${L('删除','Delete')}</span></button>` : `
         <button class="ws-pop-item" data-act="rename"><i data-lucide="pencil" class="w-4 h-4"></i><span>${L('重命名','Rename')}</span></button>
         <button class="ws-pop-item" data-act="export"><i data-lucide="download" class="w-4 h-4"></i><span>${L('导出画布','Export canvas')}</span></button>
         <button class="ws-pop-item" data-act="export-assets"><i data-lucide="archive" class="w-4 h-4"></i><span>${L('导出画布 + 资源','Export with assets')}</span></button>
@@ -1229,13 +1232,19 @@ async function deleteCanvas(id){
     const c = canvases.find(x => x.id === id);
     if(!c) return;
     try {
-        const res = await fetch(`/api/canvases/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        if(!res.ok) throw new Error('delete failed');
+        if(teamCloud.enabled || c.is_cloud){
+            await cloudApi(`/canvases/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        } else {
+            const res = await fetch(`/api/canvases/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            if(!res.ok) throw new Error('delete failed');
+        }
         canvases = canvases.filter(x => x.id !== id);
+        const p = projects.find(item => item.id === c.project);
+        if(p) p.canvas_count = Math.max(0, Number(p.canvas_count || 0) - 1);
         renderBoard();
         renderProjects();
         refreshTrashCount();
-        setStatus(L('已移入回收站','Moved to trash'));
+        setStatus((teamCloud.enabled || c.is_cloud) ? L('已删除云端画布','Cloud canvas deleted') : L('已移入回收站','Moved to trash'));
     } catch(e){ console.error(e); setStatus(L('删除失败','Delete failed')); }
 }
 

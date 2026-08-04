@@ -22,7 +22,7 @@
         {
             id:'image-to-image',
             name:'图生图',
-            description:'选中图片 → 提示词 → Nano Banana 生图节点',
+            description:'图片输入 → 提示词 → Nano Banana 生图节点',
             icon:'image-plus',
             requiresImage:true,
             provider_id:IMAGE_PROVIDER,
@@ -31,7 +31,7 @@
         {
             id:'image-to-video',
             name:'图生视频',
-            description:'选中图片 → Agnes 视频节点',
+            description:'图片输入 → Agnes 视频节点',
             icon:'film',
             requiresImage:true,
             provider_id:VIDEO_PROVIDER,
@@ -82,6 +82,12 @@
         };
     }
 
+    function workflowImage(templateItem, options){
+        if(!templateItem.requiresImage) return null;
+        if(options.allowEmptyImage && (!options.selectedImage || !options.selectedImage.url)) return null;
+        return validateImage(templateItem, options.selectedImage || null);
+    }
+
     function connection(id, from, to, kind='flow'){
         return {id, from, to, kind};
     }
@@ -99,6 +105,18 @@
             url:image.url,
             name:image.name || 'selected-image',
             mediaKind:image.kind || 'image',
+        };
+    }
+
+    function emptyClassicImageNode(id, point){
+        return {
+            id,
+            type:'image',
+            x:point.x,
+            y:point.y,
+            url:'',
+            name:'Image input',
+            mediaKind:'image',
         };
     }
 
@@ -182,6 +200,10 @@
         return node;
     }
 
+    function emptySmartImageNode(id, point, title='Image input'){
+        return smartImageNode(id, point, [], title);
+    }
+
     function smartImageSettings(){
         return {
             engine:'api',
@@ -215,7 +237,7 @@
 
     function buildClassicWorkflow(templateId, options={}){
         const item = template(templateId);
-        const selectedImage = validateImage(item, options.selectedImage || null);
+        const selectedImage = workflowImage(item, options);
         const point = normalizePoint(options.point);
         const op = options.operation_id || operationId(item.id);
         const promptText = options.prompt || (item.id === 'image-to-video' ? 'Describe the motion and camera movement for this image.' : 'Describe the image you want to create.');
@@ -226,13 +248,13 @@
             nodes.push(classicGeneratorNode(`${op}_generator`, {x:point.x + 360, y:point.y}, IMAGE_MODEL));
             connections.push(connection(`${op}_c_prompt_generator`, `${op}_prompt`, `${op}_generator`));
         } else if(item.id === 'image-to-image'){
-            nodes.push(classicImageNode(`${op}_source`, {x:point.x, y:point.y}, selectedImage));
+            nodes.push(selectedImage ? classicImageNode(`${op}_source`, {x:point.x, y:point.y}, selectedImage) : emptyClassicImageNode(`${op}_source`, {x:point.x, y:point.y}));
             nodes.push(classicPromptNode(`${op}_prompt`, {x:point.x + 340, y:point.y}, promptText, '英文提示词'));
             nodes.push(classicGeneratorNode(`${op}_generator`, {x:point.x + 700, y:point.y}, IMAGE_MODEL));
             connections.push(connection(`${op}_c_source_generator`, `${op}_source`, `${op}_generator`));
             connections.push(connection(`${op}_c_prompt_generator`, `${op}_prompt`, `${op}_generator`));
         } else if(item.id === 'image-to-video'){
-            nodes.push(classicImageNode(`${op}_source`, {x:point.x, y:point.y}, selectedImage));
+            nodes.push(selectedImage ? classicImageNode(`${op}_source`, {x:point.x, y:point.y}, selectedImage) : emptyClassicImageNode(`${op}_source`, {x:point.x, y:point.y}));
             nodes.push(classicPromptNode(`${op}_prompt`, {x:point.x + 340, y:point.y}, promptText, '英文运镜提示词'));
             nodes.push(classicVideoNode(`${op}_video`, {x:point.x + 700, y:point.y}));
             connections.push(connection(`${op}_c_source_video`, `${op}_source`, `${op}_video`));
@@ -243,7 +265,7 @@
 
     function buildSmartWorkflow(templateId, options={}){
         const item = template(templateId);
-        const selectedImage = validateImage(item, options.selectedImage || null);
+        const selectedImage = workflowImage(item, options);
         const point = normalizePoint(options.point);
         const op = options.operation_id || operationId(item.id);
         const promptText = options.prompt || (item.id === 'image-to-video' ? 'Describe the motion and camera movement for this image.' : 'Describe the image you want to create.');
@@ -254,13 +276,13 @@
             nodes.push(smartImageNode(`${op}_image`, {x:point.x + 380, y:point.y}, [], 'Nano Banana', smartImageSettings()));
             connections.push(connection(`${op}_c_prompt_image`, `${op}_prompt`, `${op}_image`, 'input'));
         } else if(item.id === 'image-to-image'){
-            nodes.push(smartImageNode(`${op}_source`, {x:point.x, y:point.y}, [selectedImage], 'Selected Image'));
+            nodes.push(selectedImage ? smartImageNode(`${op}_source`, {x:point.x, y:point.y}, [selectedImage], 'Selected Image') : emptySmartImageNode(`${op}_source`, {x:point.x, y:point.y}));
             nodes.push(smartPromptNode(`${op}_prompt`, {x:point.x + 360, y:point.y}, promptText, '英文提示词'));
             nodes.push(smartImageNode(`${op}_image`, {x:point.x + 740, y:point.y}, [], 'Nano Banana', smartImageSettings()));
             connections.push(connection(`${op}_c_source_image`, `${op}_source`, `${op}_image`, 'input'));
             connections.push(connection(`${op}_c_prompt_image`, `${op}_prompt`, `${op}_image`, 'input'));
         } else if(item.id === 'image-to-video'){
-            nodes.push(smartImageNode(`${op}_source`, {x:point.x, y:point.y}, [selectedImage], 'Selected Image'));
+            nodes.push(selectedImage ? smartImageNode(`${op}_source`, {x:point.x, y:point.y}, [selectedImage], 'Selected Image') : emptySmartImageNode(`${op}_source`, {x:point.x, y:point.y}));
             nodes.push(smartPromptNode(`${op}_prompt`, {x:point.x + 360, y:point.y}, promptText, '英文运镜提示词'));
             nodes.push(smartImageNode(`${op}_video`, {x:point.x + 740, y:point.y}, [], 'Agnes Video', smartVideoSettings()));
             connections.push(connection(`${op}_c_source_video`, `${op}_source`, `${op}_video`, 'input'));

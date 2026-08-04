@@ -702,6 +702,15 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function publishCanvasToTeam", script)
         self.assertIn("/publish", script)
 
+    def test_canvas_list_delete_menu_handles_cloud_canvases(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "canvas-list.js").read_text(encoding="utf-8")
+
+        self.assertIn('data-act="delete"', script)
+        self.assertIn("const isCloudCanvas = teamCloud.enabled || c.is_cloud;", script)
+        self.assertIn("await cloudApi(`/canvases/${encodeURIComponent(id)}`", script)
+        self.assertIn("method: 'DELETE'", script)
+
     def test_canvas_list_visibility_filter_stays_responsive_when_scale_is_disabled(self):
         root = Path(__file__).resolve().parents[1]
         css = (root / "static" / "css" / "canvas-list.css").read_text(encoding="utf-8")
@@ -885,11 +894,20 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("secondary-extra", canvas_html)
         self.assertIn(".canvas-secondary-actions", canvas_css)
         self.assertIn(".canvas-secondary-actions.is-open .secondary-extra", canvas_css)
+        self.assertIn(".canvas-secondary-actions.is-open {\n    max-width:min(760px, calc(100vw - 360px));", canvas_css)
+        self.assertIn("flex-wrap:wrap;", canvas_css)
+        self.assertIn("overflow:visible;", canvas_css)
+        self.assertIn(".canvas-secondary-actions.is-open .secondary-actions-toggle", canvas_css)
+        self.assertIn(".canvas-secondary-actions.is-open .secondary-actions-toggle span", canvas_css)
+        self.assertIn("order:99;", canvas_css)
         self.assertIn('id="secondaryActionsToggle"', canvas_html)
         self.assertIn('id="agentToggle"', canvas_html)
         self.assertIn('/static/css/agent-panel.css?v=2026.08.02.2', canvas_html)
         self.assertIn('/static/js/canvas-agent-classic-bridge.js?v=2026.07.30.1', canvas_html)
-        self.assertIn("secondaryActionsToggle", (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8"))
+        canvas_js = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+        self.assertIn("secondaryActionsToggle", canvas_js)
+        self.assertIn("label.textContent = open ? '收起' : '更多';", canvas_js)
+        self.assertIn("icon?.setAttribute('data-lucide', open ? 'chevrons-right' : 'chevrons-left');", canvas_js)
         self.assertIn('onclick="addLoopNode()"', canvas_html)
         self.assertIn('content:"CANVAS"', canvas_css)
         self.assertIn(".canvas-asset-panel,\n.workflow-transfer-panel", canvas_css)
@@ -1054,6 +1072,11 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("insertBuiltinCanvasWorkflowTemplate", canvas_script)
         self.assertIn("insertSmartWorkflowIntoCanvas(payload, targetPoint)", smart_script)
         self.assertIn("insertWorkflowIntoCanvas(payload, targetPoint)", canvas_script)
+        self.assertIn("allowEmptyImage", builder_script)
+        self.assertIn("emptyClassicImageNode", builder_script)
+        self.assertIn("emptySmartImageNode", builder_script)
+        self.assertIn("allowEmptyImage:true", canvas_script)
+        self.assertIn("allowEmptyImage:true", smart_script)
         self.assertNotIn("fetch('/api/canvas-video'", builder_script)
         self.assertNotIn('fetch("/api/canvas-video"', builder_script)
         self.assertNotIn("fetch('/api/canvas-image", builder_script)

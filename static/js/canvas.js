@@ -489,9 +489,14 @@ document.getElementById('secondaryActionsToggle')?.addEventListener('click', eve
     const open = !dock.classList.contains('is-open');
     dock.classList.toggle('is-open', open);
     const title = open ? '收起更多工具' : '展开更多工具';
+    const label = toggle.querySelector('span');
+    const icon = toggle.querySelector('[data-lucide]');
+    if(label) label.textContent = open ? '收起' : '更多';
+    icon?.setAttribute('data-lucide', open ? 'chevrons-right' : 'chevrons-left');
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     toggle.setAttribute('aria-label', title);
     toggle.title = title;
+    refreshIcons();
 });
 let localCanvasDirty = false;
 let savingCanvasNow = false;
@@ -14321,14 +14326,10 @@ function insertBuiltinCanvasWorkflowTemplate(templateId, targetPoint=null){
         return false;
     }
     const selectedImageRef = templateItem.requiresImage ? selectedCanvasWorkflowImage() : null;
-    if(templateItem.requiresImage && !selectedImageRef){
-        setStatus('请先选择图片节点');
-        return false;
-    }
     const beforeNodes = nodes.slice();
     const beforeConnections = connections.slice();
     try {
-        const payload = builder.buildClassicWorkflow(templateId, {selectedImage:selectedImageRef, point:targetPoint});
+        const payload = builder.buildClassicWorkflow(templateId, {selectedImage:selectedImageRef, point:targetPoint, allowEmptyImage:true});
         if(!builder.markOperationProcessed(payload.operation_id)) return false;
         insertWorkflowIntoCanvas(payload, targetPoint);
         return true;
@@ -14338,7 +14339,7 @@ function insertBuiltinCanvasWorkflowTemplate(templateId, targetPoint=null){
         if(canvas) canvas.connections = connections;
         render();
         scheduleSave();
-        setStatus(err.message === 'selected image node required' ? '请先选择图片节点' : (err.message || '创建工作流失败'));
+        setStatus(err.message || '创建工作流失败');
         return false;
     }
 }
