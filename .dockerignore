@@ -1,5 +1,7 @@
 .git
 .github
+.venv
+.codex-speedtest-current
 __pycache__/
 tests/__pycache__/
 *.pyc
@@ -13,6 +15,7 @@ deploy/fnos/api-env/
 deploy/fnos/data/
 deploy/fnos/output/
 deploy/fnos/team-assets/
+tmp/
 
 python/
 packages/

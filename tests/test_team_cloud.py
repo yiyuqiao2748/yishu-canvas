@@ -654,6 +654,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         compose = (root / "deploy" / "fnos" / "docker-compose.yml").read_text(encoding="utf-8")
         dockerignore = (root / ".dockerignore").read_text(encoding="utf-8")
+        sync_script = (root / "deploy" / "sync-nas-source.ps1").read_text(encoding="utf-8")
 
         self.assertIn("./api-env:/app/API", compose)
         self.assertIn("./data:/app/data", compose)
@@ -665,6 +666,12 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("deploy/fnos/output/", dockerignore)
         self.assertIn("deploy/fnos/team-assets/", dockerignore)
         self.assertIn("API/.env", dockerignore)
+        self.assertIn(".venv", dockerignore)
+        self.assertIn("tmp/", dockerignore)
+        self.assertIn(".codex-speedtest-current", dockerignore)
+        self.assertIn('".venv"', sync_script)
+        self.assertIn('"tmp"', sync_script)
+        self.assertIn('".codex-speedtest-current"', sync_script)
 
     def test_cloud_canvas_kind_is_per_canvas_and_defaults_classic(self):
         root = Path(__file__).resolve().parents[1]
