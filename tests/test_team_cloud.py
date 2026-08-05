@@ -889,9 +889,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         smart_css = (root / "static" / "css" / "smart-canvas.css").read_text(encoding="utf-8")
 
         self.assertIn("canvas.css?v=2026.07.30.1", canvas_html)
-        self.assertIn("canvas.js?v=2026.08.03.3", canvas_html)
+        self.assertIn("canvas.js?v=2026.08.05.1", canvas_html)
         self.assertIn("smart-canvas.css?v=2026.07.30.3", smart_html)
-        self.assertIn("smart-canvas.js?v=2026.07.30.3", smart_html)
+        self.assertIn("smart-canvas.js?v=2026.08.05.1", smart_html)
         self.assertIn("2026-07-28 secondary canvas workbench alignment", canvas_css)
         self.assertIn("2026-07-30 classic canvas final theme sweep", canvas_css)
         self.assertIn("2026-07-28 secondary canvas workbench alignment", smart_css)
@@ -925,6 +925,24 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn(".asset-panel,\n.workflow-transfer-panel", smart_css)
         self.assertIn(".asset-panel,\n    .workflow-transfer-panel {\n        left:12px !important;\n        right:12px !important;", smart_css)
         self.assertIn("width:auto;\n        max-width:none;", smart_css)
+
+    def test_canvas_uploads_guard_large_files_and_html_error_pages(self):
+        root = Path(__file__).resolve().parents[1]
+        canvas_script = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+        smart_script = (root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("const AI_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;", canvas_script)
+        self.assertIn("function uploadSizeError", canvas_script)
+        self.assertIn("async function postAiUpload", canvas_script)
+        self.assertIn("上传接口返回了网页内容", canvas_script)
+        self.assertNotIn("fetch('/api/ai/upload', {method:'POST', body:form}).then(r=>r.json())", canvas_script)
+        self.assertNotIn("fetch('/api/ai/upload', {method:'POST', body:form}).then(r => r.json())", canvas_script)
+
+        self.assertIn("const SMART_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;", smart_script)
+        self.assertIn("function smartUploadSizeError", smart_script)
+        self.assertIn("async function postSmartAiUpload", smart_script)
+        self.assertIn("上传接口返回了网页内容", smart_script)
+        self.assertNotIn("fetch('/api/ai/upload', {method:'POST', body:form}).then(r => r.json())", smart_script)
 
     def test_workbench_preview_exposes_reference_home_shell(self):
         root = Path(__file__).resolve().parents[1]

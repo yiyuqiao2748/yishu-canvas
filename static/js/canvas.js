@@ -7,6 +7,7 @@ function trf(key, values={}){
 function langIsEn(){ return window.StudioI18n?.lang?.() === 'en'; }
 const CANVAS_UPLOAD_MAX = 20;
 const CANVAS_REFERENCE_IMAGE_MAX = 20;
+const AI_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 function actionFailed(labelKey, detail=''){
     const label = tr(labelKey);
     return langIsEn() ? `${label} failed${detail ? `: ${detail}` : ''}` : `${label}失败${detail ? `：${detail}` : ''}`;
@@ -967,6 +968,29 @@ async function responseErrorMessage(response, fallback='请求失败'){
         } catch(_) {
             return fallback;
         }
+    }
+}
+function looksLikeHtmlResponse(text){
+    return /<!doctype|<html[\s>]/i.test(String(text || '').slice(0, 400));
+}
+function uploadSizeError(files, fallback='文件'){
+    const oversized = [...(files || [])].find(file => Number(file?.size || 0) > AI_UPLOAD_MAX_BYTES);
+    if(!oversized) return '';
+    return `${oversized.name || fallback} 超过 50MB，无法上传`;
+}
+async function postAiUpload(form, fallback='上传失败'){
+    const response = await fetch('/api/ai/upload', {method:'POST', body:form});
+    if(!response.ok){
+        let message = await responseErrorMessage(response, fallback);
+        if(looksLikeHtmlResponse(message)) message = `${fallback}：上传接口返回了网页内容，请刷新页面后重试`;
+        throw new Error(message || fallback);
+    }
+    try {
+        return await response.clone().json();
+    } catch(e) {
+        const text = await response.text().catch(() => '');
+        if(looksLikeHtmlResponse(text)) throw new Error(`${fallback}：上传接口返回了网页内容，请刷新页面后重试`);
+        throw new Error(text || `${fallback}：上传接口返回格式不正确`);
     }
 }
 function closeErrorModal(){
@@ -4247,9 +4271,11 @@ async function uploadMediaFiles(files, point, onlyImages=false, opts={}){
         return onlyImages ? kind === 'image' : ['image','video','audio'].includes(kind);
     }).slice(0, CANVAS_UPLOAD_MAX);
     if(!supported.length) return [];
+    const sizeError = uploadSizeError(supported);
+    if(sizeError) throw new Error(sizeError);
     const form = new FormData();
     supported.forEach(file => form.append('files', file));
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r=>r.json());
+    const data = await postAiUpload(form, langIsEn() ? 'Image upload failed' : '图片上传失败');
     const base = point || screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
     const created = [];
     (data.files || []).forEach((file, i) => {
@@ -4385,6 +4411,8 @@ async function fillImageNode(nodeId, files, opts={}){
     if(!ensureCanvas()) return;
     const imgs = [...files].filter(file => ['image','video','audio'].includes(mediaKindForUpload(file))).slice(0, CANVAS_UPLOAD_MAX);
     if(!imgs.length) return;
+    const sizeError = uploadSizeError(imgs);
+    if(sizeError) throw new Error(sizeError);
     if(opts.group && imgs.length > 1){
         const source = nodes.find(n => n.id === nodeId);
         pushUndo();
@@ -4416,7 +4444,7 @@ async function fillImageNode(nodeId, files, opts={}){
     }
     const form = new FormData();
     form.append('files', imgs[0]);
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r=>r.json());
+    const data = await postAiUpload(form, langIsEn() ? 'Image upload failed' : '图片上传失败');
     const file = data.files?.[0];
     const node = nodes.find(n => n.id === nodeId);
     if(file && node){
@@ -5878,15 +5906,19 @@ window.addEventListener('mousemove', event => {
 });
 window.addEventListener('mouseup', () => { cropDrag = null; document.getElementById('cropCanvas')?.classList.remove('dragging-image'); });
 async function uploadCroppedBlob(blob, name){
+    const sizeError = uploadSizeError([blob], name || '图片');
+    if(sizeError) throw new Error(sizeError);
     const form = new FormData();
     form.append('files', blob, name);
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r=>r.json());
+    const data = await postAiUpload(form, langIsEn() ? 'Image upload failed' : '图片上传失败');
     return data.files?.[0];
 }
 async function uploadImageBlobs(blobs){
+    const sizeError = uploadSizeError((blobs || []).map(item => item.blob), '图片');
+    if(sizeError) throw new Error(sizeError);
     const form = new FormData();
     blobs.forEach(item => form.append('files', item.blob, item.name));
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r=>r.json());
+    const data = await postAiUpload(form, langIsEn() ? 'Image upload failed' : '图片上传失败');
     return data.files || [];
 }
 async function applyImageCrop(){
@@ -7317,9 +7349,11 @@ async function addUrlToCanvasAssetLibrary(url, name=''){
     setStatus('已保存到资产库');
 }
 async function uploadFilesToLibrary(files, libraryId, categoryId){
+    const sizeError = uploadSizeError(files, '素材');
+    if(sizeError) throw new Error(sizeError);
     const form = new FormData();
     [...files].forEach(file => form.append('files', file));
-    const uploaded = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r => r.json());
+    const uploaded = await postAiUpload(form, '素材上传失败');
     const items = (uploaded.files || []).filter(file => file?.url).map(file => ({library_id:libraryId, category_id:categoryId, url:file.url, name:file.name || 'asset'}));
     if(!items.length) return null;
     return fetch('/api/asset-library/items/batch', {

@@ -42,6 +42,7 @@ const fileInput = document.getElementById('fileInput');
 const apiKindToggle = document.getElementById('apiKindToggle');
 const inputThumbsRow = document.getElementById('inputThumbsRow');
 const SMART_UPLOAD_MAX = 20;
+const SMART_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const SMART_REFERENCE_IMAGE_MAX = 20;
 const inputPromptPreview = document.getElementById('inputPromptPreview');
 const minimap = document.getElementById('minimap');
@@ -11684,15 +11685,19 @@ function resizeCropFromDrag(dx, dy){
     cropState.h = Math.round(next.h);
 }
 async function uploadCroppedBlob(blob, name){
+    const sizeError = smartUploadSizeError([blob], name || '图片');
+    if(sizeError) throw new Error(sizeError);
     const form = new FormData();
     form.append('files', blob, name);
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r => r.json());
+    const data = await postSmartAiUpload(form, tr('smart.toastUploadFail'));
     return data.files?.[0];
 }
 async function uploadImageBlobs(blobs){
+    const sizeError = smartUploadSizeError((blobs || []).map(item => item.blob), '图片');
+    if(sizeError) throw new Error(sizeError);
     const form = new FormData();
     blobs.forEach(item => form.append('files', item.blob, item.name));
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r => r.json());
+    const data = await postSmartAiUpload(form, tr('smart.toastUploadFail'));
     return data.files || [];
 }
 function replaceEditedImage(file, extra={}){
@@ -12459,6 +12464,29 @@ async function smartResponseErrorMessage(response, fallback='请求失败'){
     } catch(_) {}
     return fallback;
 }
+function smartLooksLikeHtmlResponse(text){
+    return /<!doctype|<html[\s>]/i.test(String(text || '').slice(0, 400));
+}
+function smartUploadSizeError(files, fallback='文件'){
+    const oversized = [...(files || [])].find(file => Number(file?.size || 0) > SMART_UPLOAD_MAX_BYTES);
+    if(!oversized) return '';
+    return `${oversized.name || fallback} 超过 50MB，无法上传`;
+}
+async function postSmartAiUpload(form, fallback='上传失败'){
+    const response = await fetch('/api/ai/upload', {method:'POST', body:form});
+    if(!response.ok){
+        let message = await smartResponseErrorMessage(response, fallback);
+        if(smartLooksLikeHtmlResponse(message)) message = `${fallback}：上传接口返回了网页内容，请刷新页面后重试`;
+        throw new Error(message || fallback);
+    }
+    try {
+        return await response.clone().json();
+    } catch(e) {
+        const text = await response.text().catch(() => '');
+        if(smartLooksLikeHtmlResponse(text)) throw new Error(`${fallback}：上传接口返回了网页内容，请刷新页面后重试`);
+        throw new Error(text || `${fallback}：上传接口返回格式不正确`);
+    }
+}
 function smartDropDataTypes(dataTransfer){
     return [...(dataTransfer?.types || [])].map(type => String(type || ''));
 }
@@ -12606,12 +12634,11 @@ function setSmartDropCopyEffect(e, includeAsset=false){
 async function uploadFiles(files){
     const supported = [...(files || [])].filter(isSupportedUploadFile).slice(0, SMART_UPLOAD_MAX);
     if(!supported.length) return [];
+    const sizeError = smartUploadSizeError(supported);
+    if(sizeError) throw new Error(sizeError);
     const form = new FormData();
     supported.forEach(file => form.append('files', file, file.name || 'media'));
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(async r => {
-        if(!r.ok) throw new Error((await r.text()) || tr('smart.toastUploadFail'));
-        return r.json();
-    });
+    const data = await postSmartAiUpload(form, tr('smart.toastUploadFail'));
     return (data.files || []).map((file, index) => ({
         ...file,
         kind:file.kind || mediaKindForFile(supported[index])
