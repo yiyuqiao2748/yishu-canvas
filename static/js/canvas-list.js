@@ -22,6 +22,7 @@ const teamCloud = {
     enabled: false,
     user: null,
     teamId: '',
+    role: '',
 };
 
 function cloudModeRequested(){
@@ -277,9 +278,20 @@ function normalizeCloudCanvasKind(kind){
 function normalizeCloudCanvasVisibility(visibility){
     return String(visibility || '').toLowerCase() === 'team' ? 'team' : 'private';
 }
+function teamCloudCanManage(){
+    return teamCloud.role === 'owner' || teamCloud.role === 'admin';
+}
+function cloudCanvasVisibleToCurrentUser(canvas){
+    if(teamCloudCanManage()) return true;
+    if(normalizeCloudCanvasVisibility(canvas?.visibility) === 'team') return true;
+    const currentUserId = String(teamCloud.user?.id || '');
+    return Boolean(currentUserId) && String(canvas?.created_by || '') === currentUserId;
+}
 function canvasVisibilityLabel(canvas, compact = false){
     const visibility = normalizeCloudCanvasVisibility(canvas?.visibility);
     if(visibility === 'team') return compact ? L('团队','Team') : L('团队共享','Team shared');
+    const belongsToCurrentUser = String(canvas?.created_by || '') === String(teamCloud.user?.id || '');
+    if(teamCloudCanManage() && !belongsToCurrentUser) return L('成员私有','Member private');
     return compact ? L('私有','Private') : L('我的私有','Private');
 }
 
@@ -372,6 +384,11 @@ async function loadCloudAll(){
         teamCloud.enabled = true;
         teamCloud.user = me.user;
         teamCloud.teamId = selectedTeam.id;
+        teamCloud.role = String(selectedTeam.role || '').toLowerCase();
+        const privateFilterButton = visibilityFilterButtons.find(btn => btn.dataset.visibilityFilter === 'private');
+        if(privateFilterButton){
+            privateFilterButton.textContent = teamCloudCanManage() ? L('全部私有','All private') : L('我的私有','My private');
+        }
         localStorage.setItem(TEAM_CLOUD_MODE_KEY, '1');
         localStorage.setItem(TEAM_CLOUD_TEAM_KEY, selectedTeam.id);
 
@@ -396,7 +413,7 @@ async function loadCloudAll(){
             const data = await cloudApi(`/projects/${encodeURIComponent(p.id)}/canvases`);
             return (data.canvases || []).map(mapCloudCanvas);
         }));
-        canvases = canvasGroups.flat();
+        canvases = canvasGroups.flat().filter(cloudCanvasVisibleToCurrentUser);
         projects.forEach(p => {
             p.canvas_count = canvases.filter(c => c.project === p.id).length;
         });

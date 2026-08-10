@@ -108,7 +108,7 @@ class TeamCloudStoreTests(unittest.TestCase):
 
         with self.assertRaises(HTTPException) as member_error:
             self.store.delete_canvas(member, canvas["id"])
-        self.assertEqual(member_error.exception.status_code, 403)
+        self.assertEqual(member_error.exception.status_code, 404)
 
         deleted = self.store.delete_canvas(self.owner, canvas["id"])
 
@@ -956,6 +956,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn('data-visibility-filter="team"', html)
         self.assertIn("function normalizeCloudCanvasVisibility", script)
         self.assertIn("visibility: normalizeCloudCanvasVisibility", script)
+        self.assertIn("function cloudCanvasVisibleToCurrentUser", script)
+        self.assertIn("if(teamCloudCanManage()) return true", script)
+        self.assertIn("canvasGroups.flat().filter(cloudCanvasVisibleToCurrentUser)", script)
         self.assertIn("function publishCanvasToTeam", script)
         self.assertIn("/publish", script)
 
@@ -974,9 +977,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         html = (root / "static" / "canvas-list.html").read_text(encoding="utf-8")
         index_html = (root / "static" / "index.html").read_text(encoding="utf-8")
 
-        self.assertIn("canvas-list.html?v=2026.08.09.9", index_html)
+        self.assertIn("canvas-list.html?v=2026.08.10.5", index_html)
         self.assertIn("canvas-list.css?v=2026.08.09.3", html)
-        self.assertIn("canvas-list.js?v=2026.08.09.8", html)
+        self.assertIn("canvas-list.js?v=2026.08.10.1", html)
         self.assertIn("Light theme topbar readability", css)
         self.assertIn("body.theme-light .ws-top-kicker", css)
         self.assertIn("color:#7c2d12;", css)

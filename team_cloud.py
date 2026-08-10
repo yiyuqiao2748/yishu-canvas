@@ -1073,8 +1073,20 @@ class LocalTeamStore:
     def list_projects(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
         with self.lock:
             data = self._read()
-            self._require_member(data, user.id, team_id)
-            return [p for p in data["projects"] if p.get("team_id") == team_id and not p.get("archived_at")]
+            member = self._require_member(data, user.id, team_id)
+            projects = [p for p in data["projects"] if p.get("team_id") == team_id and not p.get("archived_at")]
+            if member.get("role") in {"owner", "admin"}:
+                return projects
+            visible_project_ids = {
+                canvas.get("project_id")
+                for canvas in data["canvases"]
+                if canvas.get("team_id") == team_id and record_is_visible_to_user(canvas, user, member)
+            }
+            return [
+                project
+                for project in projects
+                if project.get("created_by") == user.id or project.get("id") in visible_project_ids
+            ]
 
     def create_project(self, user: CurrentUser, team_id: str, name: str, description: str = "") -> Dict[str, Any]:
         clean_name = name.strip()
@@ -1164,6 +1176,7 @@ class LocalTeamStore:
             if not canvas:
                 raise HTTPException(status_code=404, detail="Canvas not found")
             member = self._require_member(data, user.id, canvas["team_id"])
+            require_visible_record(canvas, user, member, "Canvas not found")
             require_team_admin(member)
             data["canvases"] = [item for item in data["canvases"] if item.get("id") != canvas_id]
             data["canvas_versions"] = [
@@ -1911,11 +1924,23 @@ class SupabaseTeamStore:
         return rows[0]
 
     async def list_projects(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
-        await self._require_member(user.id, team_id)
-        return await self._request(
+        member = await self._require_member(user.id, team_id)
+        projects = await self._request(
             "GET",
             f"/projects?team_id=eq.{team_id}&archived_at=is.null&order=updated_at.desc&select=*",
         )
+        if member.get("role") in {"owner", "admin"}:
+            return projects or []
+        visible_canvases = await self._request(
+            "GET",
+            f"/canvases?team_id=eq.{team_id}&or=(visibility.eq.team,created_by.eq.{quote(user.id, safe='')})&select=project_id",
+        )
+        visible_project_ids = {row.get("project_id") for row in visible_canvases or []}
+        return [
+            project
+            for project in projects or []
+            if project.get("created_by") == user.id or project.get("id") in visible_project_ids
+        ]
 
     async def create_project(self, user: CurrentUser, team_id: str, name: str, description: str = "") -> Dict[str, Any]:
         await self._require_member(user.id, team_id)
