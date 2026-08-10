@@ -27,7 +27,7 @@ LOCAL_TEAM_STORE = os.path.join(DATA_DIR, "team_cloud.json")
 TEAM_ROLES = {"owner", "admin", "member"}
 VISIBILITY_VALUES = {"private", "team"}
 TEAM_ASSET_MAX_BYTES = int(os.getenv("TEAM_ASSET_MAX_BYTES", str(50 * 1024 * 1024)))
-TEAM_POINTS_DEFAULT_BALANCE = int(os.getenv("TEAM_POINTS_DEFAULT_BALANCE", "100"))
+TEAM_POINTS_DEFAULT_BALANCE = int(os.getenv("TEAM_POINTS_DEFAULT_BALANCE", "16050"))
 TEAM_SESSION_HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("TEAM_SESSION_HEARTBEAT_INTERVAL_SECONDS", "60"))
 TEAM_SESSION_ONLINE_WINDOW_SECONDS = int(os.getenv("TEAM_SESSION_ONLINE_WINDOW_SECONDS", "300"))
 TEAM_CONFIG_CACHE_SECONDS = int(os.getenv("TEAM_CONFIG_CACHE_SECONDS", "60"))
@@ -35,12 +35,33 @@ TEAM_ADMIN_USAGE_LIMIT = int(os.getenv("TEAM_ADMIN_USAGE_LIMIT", "1000"))
 TEAM_AUTH_VERIFICATION_RESEND_SECONDS = int(os.getenv("TEAM_AUTH_VERIFICATION_RESEND_SECONDS", "60"))
 
 DEFAULT_OPERATION_POINTS = {
-    "image": 1,
-    "upscale": 1,
-    "chat": 1,
-    "video": 5,
-    "workflow": 1,
+    "image": 0,
+    "upscale": 0,
+    "chat": 0,
+    "video": 0,
+    "workflow": 0,
 }
+
+DEFAULT_MODEL_BILLING_PRICES = [
+    {"provider_id": provider_id, "model": model, "operation_type": "image", "points_cost": points, "provider_points_cost": points * 100, "note": "grsai screenshot preset"}
+    for provider_id in ("grsai", "custom-api")
+    for model, points in (
+        ("gpt-image-2", 6),
+        ("gpt-image-2-vip", 13),
+        ("nano-banana-pro", 18),
+        ("nano-banana-2", 12),
+    )
+]
+
+DEFAULT_PROVIDER_RECHARGES = [
+    {
+        "provider_id": "grsai",
+        "amount_cny": 100,
+        "provider_points_received": 1605000,
+        "app_points_received": 16050,
+        "note": "Initial grsai recharge baseline",
+    }
+]
 
 
 @dataclass
@@ -190,6 +211,25 @@ class PointsAdjustRequest(BaseModel):
     note: str = Field("", max_length=500)
 
 
+class ModelBillingPriceRequest(BaseModel):
+    team_id: str = ""
+    provider_id: str = Field(..., min_length=1, max_length=80)
+    model: str = Field(..., min_length=1, max_length=200)
+    operation_type: str = "image"
+    points_cost: int = Field(0, ge=0, le=1000000)
+    enabled: bool = True
+    note: str = Field("", max_length=500)
+
+
+class ProviderRechargeRequest(BaseModel):
+    team_id: str = ""
+    provider_id: str = Field(..., min_length=1, max_length=80)
+    amount_cny: float = Field(0, ge=0)
+    provider_points_received: int = Field(0, ge=0)
+    app_points_received: int = Field(0, ge=0)
+    note: str = Field("", max_length=500)
+
+
 class SessionHeartbeatRequest(BaseModel):
     team_id: str = ""
     session_id: str = ""
@@ -270,6 +310,118 @@ def normalize_operation_type(value: Any) -> str:
 
 def default_points_for_operation(operation_type: str) -> int:
     return int(DEFAULT_OPERATION_POINTS.get(normalize_operation_type(operation_type), 1))
+
+
+def normalize_billing_provider_id(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
+def normalize_billing_model(value: str) -> str:
+    return str(value or "").strip()
+
+
+def billing_price_key(provider_id: str, model: str, operation_type: str) -> Tuple[str, str, str]:
+    return (
+        normalize_billing_provider_id(provider_id),
+        normalize_billing_model(model).lower(),
+        normalize_operation_type(operation_type),
+    )
+
+
+def billing_price_public(record: Dict[str, Any]) -> Dict[str, Any]:
+    points_cost = max(0, int(record.get("points_cost") or 0))
+    provider_points_cost = max(0, int(record.get("provider_points_cost") or points_cost * 100))
+    return {
+        "id": str(record.get("id") or ""),
+        "team_id": str(record.get("team_id") or ""),
+        "provider_id": normalize_billing_provider_id(record.get("provider_id")),
+        "model": normalize_billing_model(record.get("model")),
+        "operation_type": normalize_operation_type(record.get("operation_type")),
+        "points_cost": points_cost,
+        "provider_points_cost": provider_points_cost,
+        "enabled": bool(record.get("enabled", True)),
+        "note": str(record.get("note") or ""),
+        "updated_at": record.get("updated_at"),
+    }
+
+
+def default_billing_price_rows(team_id: str) -> List[Dict[str, Any]]:
+    now = utc_now_iso()
+    return [
+        {
+            "id": f"default:{team_id}:{item['provider_id']}:{item['operation_type']}:{item['model']}",
+            "team_id": team_id,
+            "provider_id": item["provider_id"],
+            "model": item["model"],
+            "operation_type": item["operation_type"],
+            "points_cost": item["points_cost"],
+            "provider_points_cost": item.get("provider_points_cost") or item["points_cost"] * 100,
+            "enabled": True,
+            "note": item.get("note") or "",
+            "updated_at": now,
+        }
+        for item in DEFAULT_MODEL_BILLING_PRICES
+    ]
+
+
+def default_recharge_rows(team_id: str) -> List[Dict[str, Any]]:
+    now = utc_now_iso()
+    return [
+        {
+            "id": f"default:{team_id}:{item['provider_id']}",
+            "team_id": team_id,
+            "provider_id": item["provider_id"],
+            "amount_cny": float(item.get("amount_cny") or 0),
+            "provider_points_received": int(item.get("provider_points_received") or 0),
+            "app_points_received": int(item.get("app_points_received") or 0),
+            "note": item.get("note") or "",
+            "recharged_at": now,
+            "created_at": now,
+        }
+        for item in DEFAULT_PROVIDER_RECHARGES
+    ]
+
+
+def merged_billing_prices(team_id: str, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    by_key: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for row in default_billing_price_rows(team_id):
+        by_key[billing_price_key(row.get("provider_id"), row.get("model"), row.get("operation_type"))] = row
+    for row in rows or []:
+        by_key[billing_price_key(row.get("provider_id"), row.get("model"), row.get("operation_type"))] = row
+    return [billing_price_public(row) for row in sorted(by_key.values(), key=lambda item: (str(item.get("provider_id") or ""), str(item.get("model") or ""), str(item.get("operation_type") or "")))]
+
+
+def billing_quote_from_prices(prices: List[Dict[str, Any]], provider_id: str, model: str, operation_type: str, units: int = 1) -> Dict[str, Any]:
+    units = max(1, int(units or 1))
+    key = billing_price_key(provider_id, model, operation_type)
+    price = next((item for item in prices if billing_price_key(item.get("provider_id"), item.get("model"), item.get("operation_type")) == key and item.get("enabled") is not False), None)
+    unit_points = int(price.get("points_cost") or 0) if price else 0
+    unit_provider_points = int(price.get("provider_points_cost") or unit_points * 100) if price else unit_points * 100
+    return {
+        "provider_id": normalize_billing_provider_id(provider_id),
+        "model": normalize_billing_model(model),
+        "operation_type": normalize_operation_type(operation_type),
+        "units": units,
+        "unit_points": unit_points,
+        "required_points": unit_points * units,
+        "unit_provider_points": unit_provider_points,
+        "provider_points_charged": unit_provider_points * units,
+        "configured": bool(price),
+        "enabled": bool(price.get("enabled", True)) if price else True,
+    }
+
+
+def recharge_cost_summary(recharges: List[Dict[str, Any]]) -> Dict[str, Any]:
+    amount = sum(float(item.get("amount_cny") or 0) for item in recharges or [])
+    app_points = sum(int(item.get("app_points_received") or 0) for item in recharges or [])
+    provider_points = sum(int(item.get("provider_points_received") or 0) for item in recharges or [])
+    cost_per_point = amount / app_points if app_points else 0
+    return {
+        "amount_cny": round(amount, 4),
+        "app_points_received": app_points,
+        "provider_points_received": provider_points,
+        "cost_per_point_cny": round(cost_per_point, 6),
+    }
 
 
 def usage_points(payload: Dict[str, Any]) -> int:
@@ -915,6 +1067,8 @@ class LocalTeamStore:
                 "canvas_versions": [],
                 "assets": [],
                 "api_providers": [],
+                "billing_prices": [],
+                "provider_recharges": [],
                 "generation_logs": [],
                 "api_usage_logs": [],
                 "user_points": [],
@@ -935,6 +1089,8 @@ class LocalTeamStore:
             "canvas_versions": data.get("canvas_versions") or [],
             "assets": data.get("assets") or [],
             "api_providers": data.get("api_providers") or [],
+            "billing_prices": data.get("billing_prices") or [],
+            "provider_recharges": data.get("provider_recharges") or [],
             "generation_logs": data.get("generation_logs") or [],
             "api_usage_logs": data.get("api_usage_logs") or [],
             "user_points": data.get("user_points") or [],
@@ -1034,6 +1190,8 @@ class LocalTeamStore:
             data["user_points"] = [item for item in data["user_points"] if item.get("team_id") != team_id]
             data["point_ledger"] = [item for item in data["point_ledger"] if item.get("team_id") != team_id]
             data["user_sessions"] = [item for item in data["user_sessions"] if item.get("team_id") != team_id]
+            data["billing_prices"] = [item for item in data["billing_prices"] if item.get("team_id") != team_id]
+            data["provider_recharges"] = [item for item in data["provider_recharges"] if item.get("team_id") != team_id]
             self._write(data)
         removed_files = [
             key
@@ -1543,24 +1701,116 @@ class LocalTeamStore:
             self._write(data)
             return points
 
-    def assert_points_available(self, user: CurrentUser, team_id: str, operation_type: str, provider_id: str = "", model: str = "", units: int = 1) -> Dict[str, Any]:
-        required = default_points_for_operation(operation_type) * max(1, int(units or 1))
+    def list_billing_prices(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
         with self.lock:
             data = self._read()
             self._require_member(data, user.id, team_id)
+            prices = merged_billing_prices(team_id, [item for item in data["billing_prices"] if item.get("team_id") == team_id])
+            return {"prices": prices}
+
+    def save_billing_price(self, user: CurrentUser, team_id: str, payload: ModelBillingPriceRequest) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            actor = self._require_member(data, user.id, team_id)
+            require_team_admin(actor)
+            key = billing_price_key(payload.provider_id, payload.model, payload.operation_type)
+            record = next((item for item in data["billing_prices"] if item.get("team_id") == team_id and billing_price_key(item.get("provider_id"), item.get("model"), item.get("operation_type")) == key), None)
+            now = now_ms()
+            values = {
+                "id": record.get("id") if record else str(uuid.uuid4()),
+                "team_id": team_id,
+                "provider_id": normalize_billing_provider_id(payload.provider_id),
+                "model": normalize_billing_model(payload.model),
+                "operation_type": normalize_operation_type(payload.operation_type),
+                "points_cost": max(0, int(payload.points_cost)),
+                "provider_points_cost": max(0, int(payload.points_cost)) * 100,
+                "enabled": bool(payload.enabled),
+                "note": payload.note,
+                "updated_at": now,
+                "updated_by": user.id,
+            }
+            if record:
+                record.update(values)
+            else:
+                data["billing_prices"].append(values)
+            self._write(data)
+            return {"price": billing_price_public(values)}
+
+    def list_provider_recharges(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            actor = self._require_member(data, user.id, team_id)
+            require_team_admin(actor)
+            rows = [item for item in data["provider_recharges"] if item.get("team_id") == team_id]
+            rows = sorted(rows, key=lambda item: parse_timestamp(item.get("recharged_at") or item.get("created_at")), reverse=True)
+            return {"recharges": rows or default_recharge_rows(team_id), "summary": recharge_cost_summary(rows or default_recharge_rows(team_id))}
+
+    def save_provider_recharge(self, user: CurrentUser, team_id: str, payload: ProviderRechargeRequest) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            actor = self._require_member(data, user.id, team_id)
+            require_team_admin(actor)
+            now = now_ms()
+            row = {
+                "id": str(uuid.uuid4()),
+                "team_id": team_id,
+                "provider_id": normalize_billing_provider_id(payload.provider_id),
+                "amount_cny": round(float(payload.amount_cny), 4),
+                "provider_points_received": max(0, int(payload.provider_points_received)),
+                "app_points_received": max(0, int(payload.app_points_received or round(payload.provider_points_received / 100))),
+                "note": payload.note,
+                "recharged_at": now,
+                "created_at": now,
+                "created_by": user.id,
+            }
+            data["provider_recharges"].append(row)
+            self._write(data)
+            rows = [item for item in data["provider_recharges"] if item.get("team_id") == team_id]
+            return {"recharge": row, "summary": recharge_cost_summary(rows)}
+
+    def billing_quote(self, user: CurrentUser, team_id: str, provider_id: str, model: str, operation_type: str, units: int = 1) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            prices = merged_billing_prices(team_id, [item for item in data["billing_prices"] if item.get("team_id") == team_id])
+            quote = billing_quote_from_prices(prices, provider_id, model, operation_type, units)
+            points = self._ensure_points_record(data, team_id, user.id)
+            recharges = [item for item in data["provider_recharges"] if item.get("team_id") == team_id] or default_recharge_rows(team_id)
+            quote["balance"] = int(points.get("balance") or 0)
+            quote["estimated_cost_cny"] = round(quote["required_points"] * recharge_cost_summary(recharges)["cost_per_point_cny"], 4)
+            return quote
+
+    def assert_points_available(self, user: CurrentUser, team_id: str, operation_type: str, provider_id: str = "", model: str = "", units: int = 1) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            prices = merged_billing_prices(team_id, [item for item in data["billing_prices"] if item.get("team_id") == team_id])
+            quote = billing_quote_from_prices(prices, provider_id, model, operation_type, units)
+            required = quote["required_points"]
             points = self._ensure_points_record(data, team_id, user.id)
             if int(points.get("balance") or 0) < required:
                 raise HTTPException(status_code=402, detail=f"点数不足：本次需要 {required} 点，当前余额 {points.get('balance') or 0} 点")
             self._write(data)
-            return {"required_points": required, "points": points}
+            return {**quote, "points": points}
 
     def create_usage_log(self, user: CurrentUser, team_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         operation_type = normalize_operation_type(payload.get("operation_type"))
         status = str(payload.get("status") or "succeeded")
-        points = usage_points({**payload, "operation_type": operation_type}) if status == "succeeded" else 0
         with self.lock:
             data = self._read()
             self._require_member(data, user.id, team_id)
+            prices = merged_billing_prices(team_id, [item for item in data["billing_prices"] if item.get("team_id") == team_id])
+            units = max(1, int(payload.get("image_count") or payload.get("video_count") or payload.get("request_count") or 1))
+            quote = billing_quote_from_prices(prices, payload.get("provider_id"), payload.get("model"), operation_type, units)
+            if status == "succeeded" and payload.get("points_charged") is not None:
+                try:
+                    points = max(0, int(payload.get("points_charged")))
+                except (TypeError, ValueError):
+                    points = 0
+            else:
+                points = quote["required_points"] if status == "succeeded" else 0
+            recharges = [item for item in data["provider_recharges"] if item.get("team_id") == team_id] or default_recharge_rows(team_id)
+            cost_per_point = recharge_cost_summary(recharges)["cost_per_point_cny"]
             record = {
                 "id": str(uuid.uuid4()),
                 "team_id": team_id,
@@ -1572,6 +1822,8 @@ class LocalTeamStore:
                 "model": str(payload.get("model") or ""),
                 "status": status,
                 "points_charged": points,
+                "provider_points_charged": quote["unit_provider_points"] * units if status == "succeeded" else 0,
+                "estimated_cost_cny": round(points * cost_per_point, 4),
                 "request_count": max(1, int(payload.get("request_count") or 1)),
                 "image_count": max(0, int(payload.get("image_count") or 0)),
                 "video_count": max(0, int(payload.get("video_count") or 0)),
@@ -2355,19 +2607,112 @@ class SupabaseTeamStore:
             require_team_admin(actor)
         return await self._ensure_points_record(team_id, target_user_id)
 
+    async def list_billing_prices(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
+        await self._require_member(user.id, team_id)
+        rows = await self._optional_table_request("billing_prices", "GET", f"/billing_prices?team_id=eq.{team_id}&order=provider_id.asc&select=*")
+        return {"prices": merged_billing_prices(team_id, rows or [])}
+
+    async def save_billing_price(self, user: CurrentUser, team_id: str, payload: ModelBillingPriceRequest) -> Dict[str, Any]:
+        actor = await self._require_member(user.id, team_id)
+        require_team_admin(actor)
+        provider_id = normalize_billing_provider_id(payload.provider_id)
+        model = normalize_billing_model(payload.model)
+        operation_type = normalize_operation_type(payload.operation_type)
+        rows = await self._optional_table_request(
+            "billing_prices",
+            "GET",
+            f"/billing_prices?team_id=eq.{team_id}&provider_id=eq.{quote(provider_id, safe='')}&model=eq.{quote(model, safe='')}&operation_type=eq.{operation_type}&select=*",
+        )
+        body = {
+            "team_id": team_id,
+            "provider_id": provider_id,
+            "model": model,
+            "operation_type": operation_type,
+            "points_cost": max(0, int(payload.points_cost)),
+            "provider_points_cost": max(0, int(payload.points_cost)) * 100,
+            "enabled": bool(payload.enabled),
+            "note": payload.note,
+            "updated_at": utc_now_iso(),
+            "updated_by": user.id,
+        }
+        if rows:
+            updated = await self._optional_table_request(
+                "billing_prices",
+                "PATCH",
+                f"/billing_prices?team_id=eq.{team_id}&provider_id=eq.{quote(provider_id, safe='')}&model=eq.{quote(model, safe='')}&operation_type=eq.{operation_type}",
+                json_body=body,
+                fallback=[body],
+            )
+            record = updated[0] if updated else body
+        else:
+            created = await self._optional_table_request("billing_prices", "POST", "/billing_prices", json_body=[body], fallback=[body])
+            record = created[0] if created else body
+        return {"price": billing_price_public(record)}
+
+    async def list_provider_recharges(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
+        actor = await self._require_member(user.id, team_id)
+        require_team_admin(actor)
+        rows = await self._optional_table_request("provider_recharges", "GET", f"/provider_recharges?team_id=eq.{team_id}&order=recharged_at.desc&select=*")
+        recharges = rows or default_recharge_rows(team_id)
+        return {"recharges": recharges, "summary": recharge_cost_summary(recharges)}
+
+    async def save_provider_recharge(self, user: CurrentUser, team_id: str, payload: ProviderRechargeRequest) -> Dict[str, Any]:
+        actor = await self._require_member(user.id, team_id)
+        require_team_admin(actor)
+        body = {
+            "team_id": team_id,
+            "provider_id": normalize_billing_provider_id(payload.provider_id),
+            "amount_cny": round(float(payload.amount_cny), 4),
+            "provider_points_received": max(0, int(payload.provider_points_received)),
+            "app_points_received": max(0, int(payload.app_points_received or round(payload.provider_points_received / 100))),
+            "note": payload.note,
+            "recharged_at": utc_now_iso(),
+            "created_by": user.id,
+        }
+        created = await self._optional_table_request("provider_recharges", "POST", "/provider_recharges", json_body=[body], fallback=[body])
+        rows = await self._optional_table_request("provider_recharges", "GET", f"/provider_recharges?team_id=eq.{team_id}&select=*", fallback=created)
+        return {"recharge": (created[0] if created else body), "summary": recharge_cost_summary(rows or [])}
+
+    async def billing_quote(self, user: CurrentUser, team_id: str, provider_id: str, model: str, operation_type: str, units: int = 1) -> Dict[str, Any]:
+        await self._require_member(user.id, team_id)
+        rows, points, recharges = await asyncio.gather(
+            self._optional_table_request("billing_prices", "GET", f"/billing_prices?team_id=eq.{team_id}&select=*"),
+            self._ensure_points_record(team_id, user.id),
+            self._optional_table_request("provider_recharges", "GET", f"/provider_recharges?team_id=eq.{team_id}&select=*"),
+        )
+        quote = billing_quote_from_prices(merged_billing_prices(team_id, rows or []), provider_id, model, operation_type, units)
+        quote["balance"] = int(points.get("balance") or 0)
+        quote["estimated_cost_cny"] = round(quote["required_points"] * recharge_cost_summary(recharges or default_recharge_rows(team_id))["cost_per_point_cny"], 4)
+        return quote
+
     async def assert_points_available(self, user: CurrentUser, team_id: str, operation_type: str, provider_id: str = "", model: str = "", units: int = 1) -> Dict[str, Any]:
         await self._require_member(user.id, team_id)
-        required = default_points_for_operation(operation_type) * max(1, int(units or 1))
+        rows = await self._optional_table_request("billing_prices", "GET", f"/billing_prices?team_id=eq.{team_id}&select=*")
+        quote = billing_quote_from_prices(merged_billing_prices(team_id, rows or []), provider_id, model, operation_type, units)
+        required = quote["required_points"]
         points = await self._ensure_points_record(team_id, user.id)
         if int(points.get("balance") or 0) < required:
             raise HTTPException(status_code=402, detail=f"点数不足：本次需要 {required} 点，当前余额 {points.get('balance') or 0} 点")
-        return {"required_points": required, "points": points}
+        return {**quote, "points": points}
 
     async def create_usage_log(self, user: CurrentUser, team_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         await self._require_member(user.id, team_id)
         operation_type = normalize_operation_type(payload.get("operation_type"))
         status = str(payload.get("status") or "succeeded")
-        points = usage_points({**payload, "operation_type": operation_type}) if status == "succeeded" else 0
+        rows, recharges = await asyncio.gather(
+            self._optional_table_request("billing_prices", "GET", f"/billing_prices?team_id=eq.{team_id}&select=*"),
+            self._optional_table_request("provider_recharges", "GET", f"/provider_recharges?team_id=eq.{team_id}&select=*"),
+        )
+        units = max(1, int(payload.get("image_count") or payload.get("video_count") or payload.get("request_count") or 1))
+        quote = billing_quote_from_prices(merged_billing_prices(team_id, rows or []), payload.get("provider_id"), payload.get("model"), operation_type, units)
+        if status == "succeeded" and payload.get("points_charged") is not None:
+            try:
+                points = max(0, int(payload.get("points_charged")))
+            except (TypeError, ValueError):
+                points = 0
+        else:
+            points = quote["required_points"] if status == "succeeded" else 0
+        cost_per_point = recharge_cost_summary(recharges or default_recharge_rows(team_id))["cost_per_point_cny"]
         body = {
             "team_id": team_id,
             "project_id": payload.get("project_id") or None,
@@ -2378,6 +2723,8 @@ class SupabaseTeamStore:
             "model": str(payload.get("model") or ""),
             "status": status,
             "points_charged": points,
+            "provider_points_charged": quote["provider_points_charged"] if status == "succeeded" else 0,
+            "estimated_cost_cny": round(points * cost_per_point, 4),
             "request_count": max(1, int(payload.get("request_count") or 1)),
             "image_count": max(0, int(payload.get("image_count") or 0)),
             "video_count": max(0, int(payload.get("video_count") or 0)),
@@ -2387,7 +2734,14 @@ class SupabaseTeamStore:
             "error": str(payload.get("error") or "")[:1000],
             "finished_at": utc_now_iso() if status in {"succeeded", "failed"} else None,
         }
-        created = await self._optional_table_request("api_usage_logs", "POST", "/api_usage_logs", json_body=[body], fallback=[body])
+        try:
+            created = await self._optional_table_request("api_usage_logs", "POST", "/api_usage_logs", json_body=[body], fallback=[body])
+        except HTTPException as exc:
+            detail = str(getattr(exc, "detail", "") or "")
+            if "provider_points_charged" not in detail and "estimated_cost_cny" not in detail:
+                raise
+            legacy_body = {key: value for key, value in body.items() if key not in {"provider_points_charged", "estimated_cost_cny"}}
+            created = await self._optional_table_request("api_usage_logs", "POST", "/api_usage_logs", json_body=[legacy_body], fallback=[legacy_body])
         record = created[0] if created else body
         if points:
             point_record = await self._ensure_points_record(team_id, user.id)
@@ -2805,6 +3159,41 @@ async def record_team_usage_log(user: CurrentUser, team_id: str, payload: Dict[s
     return await maybe_await(writer(user, team_id, payload))
 
 
+async def list_team_billing_prices(user: CurrentUser, team_id: str) -> Dict[str, Any]:
+    reader = getattr(active_store(), "list_billing_prices", None)
+    if not reader:
+        return {"prices": []}
+    return await maybe_await(reader(user, team_id))
+
+
+async def save_team_billing_price(user: CurrentUser, team_id: str, payload: ModelBillingPriceRequest) -> Dict[str, Any]:
+    writer = getattr(active_store(), "save_billing_price", None)
+    if not writer:
+        return {"price": {}}
+    return await maybe_await(writer(user, team_id, payload))
+
+
+async def list_team_provider_recharges(user: CurrentUser, team_id: str) -> Dict[str, Any]:
+    reader = getattr(active_store(), "list_provider_recharges", None)
+    if not reader:
+        return {"recharges": [], "summary": {"amount_cny": 0, "app_points_received": 0, "provider_points_received": 0, "cost_per_point_cny": 0}}
+    return await maybe_await(reader(user, team_id))
+
+
+async def save_team_provider_recharge(user: CurrentUser, team_id: str, payload: ProviderRechargeRequest) -> Dict[str, Any]:
+    writer = getattr(active_store(), "save_provider_recharge", None)
+    if not writer:
+        return {"recharge": {}, "summary": {}}
+    return await maybe_await(writer(user, team_id, payload))
+
+
+async def quote_team_billing(user: CurrentUser, team_id: str, provider_id: str, model: str, operation_type: str, units: int = 1) -> Dict[str, Any]:
+    reader = getattr(active_store(), "billing_quote", None)
+    if not reader:
+        return billing_quote_from_prices([], provider_id, model, operation_type, units)
+    return await maybe_await(reader(user, team_id, provider_id, model, operation_type, units))
+
+
 def generation_log_summary(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
     summary = {"total": len(logs), "succeeded": 0, "failed": 0, "providers": {}}
     for log in logs:
@@ -2826,6 +3215,8 @@ def usage_summary(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "image_count": 0,
         "video_count": 0,
         "points_charged": 0,
+        "provider_points_charged": 0,
+        "estimated_cost_cny": 0,
         "slow_count": 0,
         "models": {},
         "providers": {},
@@ -2840,6 +3231,8 @@ def usage_summary(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
         summary["image_count"] += int(log.get("image_count") or 0)
         summary["video_count"] += int(log.get("video_count") or 0)
         summary["points_charged"] += int(log.get("points_charged") or 0)
+        summary["provider_points_charged"] += int(log.get("provider_points_charged") or 0)
+        summary["estimated_cost_cny"] = round(float(summary["estimated_cost_cny"]) + float(log.get("estimated_cost_cny") or 0), 4)
         if int(log.get("latency_ms") or 0) >= 500:
             summary["slow_count"] += 1
         for key, field in (("models", "model"), ("providers", "provider_id"), ("operations", "operation_type")):
@@ -3203,6 +3596,17 @@ async def resolve_admin_team(user: CurrentUser, team_id: str = "") -> Tuple[str,
     return str(admin_teams[0].get("id") or ""), teams
 
 
+async def resolve_user_team(user: CurrentUser, team_id: str = "") -> Tuple[str, List[Dict[str, Any]]]:
+    teams = await maybe_await(active_store().list_user_teams(user))
+    if team_id:
+        if not any(team.get("id") == team_id for team in teams):
+            raise HTTPException(status_code=403, detail="没有访问该团队的权限")
+        return team_id, teams
+    if not teams:
+        raise HTTPException(status_code=403, detail="当前账户还没有团队")
+    return str(teams[0].get("id") or ""), teams
+
+
 @router.get("/admin/overview")
 async def admin_overview(team_id: str = "", user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
     user = await enrich_user_profile(user)
@@ -3238,6 +3642,52 @@ async def admin_adjust_user_points(
 ) -> Dict[str, Any]:
     selected_team_id, _teams = await resolve_admin_team(user, payload.team_id)
     return await maybe_await(active_store().adjust_user_points(user, selected_team_id, target_user_id, payload))
+
+
+@router.get("/billing/model-prices")
+async def billing_model_prices(team_id: str = "", user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    user = await enrich_user_profile(user)
+    selected_team_id, teams = await resolve_user_team(user, team_id)
+    data = await list_team_billing_prices(user, selected_team_id)
+    return {"team_id": selected_team_id, "teams": teams, **data}
+
+
+@router.get("/billing/quote")
+async def billing_quote(
+    team_id: str = "",
+    provider_id: str = "",
+    model: str = "",
+    operation_type: str = "image",
+    units: int = 1,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    user = await enrich_user_profile(user)
+    selected_team_id, _teams = await resolve_user_team(user, team_id)
+    return await quote_team_billing(user, selected_team_id, provider_id, model, operation_type, units)
+
+
+@router.post("/admin/billing/model-prices")
+async def admin_save_billing_model_price(payload: ModelBillingPriceRequest, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    user = await enrich_user_profile(user)
+    selected_team_id, teams = await resolve_admin_team(user, payload.team_id)
+    data = await save_team_billing_price(user, selected_team_id, payload)
+    return {"team_id": selected_team_id, "teams": teams, **data}
+
+
+@router.get("/admin/billing/recharges")
+async def admin_provider_recharges(team_id: str = "", user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    user = await enrich_user_profile(user)
+    selected_team_id, teams = await resolve_admin_team(user, team_id)
+    data = await list_team_provider_recharges(user, selected_team_id)
+    return {"team_id": selected_team_id, "teams": teams, **data}
+
+
+@router.post("/admin/billing/recharges")
+async def admin_save_provider_recharge(payload: ProviderRechargeRequest, user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    user = await enrich_user_profile(user)
+    selected_team_id, teams = await resolve_admin_team(user, payload.team_id)
+    data = await save_team_provider_recharge(user, selected_team_id, payload)
+    return {"team_id": selected_team_id, "teams": teams, **data}
 
 
 @router.get("/admin/usage/logs")

@@ -11,6 +11,9 @@
         selectedUserId: "",
         logs: [],
         feedback: [],
+        billingPrices: [],
+        recharges: [],
+        rechargeSummary: {},
     };
 
     function iconRefresh(){
@@ -99,6 +102,10 @@
         return `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟`;
     }
 
+    function fmtMoney(value){
+        return `¥${Number(value || 0).toFixed(2)}`;
+    }
+
     function escapeHtml(value){
         return String(value || "")
             .replace(/&/g, "&amp;")
@@ -159,13 +166,14 @@
             ["今日生图", today.image_count],
             ["今日视频", today.video_count],
             ["今日点数", today.points_charged],
+            ["今日成本", fmtMoney(today.estimated_cost_cny)],
             ["在线用户", state.overview?.active_users],
             ["本月调用", month.total],
         ];
         $("metricGrid").innerHTML = items.map(([label, value]) => `
             <div class="metric">
                 <span>${escapeHtml(label)}</span>
-                <strong>${fmtNumber(value)}</strong>
+                <strong>${typeof value === "string" ? escapeHtml(value) : fmtNumber(value)}</strong>
             </div>
         `).join("");
     }
@@ -226,10 +234,36 @@
                     <td>${escapeHtml(log.model || "-")}</td>
                     <td>${escapeHtml(statusLabel(log.status))}</td>
                     <td>${fmtNumber(log.points_charged)}</td>
+                    <td>${log.estimated_cost_cny ? fmtMoney(log.estimated_cost_cny) : "-"}</td>
                     <td>${fmtNumber(log.latency_ms)} ms</td>
                 </tr>
             `;
-        }).join("") : '<tr><td colspan="8">暂无调用日志</td></tr>';
+        }).join("") : '<tr><td colspan="9">暂无调用日志</td></tr>';
+    }
+
+    function renderBilling(){
+        const prices = state.billingPrices || [];
+        const recharges = state.recharges || [];
+        if($("billingCount")) $("billingCount").textContent = `${fmtNumber(prices.length)} 条 · 成本 ${fmtMoney(state.rechargeSummary?.amount_cny)} / ${fmtNumber(state.rechargeSummary?.app_points_received)} 积分`;
+        if($("billingTable")) $("billingTable").innerHTML = prices.length ? prices.map((price) => `
+            <tr data-billing-row data-provider-id="${escapeHtml(price.provider_id)}" data-model="${escapeHtml(price.model)}" data-operation="${escapeHtml(price.operation_type)}" data-points="${escapeHtml(price.points_cost)}" data-note="${escapeHtml(price.note || "")}">
+                <td>${escapeHtml(price.provider_id)}</td>
+                <td>${escapeHtml(price.model)}</td>
+                <td>${escapeHtml(operationLabel(price.operation_type))}</td>
+                <td><strong>${fmtNumber(price.points_cost)}</strong></td>
+                <td>${price.enabled === false ? "停用" : "启用"}</td>
+                <td>${escapeHtml(price.note || "")}</td>
+            </tr>
+        `).join("") : '<tr><td colspan="6">暂无模型计费</td></tr>';
+        if($("rechargeTable")) $("rechargeTable").innerHTML = recharges.length ? recharges.map((item) => `
+            <tr>
+                <td>${escapeHtml(item.provider_id || "-")}</td>
+                <td>${fmtMoney(item.amount_cny)}</td>
+                <td>${fmtNumber(item.provider_points_received)}</td>
+                <td>${fmtNumber(item.app_points_received)}</td>
+                <td>${escapeHtml(item.note || "")}</td>
+            </tr>
+        `).join("") : '<tr><td colspan="5">暂无充值记录</td></tr>';
     }
 
     function feedbackUserLabel(item){
@@ -292,6 +326,17 @@
         renderFeedback();
     }
 
+    async function loadBilling(){
+        const [pricesData, rechargesData] = await Promise.all([
+            api(`/billing/model-prices?team_id=${encodeURIComponent(state.teamId)}`),
+            api(`/admin/billing/recharges?team_id=${encodeURIComponent(state.teamId)}`),
+        ]);
+        state.billingPrices = pricesData.prices || [];
+        state.recharges = rechargesData.recharges || [];
+        state.rechargeSummary = rechargesData.summary || {};
+        renderBilling();
+    }
+
     async function loadDetail(){
         if(!state.selectedUserId){
             renderDetail(null);
@@ -306,7 +351,7 @@
         $("refreshBtn").disabled = true;
         try {
             await loadOverview();
-            const results = await Promise.allSettled([loadUsers(), loadLogs(), loadFeedback()]);
+            const results = await Promise.allSettled([loadUsers(), loadLogs(), loadFeedback(), loadBilling()]);
             const failures = results.filter((item) => item.status === "rejected").map((item) => item.reason?.message || "请求失败");
             try {
                 await loadDetail();
@@ -357,6 +402,46 @@
         }
     }
 
+    async function submitBillingPrice(){
+        try {
+            await api("/admin/billing/model-prices", {
+                method: "POST",
+                body: JSON.stringify({
+                    team_id: state.teamId,
+                    provider_id: $("billingProviderId").value.trim(),
+                    model: $("billingModel").value.trim(),
+                    operation_type: $("billingOperation").value.trim() || "image",
+                    points_cost: Number($("billingPoints").value || 0),
+                    enabled: true,
+                    note: $("billingNote").value.trim(),
+                }),
+            });
+            await loadBilling();
+        } catch(e) {
+            showMessage(e.message);
+        }
+    }
+
+    async function submitRecharge(){
+        try {
+            const providerPoints = Number($("rechargeProviderPoints").value || 0);
+            await api("/admin/billing/recharges", {
+                method: "POST",
+                body: JSON.stringify({
+                    team_id: state.teamId,
+                    provider_id: $("rechargeProviderId").value.trim(),
+                    amount_cny: Number($("rechargeAmount").value || 0),
+                    provider_points_received: providerPoints,
+                    app_points_received: Number($("rechargeAppPoints").value || Math.round(providerPoints / 100)),
+                    note: $("rechargeNote").value.trim(),
+                }),
+            });
+            await loadBilling();
+        } catch(e) {
+            showMessage(e.message);
+        }
+    }
+
     function bind(){
         window.addEventListener("message", (event) => {
             if(event.origin && event.origin !== location.origin) return;
@@ -379,6 +464,18 @@
         $("operationFilter").addEventListener("change", loadLogs);
         $("statusFilter").addEventListener("change", loadLogs);
         $("feedbackRefreshBtn")?.addEventListener("click", loadFeedback);
+        $("billingRefreshBtn")?.addEventListener("click", loadBilling);
+        $("billingSaveBtn")?.addEventListener("click", submitBillingPrice);
+        $("rechargeSaveBtn")?.addEventListener("click", submitRecharge);
+        $("billingTable")?.addEventListener("click", (event) => {
+            const row = event.target.closest("[data-billing-row]");
+            if(!row) return;
+            $("billingProviderId").value = row.dataset.providerId || "";
+            $("billingModel").value = row.dataset.model || "";
+            $("billingOperation").value = row.dataset.operation || "image";
+            $("billingPoints").value = row.dataset.points || "0";
+            $("billingNote").value = row.dataset.note || "";
+        });
         $("userList").addEventListener("click", async (event) => {
             const row = event.target.closest("[data-user-id]");
             if(!row) return;

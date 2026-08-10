@@ -710,6 +710,9 @@ input[type=range].canvas-range::-webkit-slider-runnable-track { height:3px; bord
 .input-label { position:absolute; left:5px; right:5px; bottom:5px; border-radius:10px; padding:2px 4px; background:rgba(255,255,255,.86); color:#475569; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .video-frame-label { width:100%; min-height:22px; border:1px solid var(--line-2); border-radius:9px; background:var(--card-solid); color:var(--text); font-size:10px; font-weight:900; display:flex; align-items:center; justify-content:center; }
 .gen-btn { height:40px; width:100%; border-radius:16px; background:#111827; color:#fff; display:flex; align-items:center; justify-content:center; gap:8px; font-size:11px; font-weight:800; letter-spacing:.12em; }
+.billing-estimate { min-height:30px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; padding:0 9px; border:1px solid rgba(247,165,74,.38); border-radius:999px; color:#b45309; background:rgba(255,247,237,.86); font-size:11px; font-weight:900; white-space:nowrap; letter-spacing:0; }
+.theme-dark .billing-estimate { color:#fed7aa; background:rgba(247,165,74,.12); border-color:rgba(247,165,74,.32); }
+.gen-cost-pill { display:inline-flex; align-items:center; justify-content:center; min-width:48px; height:22px; padding:0 8px; border-radius:999px; background:rgba(255,255,255,.18); color:#fff7ed; font-size:10px; font-weight:900; letter-spacing:0; }
 .gen-btn:disabled { background:#e5e7eb; color:#94a3b8; cursor:not-allowed; }
 .gen-btn.running i { color:#facc15; fill:#facc15; animation:zapPulse .8s ease-in-out infinite; }
 .comfy-run { height:40px; width:100%; flex:0 0 auto; border-radius:16px; background:#111827; color:#fff; display:flex; align-items:center; justify-content:center; gap:8px; font-size:11px; font-weight:800; letter-spacing:.12em; }

@@ -7,7 +7,7 @@ from fastapi import HTTPException, Response
 from unittest.mock import AsyncMock, patch
 
 import team_cloud
-from team_cloud import AuthPasswordUpdateRequest, CanvasSaveRequest, CurrentUser, LocalTeamStore, PointsAdjustRequest, SessionHeartbeatRequest, TeamApiProviderModelsRequest, TeamApiProviderSaveRequest, current_user_from_supabase_payload
+from team_cloud import AuthPasswordUpdateRequest, CanvasSaveRequest, CurrentUser, LocalTeamStore, ModelBillingPriceRequest, PointsAdjustRequest, SessionHeartbeatRequest, TeamApiProviderModelsRequest, TeamApiProviderSaveRequest, current_user_from_supabase_payload
 
 
 class TeamCloudStoreTests(unittest.TestCase):
@@ -357,11 +357,27 @@ class TeamCloudStoreTests(unittest.TestCase):
         self.assertEqual(models["chat_models"], ["gpt-4o"])
         self.assertEqual(models["video_models"], ["wan-video"])
 
-    def test_usage_log_deducts_points_only_on_success(self):
+    def test_usage_log_uses_model_billing_and_deducts_only_on_success(self):
         team = self.store.create_team(self.owner, "Design Lab")
 
         before = self.store.get_user_points(self.owner, team["id"], self.owner.id)
         self.assertEqual(before["balance"], team_cloud.TEAM_POINTS_DEFAULT_BALANCE)
+
+        free_log = self.store.create_usage_log(self.owner, team["id"], {
+            "operation_type": "image",
+            "provider_id": "agnes-ai",
+            "model": "free-model",
+            "status": "succeeded",
+            "image_count": 1,
+        })
+        self.assertEqual(free_log["points_charged"], 0)
+
+        self.store.save_billing_price(self.owner, team["id"], ModelBillingPriceRequest(
+            provider_id="openai",
+            model="gpt-image-1",
+            operation_type="image",
+            points_cost=6,
+        ))
 
         log = self.store.create_usage_log(self.owner, team["id"], {
             "operation_type": "image",
@@ -372,8 +388,9 @@ class TeamCloudStoreTests(unittest.TestCase):
         })
         after_success = self.store.get_user_points(self.owner, team["id"], self.owner.id)
 
-        self.assertEqual(log["points_charged"], 2)
-        self.assertEqual(after_success["balance"], team_cloud.TEAM_POINTS_DEFAULT_BALANCE - 2)
+        self.assertEqual(log["points_charged"], 12)
+        self.assertEqual(log["provider_points_charged"], 1200)
+        self.assertEqual(after_success["balance"], team_cloud.TEAM_POINTS_DEFAULT_BALANCE - 12)
 
         failed = self.store.create_usage_log(self.owner, team["id"], {
             "operation_type": "video",
@@ -390,6 +407,12 @@ class TeamCloudStoreTests(unittest.TestCase):
 
     def test_points_guard_and_admin_adjustment(self):
         team = self.store.create_team(self.owner, "Design Lab")
+        self.store.save_billing_price(self.owner, team["id"], ModelBillingPriceRequest(
+            provider_id="openai",
+            model="veo3-fast",
+            operation_type="video",
+            points_cost=5,
+        ))
         self.store.adjust_user_points(
             self.owner,
             team["id"],
@@ -398,7 +421,7 @@ class TeamCloudStoreTests(unittest.TestCase):
         )
 
         with self.assertRaises(HTTPException) as points_error:
-            self.store.assert_points_available(self.owner, team["id"], "video")
+            self.store.assert_points_available(self.owner, team["id"], "video", "openai", "veo3-fast")
         self.assertEqual(points_error.exception.status_code, 402)
 
         adjusted = self.store.adjust_user_points(
@@ -409,6 +432,41 @@ class TeamCloudStoreTests(unittest.TestCase):
         )
         self.assertEqual(adjusted["points"]["balance"], 11)
         self.assertEqual(adjusted["delta"], 10)
+
+    def test_admin_can_edit_model_billing_price_and_members_can_quote(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        member = CurrentUser(id="member-1", email="member@example.com", provider="test")
+        data = self.store._read()
+        data["members"].append({
+            "id": "member-row",
+            "team_id": team["id"],
+            "user_id": member.id,
+            "email": member.email,
+            "role": "member",
+            "created_at": 1,
+        })
+        self.store._write(data)
+
+        saved = self.store.save_billing_price(self.owner, team["id"], ModelBillingPriceRequest(
+            provider_id="grsai",
+            model="nano-banana-pro",
+            operation_type="image",
+            points_cost=18,
+            note="真实成本",
+        ))
+        quote = self.store.billing_quote(member, team["id"], "grsai", "nano-banana-pro", "image", 2)
+
+        self.assertEqual(saved["price"]["points_cost"], 18)
+        self.assertEqual(quote["required_points"], 36)
+        self.assertEqual(quote["provider_points_charged"], 3600)
+
+        with self.assertRaises(HTTPException) as member_error:
+            self.store.save_billing_price(member, team["id"], ModelBillingPriceRequest(
+                provider_id="grsai",
+                model="nano-banana-2",
+                points_cost=12,
+            ))
+        self.assertEqual(member_error.exception.status_code, 403)
 
     def test_admin_users_include_usage_and_online_state(self):
         team = self.store.create_team(self.owner, "Design Lab")
@@ -1100,8 +1158,8 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function generateWorkbenchImage", script)
         self.assertIn("fetch('/api/online-image'", script)
         self.assertIn("studio-toggle-theme", script)
-        self.assertIn("/api/team-cloud/me", script)
-        self.assertIn("? '无限制' : '0'", script)
+        self.assertIn("/api/team-cloud/bootstrap", script)
+        self.assertIn("data.points?.balance", script)
         self.assertIn("loadRecentCanvasBackground", script)
         self.assertIn("loadAssetBackground", script)
         self.assertIn("function loadWorkbenchVersion", script)

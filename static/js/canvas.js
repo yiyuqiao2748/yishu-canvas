@@ -480,6 +480,37 @@ function teamCloudRequestMeta(){
         canvas_id: canvas?.id || ''
     };
 }
+function normalizedBillingKey(value){
+    return String(value || '').trim().toLowerCase();
+}
+function billingPriceFor(providerId, model, operationType='image'){
+    const provider = normalizedBillingKey(providerId);
+    const modelKey = normalizedBillingKey(model);
+    const operation = normalizedBillingKey(operationType || 'image');
+    const match = (billingPrices || []).find(item => item && item.enabled !== false
+        && normalizedBillingKey(item.provider_id) === provider
+        && normalizedBillingKey(item.model) === modelKey
+        && normalizedBillingKey(item.operation_type || 'image') === operation);
+    return match ? Math.max(0, Number(match.points_cost || 0)) : 0;
+}
+function billingCostLabel(points){
+    return `${new Intl.NumberFormat('zh-CN').format(Math.max(0, Number(points || 0)))}积分`;
+}
+function billingEstimateHtml(providerId, model, operationType='image', units=1){
+    return `<span class="billing-estimate" data-billing-estimate>预计 ${billingCostLabel(billingPriceFor(providerId, model, operationType) * Math.max(1, Number(units || 1)))}</span>`;
+}
+async function loadBillingPrices(){
+    const teamId = currentTeamCloudTeamId();
+    if(!teamId) return;
+    try {
+        const res = await teamCloudFetch(`/api/team-cloud/billing/model-prices?team_id=${encodeURIComponent(teamId)}`);
+        if(!res.ok) throw new Error('billing failed');
+        const data = await res.json().catch(() => ({}));
+        billingPrices = Array.isArray(data.prices) ? data.prices : [];
+    } catch(e) {
+        billingPrices = [];
+    }
+}
 // 先绑定返回，避免编辑器后续初始化较慢时丢失来源项目。
 backToManagerBtn?.addEventListener('click', () => {
     window.location.href = canvasListUrlForProject(canvas?.project || requestedCanvasListProject() || rememberedCanvasListProject());
@@ -516,6 +547,7 @@ let chatModels = ['gpt-4o-mini'];
 let videoModels = [];
 let msChatModels = [];
 let apiProviders = [];
+let billingPrices = [];
 let comfyBackendCount = 1;
 let comfyWorkflows = [];
 let comfyWorkflowCache = {};
@@ -1707,6 +1739,7 @@ async function loadConfig(){
         msChatModels = cfg.ms_chat_models?.length ? cfg.ms_chat_models : msChatModels;
         comfyBackendCount = Math.max(1, (cfg.comfy_instances || []).length || 1);
         apiProviders = Array.isArray(cfg.api_providers) && cfg.api_providers.length ? cfg.api_providers : defaultApiProviders();
+        await loadBillingPrices();
         models.nano = imageModels.find(m => m.toLowerCase().includes('nano')) || 'nano-banana-pro';
         models.gpt = imageModels.find(m => !m.toLowerCase().includes('nano')) || cfg.image_model || 'gpt-image-2';
         try {
@@ -1723,6 +1756,7 @@ async function loadConfig(){
         }));
     } catch(e) {
         apiProviders = defaultApiProviders();
+        billingPrices = [];
     }
 }
 
@@ -8711,6 +8745,7 @@ function renderGeneratorBody(node){
             <div class="gen-settings-row">
                 <select class="select-lite provider-select">${providerOptions(node.apiProvider)}</select>
                 <select class="select-lite model-select">${imageModelOptions(node.model, node.apiProvider)}</select>
+                ${billingEstimateHtml(resolveImageProviderId(node.apiProvider), resolveImageModel(node.model), 'image', node.count || 1)}
             </div>
             <div class="gen-settings-row api-size-row">
                 <select class="select-lite resolution compact-select" data-field="resolution">
@@ -8770,13 +8805,20 @@ function renderGeneratorBody(node){
             </div>
         </div>
         <div class="gen-run-row">
-            <button class="gen-btn ${node.running ? 'running' : ''}" ${node.running ? 'disabled' : ''}><i data-lucide="zap" class="w-4 h-4"></i>${node.running ? tr('canvas.generating') : tr('canvas.apiGenerate')}</button>
+            <button class="gen-btn ${node.running ? 'running' : ''}" ${node.running ? 'disabled' : ''}><i data-lucide="zap" class="w-4 h-4"></i><span class="gen-main-label">${node.running ? tr('canvas.generating') : tr('canvas.apiGenerate')}</span><span class="gen-cost-pill" data-gen-cost>${billingCostLabel(billingPriceFor(resolveImageProviderId(node.apiProvider), resolveImageModel(node.model), 'image') * Math.max(1, Number(node.count || 1)))}</span></button>
             ${cascadeBtnHtml(node)}
         </div>
         ${retryBarHtml(node)}
     `;
     const providerSelect = wrap.querySelector('.provider-select');
     const modelSelect = wrap.querySelector('.model-select');
+    const updateBillingEstimate = () => {
+        const total = billingPriceFor(resolveImageProviderId(node.apiProvider), resolveImageModel(node.model), 'image') * Math.max(1, Number(node.count || 1));
+        const estimate = wrap.querySelector('[data-billing-estimate]');
+        const pill = wrap.querySelector('[data-gen-cost]');
+        if(estimate) estimate.textContent = `预计 ${billingCostLabel(total)}`;
+        if(pill) pill.textContent = billingCostLabel(total);
+    };
     providerSelect.onmousedown = e => e.stopPropagation();
     providerSelect.onclick = e => e.stopPropagation();
     providerSelect.onchange = e => {
@@ -8787,6 +8829,7 @@ function renderGeneratorBody(node){
         node._apiResolutionUserSet = false;
         node.resolution = defaultApiImageResolution(node.model);
         modelSelect.innerHTML = imageModelOptions(node.model, node.apiProvider);
+        updateBillingEstimate();
         syncSizeControls();
         syncQualityControls();
         scheduleSave();
@@ -8800,6 +8843,7 @@ function renderGeneratorBody(node){
         if(node.resolution !== 'custom') node.resolution = defaultApiImageResolution(node.model);
         syncSizeControls();
         syncQualityControls();
+        updateBillingEstimate();
         scheduleSave();
     };
     const ratioSelect = wrap.querySelector('.ratio');
@@ -8990,6 +9034,7 @@ function renderGeneratorBody(node){
     countInput.oninput = e => {
         const value = Math.max(1, Math.min(8, Number(e.target.value) || 1));
         node.count = value;
+        updateBillingEstimate();
         scheduleSave();
     };
     countInput.onblur = e => { e.target.value = String(Math.max(1, Math.min(8, Number(node.count || 1)))); };
@@ -8999,6 +9044,7 @@ function renderGeneratorBody(node){
             const next = Math.max(1, Math.min(8, Number(node.count || 1) + Number(btn.dataset.step || 0)));
             node.count = next;
             countInput.value = String(next);
+            updateBillingEstimate();
             scheduleSave();
         };
     });
@@ -9032,6 +9078,7 @@ function renderVideoBody(node){
             <div class="gen-settings-row">
                 <select class="select-lite video-provider" style="flex:1">${videoProviderOptions(node.apiProvider)}</select>
                 <select class="select-lite video-model" style="flex:2">${videoModelOptions(node.model, node.apiProvider)}</select>
+                ${billingEstimateHtml(resolveVideoProviderId(node.apiProvider), node.model, 'video', 1)}
             </div>
             <div class="gen-settings-row">
                 <label class="field" style="flex:1">
@@ -9074,7 +9121,7 @@ function renderVideoBody(node){
             </div>
         </div>
         <div class="gen-run-row">
-            <button class="gen-btn ${node.running ? 'running' : ''}" ${node.running ? 'disabled' : ''}><i data-lucide="clapperboard" class="w-4 h-4"></i>${node.running ? tr('canvas.generating') : tr('canvas.videoGenerate')}</button>
+            <button class="gen-btn ${node.running ? 'running' : ''}" ${node.running ? 'disabled' : ''}><i data-lucide="clapperboard" class="w-4 h-4"></i><span class="gen-main-label">${node.running ? tr('canvas.generating') : tr('canvas.videoGenerate')}</span><span class="gen-cost-pill" data-gen-cost>${billingCostLabel(billingPriceFor(resolveVideoProviderId(node.apiProvider), node.model, 'video'))}</span></button>
             ${cascadeBtnHtml(node)}
         </div>
         ${retryBarHtml(node)}
@@ -9084,6 +9131,13 @@ function renderVideoBody(node){
     const durationSelect = wrap.querySelector('.video-duration');
     const aspectSelect = wrap.querySelector('.video-aspect');
     const resolutionSelect = wrap.querySelector('.video-resolution');
+    const updateBillingEstimate = () => {
+        const total = billingPriceFor(resolveVideoProviderId(node.apiProvider), node.model, 'video');
+        const estimate = wrap.querySelector('[data-billing-estimate]');
+        const pill = wrap.querySelector('[data-gen-cost]');
+        if(estimate) estimate.textContent = `预计 ${billingCostLabel(total)}`;
+        if(pill) pill.textContent = billingCostLabel(total);
+    };
     providerSelect.value = node.apiProvider;
     durationSelect.value = String(node.duration || 5);
     aspectSelect.value = node.aspectRatio || '16:9';
@@ -9098,9 +9152,10 @@ function renderVideoBody(node){
         const models = providerVideoModels(node.apiProvider);
         if(!models.includes(node.model)) node.model = models[0] || node.model;
         modelSelect.innerHTML = videoModelOptions(node.model, node.apiProvider);
+        updateBillingEstimate();
         scheduleSave();
     };
-    modelSelect.onchange = e => { e.stopPropagation(); node.model = e.target.value; scheduleSave(); };
+    modelSelect.onchange = e => { e.stopPropagation(); node.model = e.target.value; updateBillingEstimate(); scheduleSave(); };
     durationSelect.oninput = e => { e.stopPropagation(); node.duration = Math.max(1, Math.min(60, Number(e.target.value || 5))); scheduleSave(); };
     durationSelect.onblur = e => { e.target.value = String(Math.max(1, Math.min(60, Number(node.duration || 5)))); };
     aspectSelect.onchange = e => { e.stopPropagation(); node.aspectRatio = e.target.value; scheduleSave(); };

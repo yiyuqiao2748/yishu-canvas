@@ -3,6 +3,7 @@
     const WORKBENCH_PENDING_DRAFT_KEY = 'workbenchCanvasDraftPending:v1';
     const WORKBENCH_REFERENCES_KEY = 'workbenchReferences:v1';
     const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
+    const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
     let currentWorkbenchUser = null;
     let currentWorkbenchTeams = [];
     let authModalMode = 'user';
@@ -257,11 +258,12 @@
         const points = document.getElementById('workbenchInspirationPoints');
         if(!label) return null;
         try {
-            const data = await fetchJson('/api/team-cloud/me');
+            const data = await fetchJson('/api/team-cloud/bootstrap');
             label.textContent = shortUserName(data.user);
-            if(points) points.textContent = (data.user && Array.isArray(data.teams) && data.teams.length) ? '无限制' : '0';
+            if(points) points.textContent = (data.user && Array.isArray(data.teams) && data.teams.length) ? new Intl.NumberFormat('zh-CN').format(Number(data.points?.balance || 0)) : '0';
             currentWorkbenchUser = data.user || null;
             currentWorkbenchTeams = Array.isArray(data.teams) ? data.teams : [];
+            try { if(data.team_id) localStorage.setItem(TEAM_CLOUD_TEAM_KEY, data.team_id); } catch(e) {}
             window.__workbenchCurrentUser = currentWorkbenchUser;
             return data;
         } catch(e) {
@@ -709,6 +711,7 @@
                 credentials: 'same-origin',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
+                    team_id: (() => { try { return localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || ''; } catch(e) { return ''; } })(),
                     prompt: draft.prompt,
                     provider_id: 'comfly',
                     model: selectedImageModel(),

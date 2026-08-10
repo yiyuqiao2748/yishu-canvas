@@ -223,6 +223,60 @@ html.theme-dark .dialog-panel {
     overflow: hidden;
 }
 
+.billing-panel {
+    margin-bottom: 16px;
+}
+
+.billing-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    padding: 14px;
+    border-bottom: 1px solid var(--line);
+}
+
+.billing-form {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+    padding: 12px;
+}
+
+.billing-form h3 {
+    margin: 0 0 10px;
+    font-size: 14px;
+}
+
+.billing-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.billing-fields input:nth-child(2),
+.billing-fields input:nth-child(5) {
+    grid-column: span 2;
+}
+
+.billing-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
+.billing-table-wrap {
+    overflow: auto;
+    border-bottom: 1px solid var(--line);
+}
+
+[data-billing-row] {
+    cursor: pointer;
+}
+
+[data-billing-row]:hover {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .panel-head {
     justify-content: space-between;
     min-height: 62px;

@@ -100,10 +100,80 @@
                             <th>模型</th>
                             <th>状态</th>
                             <th>点数</th>
+                            <th>成本</th>
                             <th>耗时</th>
                         </tr>
                     </thead>
                     <tbody id="logTable"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel billing-panel">
+            <div class="panel-head">
+                <div>
+                    <strong>模型计费</strong>
+                    <span id="billingCount">0 条</span>
+                </div>
+                <button id="billingRefreshBtn" class="icon-btn" type="button" title="刷新计费">
+                    <i data-lucide="badge-dollar-sign"></i>
+                </button>
+            </div>
+            <div class="billing-grid">
+                <div class="billing-form">
+                    <h3>模型价格</h3>
+                    <div class="billing-fields">
+                        <input id="billingProviderId" placeholder="provider_id">
+                        <input id="billingModel" placeholder="model">
+                        <input id="billingOperation" placeholder="operation_type" value="image">
+                        <input id="billingPoints" type="number" min="0" value="0">
+                        <input id="billingNote" placeholder="备注">
+                    </div>
+                    <div class="billing-actions">
+                        <button id="billingSaveBtn" class="primary-btn" type="button"><i data-lucide="save"></i><span>保存价格</span></button>
+                    </div>
+                </div>
+                <div class="billing-form">
+                    <h3>充值基准</h3>
+                    <div class="billing-fields">
+                        <input id="rechargeProviderId" placeholder="provider_id">
+                        <input id="rechargeAmount" type="number" min="0" step="0.01" placeholder="充值金额">
+                        <input id="rechargeProviderPoints" type="number" min="0" placeholder="平台积分">
+                        <input id="rechargeAppPoints" type="number" min="0" placeholder="产品积分">
+                        <input id="rechargeNote" placeholder="备注">
+                    </div>
+                    <div class="billing-actions">
+                        <button id="rechargeSaveBtn" class="primary-btn" type="button"><i data-lucide="wallet"></i><span>保存充值</span></button>
+                    </div>
+                </div>
+            </div>
+            <div class="billing-table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>平台</th>
+                            <th>模型</th>
+                            <th>功能</th>
+                            <th>积分</th>
+                            <th>启用</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody id="billingTable"></tbody>
+                </table>
+            </div>
+            <div class="billing-table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>平台</th>
+                            <th>金额</th>
+                            <th>到账平台积分</th>
+                            <th>到账产品积分</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rechargeTable"></tbody>
                 </table>
             </div>
         </section>
@@ -153,6 +223,6 @@
         </form>
     </dialog>
 
-    <script src="/static/js/admin-preview.js?v=2026.08.10.6"></script>
+    <script src="/static/js/admin-preview.js?v=2026.08.10.7"></script>
 </body>
 </html>
