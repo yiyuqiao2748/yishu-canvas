@@ -2609,7 +2609,13 @@ class SupabaseTeamStore:
 
     async def list_billing_prices(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
         await self._require_member(user.id, team_id)
-        rows = await self._optional_table_request("billing_prices", "GET", f"/billing_prices?team_id=eq.{team_id}&order=provider_id.asc&select=*")
+        try:
+            rows = await self._request("GET", f"/billing_prices?team_id=eq.{team_id}&order=provider_id.asc&select=*")
+        except HTTPException as exc:
+            if self._is_missing_table_error(exc, "billing_prices"):
+                rows = await self._billing_prices_from_provider_configs(team_id)
+            else:
+                raise
         return {"prices": merged_billing_prices(team_id, rows or [])}
 
     async def save_billing_price(self, user: CurrentUser, team_id: str, payload: ModelBillingPriceRequest) -> Dict[str, Any]:
@@ -2618,11 +2624,16 @@ class SupabaseTeamStore:
         provider_id = normalize_billing_provider_id(payload.provider_id)
         model = normalize_billing_model(payload.model)
         operation_type = normalize_operation_type(payload.operation_type)
-        rows = await self._optional_table_request(
-            "billing_prices",
-            "GET",
-            f"/billing_prices?team_id=eq.{team_id}&provider_id=eq.{quote(provider_id, safe='')}&model=eq.{quote(model, safe='')}&operation_type=eq.{operation_type}&select=*",
-        )
+        try:
+            rows = await self._request(
+                "GET",
+                f"/billing_prices?team_id=eq.{team_id}&provider_id=eq.{quote(provider_id, safe='')}&model=eq.{quote(model, safe='')}&operation_type=eq.{operation_type}&select=*",
+            )
+        except HTTPException as exc:
+            if self._is_missing_table_error(exc, "billing_prices"):
+                record = await self._save_billing_price_to_provider_config(user, team_id, provider_id, model, operation_type, payload)
+                return {"price": billing_price_public(record)}
+            raise
         body = {
             "team_id": team_id,
             "provider_id": provider_id,
@@ -2652,7 +2663,13 @@ class SupabaseTeamStore:
     async def list_provider_recharges(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
         actor = await self._require_member(user.id, team_id)
         require_team_admin(actor)
-        rows = await self._optional_table_request("provider_recharges", "GET", f"/provider_recharges?team_id=eq.{team_id}&order=recharged_at.desc&select=*")
+        try:
+            rows = await self._request("GET", f"/provider_recharges?team_id=eq.{team_id}&order=recharged_at.desc&select=*")
+        except HTTPException as exc:
+            if self._is_missing_table_error(exc, "provider_recharges"):
+                rows = await self._provider_recharges_from_provider_configs(team_id)
+            else:
+                raise
         recharges = rows or default_recharge_rows(team_id)
         return {"recharges": recharges, "summary": recharge_cost_summary(recharges)}
 
@@ -2669,16 +2686,23 @@ class SupabaseTeamStore:
             "recharged_at": utc_now_iso(),
             "created_by": user.id,
         }
-        created = await self._optional_table_request("provider_recharges", "POST", "/provider_recharges", json_body=[body], fallback=[body])
-        rows = await self._optional_table_request("provider_recharges", "GET", f"/provider_recharges?team_id=eq.{team_id}&select=*", fallback=created)
+        try:
+            created = await self._request("POST", "/provider_recharges", json_body=[body])
+            rows = await self._request("GET", f"/provider_recharges?team_id=eq.{team_id}&select=*")
+        except HTTPException as exc:
+            if self._is_missing_table_error(exc, "provider_recharges"):
+                created = [await self._save_provider_recharge_to_provider_config(user, team_id, body)]
+                rows = await self._provider_recharges_from_provider_configs(team_id)
+            else:
+                raise
         return {"recharge": (created[0] if created else body), "summary": recharge_cost_summary(rows or [])}
 
     async def billing_quote(self, user: CurrentUser, team_id: str, provider_id: str, model: str, operation_type: str, units: int = 1) -> Dict[str, Any]:
         await self._require_member(user.id, team_id)
         rows, points, recharges = await asyncio.gather(
-            self._optional_table_request("billing_prices", "GET", f"/billing_prices?team_id=eq.{team_id}&select=*"),
+            self._billing_price_rows(team_id),
             self._ensure_points_record(team_id, user.id),
-            self._optional_table_request("provider_recharges", "GET", f"/provider_recharges?team_id=eq.{team_id}&select=*"),
+            self._provider_recharge_rows(team_id),
         )
         quote = billing_quote_from_prices(merged_billing_prices(team_id, rows or []), provider_id, model, operation_type, units)
         quote["balance"] = int(points.get("balance") or 0)
@@ -2687,7 +2711,7 @@ class SupabaseTeamStore:
 
     async def assert_points_available(self, user: CurrentUser, team_id: str, operation_type: str, provider_id: str = "", model: str = "", units: int = 1) -> Dict[str, Any]:
         await self._require_member(user.id, team_id)
-        rows = await self._optional_table_request("billing_prices", "GET", f"/billing_prices?team_id=eq.{team_id}&select=*")
+        rows = await self._billing_price_rows(team_id)
         quote = billing_quote_from_prices(merged_billing_prices(team_id, rows or []), provider_id, model, operation_type, units)
         required = quote["required_points"]
         points = await self._ensure_points_record(team_id, user.id)
@@ -2700,8 +2724,8 @@ class SupabaseTeamStore:
         operation_type = normalize_operation_type(payload.get("operation_type"))
         status = str(payload.get("status") or "succeeded")
         rows, recharges = await asyncio.gather(
-            self._optional_table_request("billing_prices", "GET", f"/billing_prices?team_id=eq.{team_id}&select=*"),
-            self._optional_table_request("provider_recharges", "GET", f"/provider_recharges?team_id=eq.{team_id}&select=*"),
+            self._billing_price_rows(team_id),
+            self._provider_recharge_rows(team_id),
         )
         units = max(1, int(payload.get("image_count") or payload.get("video_count") or payload.get("request_count") or 1))
         quote = billing_quote_from_prices(merged_billing_prices(team_id, rows or []), payload.get("provider_id"), payload.get("model"), operation_type, units)
@@ -2877,6 +2901,90 @@ class SupabaseTeamStore:
             f"/api_usage_logs?team_id=eq.{team_id}&order=created_at.desc&limit={TEAM_ADMIN_USAGE_LIMIT}&select=*",
         )
         return filter_usage_logs(logs or [], filters)
+
+    async def _billing_price_rows(self, team_id: str) -> List[Dict[str, Any]]:
+        try:
+            return await self._request("GET", f"/billing_prices?team_id=eq.{team_id}&select=*")
+        except HTTPException as exc:
+            if self._is_missing_table_error(exc, "billing_prices"):
+                return await self._billing_prices_from_provider_configs(team_id)
+            raise
+
+    async def _provider_recharge_rows(self, team_id: str) -> List[Dict[str, Any]]:
+        try:
+            return await self._request("GET", f"/provider_recharges?team_id=eq.{team_id}&select=*")
+        except HTTPException as exc:
+            if self._is_missing_table_error(exc, "provider_recharges"):
+                return await self._provider_recharges_from_provider_configs(team_id)
+            raise
+
+    async def _billing_prices_from_provider_configs(self, team_id: str) -> List[Dict[str, Any]]:
+        providers = await self._request("GET", f"/api_providers?team_id=eq.{team_id}&select=*")
+        rows: List[Dict[str, Any]] = []
+        for provider in providers or []:
+            config = decrypt_team_api_config(provider.get("encrypted_config"))
+            for item in config.get("billing_prices") or []:
+                if isinstance(item, dict):
+                    rows.append({**item, "team_id": team_id, "provider_id": item.get("provider_id") or provider.get("provider_id") or ""})
+        return rows
+
+    async def _provider_recharges_from_provider_configs(self, team_id: str) -> List[Dict[str, Any]]:
+        providers = await self._request("GET", f"/api_providers?team_id=eq.{team_id}&select=*")
+        rows: List[Dict[str, Any]] = []
+        for provider in providers or []:
+            config = decrypt_team_api_config(provider.get("encrypted_config"))
+            for item in config.get("provider_recharges") or []:
+                if isinstance(item, dict):
+                    rows.append({**item, "team_id": team_id, "provider_id": item.get("provider_id") or provider.get("provider_id") or ""})
+        return rows
+
+    async def _save_billing_price_to_provider_config(self, user: CurrentUser, team_id: str, provider_id: str, model: str, operation_type: str, payload: ModelBillingPriceRequest) -> Dict[str, Any]:
+        rows = await self._request("GET", f"/api_providers?team_id=eq.{team_id}&provider_id=eq.{quote(provider_id, safe='')}&select=*")
+        if not rows:
+            raise HTTPException(status_code=404, detail="请先在 API 设置里添加该平台，再设置模型积分")
+        provider = rows[0]
+        config = decrypt_team_api_config(provider.get("encrypted_config"))
+        prices = [item for item in (config.get("billing_prices") or []) if isinstance(item, dict)]
+        key = billing_price_key(provider_id, model, operation_type)
+        record = {
+            "id": f"provider-config:{provider_id}:{operation_type}:{model}",
+            "team_id": team_id,
+            "provider_id": provider_id,
+            "model": model,
+            "operation_type": operation_type,
+            "points_cost": max(0, int(payload.points_cost)),
+            "provider_points_cost": max(0, int(payload.points_cost)) * 100,
+            "enabled": bool(payload.enabled),
+            "note": payload.note,
+            "updated_at": utc_now_iso(),
+        }
+        prices = [item for item in prices if billing_price_key(item.get("provider_id") or provider_id, item.get("model"), item.get("operation_type")) != key]
+        prices.append(record)
+        config["billing_prices"] = prices
+        await self._request(
+            "PATCH",
+            f"/api_providers?team_id=eq.{team_id}&provider_id=eq.{quote(provider_id, safe='')}",
+            json_body={"encrypted_config": encrypt_team_api_config(config), "updated_by": user.id, "updated_at": utc_now_iso()},
+        )
+        return record
+
+    async def _save_provider_recharge_to_provider_config(self, user: CurrentUser, team_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        provider_id = normalize_billing_provider_id(body.get("provider_id"))
+        rows = await self._request("GET", f"/api_providers?team_id=eq.{team_id}&provider_id=eq.{quote(provider_id, safe='')}&select=*")
+        if not rows:
+            raise HTTPException(status_code=404, detail="请先在 API 设置里添加该平台，再记录充值")
+        provider = rows[0]
+        config = decrypt_team_api_config(provider.get("encrypted_config"))
+        recharges = [item for item in (config.get("provider_recharges") or []) if isinstance(item, dict)]
+        row = {**body, "id": str(uuid.uuid4()), "created_at": utc_now_iso()}
+        recharges.append(row)
+        config["provider_recharges"] = recharges
+        await self._request(
+            "PATCH",
+            f"/api_providers?team_id=eq.{team_id}&provider_id=eq.{quote(provider_id, safe='')}",
+            json_body={"encrypted_config": encrypt_team_api_config(config), "updated_by": user.id, "updated_at": utc_now_iso()},
+        )
+        return row
 
     async def _ensure_points_record(self, team_id: str, user_id: str) -> Dict[str, Any]:
         fallback = {
