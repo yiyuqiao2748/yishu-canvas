@@ -1,172 +1,172 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI??????</title>
+    <title>AI设计师工作台</title>
     <link rel="icon" href="/static/images/logo.png" type="image/png">
     <script src="/static/vendor/js/lucide.js?v=2026.07.29.4.1784893025"></script>
     <link rel="stylesheet" href="/static/css/workbench.css?v=2026.08.10.4">
 </head>
 <body>
     <div class="preview-shell">
-        <header class="preview-top-dock" aria-label="?????">
+        <header class="preview-top-dock" aria-label="工作台导航">
             <button class="preview-brand" type="button" data-open-page="workbench">
                 <span class="brand-mark">
                     <img src="/static/images/logo.png" alt="">
                 </span>
                 <span>
-                    <strong>AI???</strong>
+                    <strong>AI设计师</strong>
                     <small>Creative Workbench</small>
                 </span>
             </button>
 
-            <nav class="preview-nav" aria-label="????">
+            <nav class="preview-nav" aria-label="主要入口">
                 <button class="nav-chip muted user-chip" type="button" data-account-entry aria-haspopup="dialog">
                     <i data-lucide="user-round" class="icon"></i>
-                    <span id="workbenchUserLabel">???</span>
+                    <span id="workbenchUserLabel">未登录</span>
                     <i data-lucide="sliders-horizontal" class="icon"></i>
                 </button>
-                <div class="nav-chip points-chip status-chip" role="status" aria-live="polite" title="????????">
-                    <span>???</span>
+                <div class="nav-chip points-chip status-chip" role="status" aria-live="polite" title="当前账户余额状态">
+                    <span>灵感点</span>
                     <strong id="workbenchInspirationPoints">0</strong>
                 </div>
                 <button class="nav-chip primary" type="button" data-open-page="workbench">
                     <i data-lucide="home" class="icon"></i>
-                    <span>??</span>
+                    <span>主页</span>
                 </button>
                 <button class="nav-chip" type="button" data-open-page="canvas">
                     <i data-lucide="layout-grid" class="icon"></i>
-                    <span>??</span>
+                    <span>画布</span>
                 </button>
                 <button class="nav-chip" type="button" data-open-page="admin-preview">
                     <i data-lucide="shield-check" class="icon"></i>
-                    <span>????</span>
+                    <span>后台预览</span>
                 </button>
                 <button class="nav-chip" type="button" data-open-page="asset-manager">
                     <i data-lucide="folder-open" class="icon"></i>
-                    <span>???</span>
+                    <span>素材库</span>
                 </button>
                 <button class="nav-chip" type="button" data-open-page="comfyui-settings">
                     <i data-lucide="route" class="icon"></i>
-                    <span>???</span>
+                    <span>工作流</span>
                 </button>
-                <button class="nav-chip icon-only" type="button" data-api-settings-entry title="API ??" aria-label="API ??">
+                <button class="nav-chip icon-only" type="button" data-api-settings-entry title="API 设置" aria-label="API 设置">
                     <i data-lucide="settings" class="icon"></i>
                 </button>
-                <button class="nav-chip icon-only" type="button" data-theme-toggle title="????" aria-label="????">
+                <button class="nav-chip icon-only" type="button" data-theme-toggle title="黑白切换" aria-label="黑白切换">
                     <i data-lucide="moon-star" class="icon"></i>
                 </button>
             </nav>
         </header>
 
-        <aside class="preview-quick-rail" aria-label="????">
-            <button class="rail-create" type="button" data-open-page="canvas" data-visibility-target="private" title="????">
+        <aside class="preview-quick-rail" aria-label="快捷入口">
+            <button class="rail-create" type="button" data-open-page="canvas" data-visibility-target="private" title="新建画布">
                 <i data-lucide="plus" class="icon"></i>
-                <span>????</span>
+                <span>新建画布</span>
             </button>
-            <button class="active" type="button" data-open-page="workbench" title="??">
+            <button class="active" type="button" data-open-page="workbench" title="主页">
                 <i data-lucide="home" class="icon"></i>
-                <span>??</span>
+                <span>主页</span>
             </button>
-            <button type="button" data-open-page="canvas" title="AI??">
+            <button type="button" data-open-page="canvas" title="AI画布">
                 <i data-lucide="layout-grid" class="icon"></i>
-                <span>??</span>
+                <span>画布</span>
             </button>
-            <button type="button" data-open-page="canvas" data-recent-history-target title="????">
+            <button type="button" data-open-page="canvas" data-recent-history-target title="历史创作">
                 <i data-lucide="history" class="icon"></i>
-                <span>????</span>
+                <span>历史创作</span>
             </button>
-            <button type="button" data-tools-toggle aria-expanded="false" title="??????">
+            <button type="button" data-tools-toggle aria-expanded="false" title="更多创作工具">
                 <i data-lucide="sparkles" class="icon"></i>
-                <span>????</span>
+                <span>创作工具</span>
             </button>
             <div class="rail-tool-popover" hidden>
                 <button type="button" data-open-page="zimage">
                     <i data-lucide="image" class="icon"></i>
-                    <span>???</span>
+                    <span>文生图</span>
                 </button>
                 <button type="button" data-open-page="enhance">
                     <i data-lucide="zap" class="icon"></i>
-                    <span>????</span>
+                    <span>细节增强</span>
                 </button>
                 <button type="button" data-open-page="klein">
                     <i data-lucide="pen-line" class="icon"></i>
-                    <span>????</span>
+                    <span>图片编辑</span>
                 </button>
                 <button type="button" data-open-page="angle">
                     <i data-lucide="box" class="icon"></i>
-                    <span>????</span>
+                    <span>角度控制</span>
                 </button>
                 <button type="button" data-open-page="online">
                     <i data-lucide="globe-2" class="icon"></i>
-                    <span>????</span>
+                    <span>在线生图</span>
                 </button>
                 <button type="button" data-open-page="gpt-chat">
                     <i data-lucide="messages-square" class="icon"></i>
-                    <span>GPT ??</span>
+                    <span>GPT 对话</span>
                 </button>
             </div>
         </aside>
 
         <main class="preview-main">
-            <section class="preview-hero" aria-label="AI???">
+            <section class="preview-hero" aria-label="AI设计师">
                 <div class="hero-avatar-wrap" aria-hidden="true">
                     <span class="avatar-orbit one"></span>
                     <span class="avatar-orbit two"></span>
                     <img src="/static/images/workbench-character.png?v=2026.07.29.4" alt="" class="hero-avatar character">
                 </div>
-                <div class="hero-pill">??????</div>
-                <h1>AI???</h1>
-                <p>??????????????????????????????</p>
+                <div class="hero-pill">团队内容专用</div>
+                <h1>AI设计师</h1>
+                <p>上传参考图，输入需求，生成高级设计作品。使用最新的生图模型。</p>
                 <div class="workbench-version-label" id="workbenchVersionLabel" hidden></div>
-                <button class="mini-cta" type="button" data-feedback-open>????</button>
+                <button class="mini-cta" type="button" data-feedback-open>体验反馈</button>
             </section>
 
-            <section class="preview-composer" aria-label="?????">
+            <section class="preview-composer" aria-label="创作输入区">
                 <div class="composer-topline">
                     <div>
-                        <span>?????</span>
-                        <h2>???????????</h2>
+                        <span>创意输入区</span>
+                        <h2>描述你想生成的设计画面</h2>
                     </div>
-                    <button class="round-icon-btn" type="button" data-clear-prompt title="????" aria-label="????">
+                    <button class="round-icon-btn" type="button" data-clear-prompt title="清空输入" aria-label="清空输入">
                         <i data-lucide="refresh-cw" class="icon"></i>
                     </button>
                 </div>
 
-                <textarea id="promptInput" placeholder="???????????????????????????????????????????????"></textarea>
+                <textarea id="promptInput" placeholder="例如：为城市展厅设计一张建筑概念图，玻璃幕墙、金红色灯带、入口有水景和人流，高级夜景摄影质感。"></textarea>
 
-                <div class="preview-tools" aria-label="????">
+                <div class="preview-tools" aria-label="创作参数">
                     <button class="tool-chip upload" type="button" data-upload-placeholder>
                         <i data-lucide="plus" class="icon"></i>
                         <span>
-                            <strong>?????</strong>
-                            <small data-reference-count>0????</small>
+                            <strong>上传参考图</strong>
+                            <small data-reference-count>0张参考图</small>
                         </span>
                     </button>
                     <button class="tool-chip" type="button" data-url-placeholder>
                         <i data-lucide="plus" class="icon"></i>
                         <span>
-                            <strong>?? URL</strong>
-                            <small>????????</small>
+                            <strong>上传 URL</strong>
+                            <small>保存一个网页链接</small>
                         </span>
                     </button>
                     <div class="select-chip" data-custom-select>
-                        <span class="select-prefix">???</span>
+                        <span class="select-prefix">尺寸：</span>
                         <select id="sizeSelect">
-                            <option>????</option>
+                            <option>智能比例</option>
                             <option>1:1</option>
                             <option>16:9</option>
                             <option>9:16</option>
                         </select>
                         <button class="select-display" type="button" data-select-display aria-haspopup="listbox" aria-expanded="false">
-                            <span data-select-value>????</span>
+                            <span data-select-value>智能比例</span>
                             <i data-lucide="chevron-down" class="icon"></i>
                         </button>
                         <div class="select-menu" role="listbox" hidden></div>
                     </div>
                     <div class="select-chip" data-custom-select>
-                        <span class="select-prefix">???:</span>
+                        <span class="select-prefix">分辨率:</span>
                         <select id="resolutionSelect">
                             <option>2K</option>
                             <option>1K</option>
@@ -179,10 +179,10 @@
                         <div class="select-menu" role="listbox" hidden></div>
                     </div>
                     <div class="select-chip model" data-custom-select>
-                        <span class="select-prefix">????</span>
+                        <span class="select-prefix">生图模型</span>
                         <select id="modelSelect">
                             <option>gpt-image-2</option>
-                            <option>??????</option>
+                            <option>团队默认模型</option>
                         </select>
                         <button class="select-display" type="button" data-select-display aria-haspopup="listbox" aria-expanded="false">
                             <span data-select-value>gpt-image-2</span>
@@ -193,59 +193,59 @@
                 </div>
 
                 <div class="preview-actions">
-                    <span id="composerStatus">????</span>
+                    <span id="composerStatus">准备就绪</span>
                     <div>
                         <button class="action-pill ghost" type="button" data-optimize-prompt>
                             <i data-lucide="sparkles" class="icon"></i>
-                            <span>?????</span>
+                            <span>优化提示词</span>
                         </button>
                         <button class="action-pill hot" type="button" data-workbench-generate>
                             <i data-lucide="wand-sparkles" class="icon"></i>
-                            <span>??????</span>
+                            <span>生成高级设计</span>
                         </button>
                     </div>
                 </div>
             </section>
 
-            <section class="preview-result" id="workbenchResult" hidden aria-label="????">
+            <section class="preview-result" id="workbenchResult" hidden aria-label="生成结果">
                 <div class="result-head">
                     <div>
-                        <span>????</span>
-                        <h2>????</h2>
+                        <span>生成结果</span>
+                        <h2>最近生成</h2>
                     </div>
                     <button type="button" data-open-generated-canvas>
                         <i data-lucide="layout-grid" class="icon"></i>
-                        <span>??????</span>
+                        <span>进入画布编辑</span>
                     </button>
                 </div>
                 <div class="result-grid" id="workbenchResultGrid"></div>
             </section>
 
-            <section class="preview-library" aria-label="?????">
+            <section class="preview-library" aria-label="作品资产库">
                 <div class="library-head">
                     <div>
-                        <span>???????</span>
-                        <h2>?????</h2>
+                        <span>最新作品与资产</span>
+                        <h2>作品资产库</h2>
                     </div>
                     <button type="button" data-open-page="canvas">
                         <i data-lucide="eye" class="icon"></i>
-                        <span>????</span>
+                        <span>查看全部</span>
                     </button>
                 </div>
                 <div class="library-grid">
                     <button class="library-card red" type="button" data-open-page="canvas" data-recent-canvas-card>
                         <span class="library-card-bg" aria-hidden="true"></span>
                         <span>Canvas</span>
-                        <strong>??????</strong>
+                        <strong>团队云端画布</strong>
                     </button>
                     <button class="library-card amber" type="button" data-open-page="asset-manager" data-frequent-assets-card>
                         <span class="library-card-bg" aria-hidden="true"></span>
                         <span>Assets</span>
-                        <strong>???????</strong>
+                        <strong>参考图与素材库</strong>
                     </button>
                     <button class="library-card green" type="button" data-open-page="admin-preview">
                         <span>Admin</span>
-                        <strong>?????????</strong>
+                        <strong>后台预览与用户数据</strong>
                     </button>
                 </div>
             </section>
@@ -254,35 +254,35 @@
         <div class="feedback-modal" id="feedbackModal" hidden>
             <div class="feedback-card" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle">
                 <div class="feedback-head">
-                    <h2 id="feedbackTitle">????</h2>
-                    <button class="round-icon-btn" type="button" data-feedback-close title="??" aria-label="??">
+                    <h2 id="feedbackTitle">体验反馈</h2>
+                    <button class="round-icon-btn" type="button" data-feedback-close title="关闭" aria-label="关闭">
                         <i data-lucide="x" class="icon"></i>
                     </button>
                 </div>
-                <textarea id="feedbackInput" placeholder="????????????????????"></textarea>
-                <p id="feedbackStatus">???????????????????</p>
+                <textarea id="feedbackInput" placeholder="写下你遇到的问题、想要的功能或页面建议。"></textarea>
+                <p id="feedbackStatus">反馈会保存到后台，后续可做管理页查看。</p>
                 <div class="feedback-actions">
-                    <button class="action-pill ghost" type="button" data-feedback-close>??</button>
-                    <button class="action-pill hot" type="button" data-feedback-submit>????</button>
+                    <button class="action-pill ghost" type="button" data-feedback-close>取消</button>
+                    <button class="action-pill hot" type="button" data-feedback-submit>发送反馈</button>
                 </div>
             </div>
         </div>
         <div class="url-modal" id="urlModal" hidden>
             <div class="url-card" role="dialog" aria-modal="true" aria-labelledby="urlModalTitle">
                 <div class="url-head">
-                    <h2 id="urlModalTitle">?? URL</h2>
-                    <button class="round-icon-btn" type="button" data-url-close title="??" aria-label="??">
+                    <h2 id="urlModalTitle">上传 URL</h2>
+                    <button class="round-icon-btn" type="button" data-url-close title="关闭" aria-label="关闭">
                         <i data-lucide="x" class="icon"></i>
                     </button>
                 </div>
                 <label class="url-field">
-                    <span>???????</span>
+                    <span>网页或图片链接</span>
                     <input id="urlInput" type="url" placeholder="https://example.com/reference.jpg">
                 </label>
-                <p id="urlStatus">?????????????</p>
+                <p id="urlStatus">保存后可作为本次创作参考。</p>
                 <div class="url-actions">
-                    <button class="action-pill ghost" type="button" data-url-close>??</button>
-                    <button class="action-pill hot" type="button" data-url-save>????</button>
+                    <button class="action-pill ghost" type="button" data-url-close>取消</button>
+                    <button class="action-pill hot" type="button" data-url-save>保存链接</button>
                 </div>
             </div>
         </div>
@@ -290,43 +290,43 @@
             <form class="auth-card" id="authModalForm" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
                 <div class="auth-head">
                     <div>
-                        <span id="authModalKicker">????</span>
-                        <h2 id="authModalTitle">??? AI???</h2>
+                        <span id="authModalKicker">账户登录</span>
+                        <h2 id="authModalTitle">登录到 AI设计师</h2>
                     </div>
-                    <button class="round-icon-btn" type="button" data-auth-close title="??" aria-label="??">
+                    <button class="round-icon-btn" type="button" data-auth-close title="关闭" aria-label="关闭">
                         <i data-lucide="x" class="icon"></i>
                     </button>
                 </div>
-                <div class="auth-mode-row" role="tablist" aria-label="????">
-                    <button class="auth-mode active" type="button" data-auth-mode="user" aria-selected="true">??</button>
-                    <button class="auth-mode" type="button" data-auth-mode="signup" aria-selected="false">??</button>
-                    <button class="auth-mode" type="button" data-auth-mode="admin" aria-selected="false">???</button>
+                <div class="auth-mode-row" role="tablist" aria-label="账户操作">
+                    <button class="auth-mode active" type="button" data-auth-mode="user" aria-selected="true">登录</button>
+                    <button class="auth-mode" type="button" data-auth-mode="signup" aria-selected="false">注册</button>
+                    <button class="auth-mode" type="button" data-auth-mode="admin" aria-selected="false">管理员</button>
                 </div>
                 <label class="auth-field signup-only" for="authUsernameInput" id="authUsernameField" hidden>
-                    <span>???</span>
-                    <input id="authUsernameInput" name="username" type="text" autocomplete="username" minlength="3" maxlength="32" placeholder="?? yiwei">
+                    <span>账号名</span>
+                    <input id="authUsernameInput" name="username" type="text" autocomplete="username" minlength="3" maxlength="32" placeholder="例如 yiwei">
                 </label>
                 <label class="auth-field" for="authIdentifierInput">
-                    <span id="authIdentifierLabel">?? / ??</span>
-                    <input id="authIdentifierInput" name="identifier" type="text" autocomplete="username" placeholder="???????" required>
+                    <span id="authIdentifierLabel">邮箱 / 账号</span>
+                    <input id="authIdentifierInput" name="identifier" type="text" autocomplete="username" placeholder="输入邮箱或账号" required>
                 </label>
                 <label class="auth-field" for="authPasswordInput">
-                    <span>??</span>
-                    <input id="authPasswordInput" name="password" type="password" autocomplete="current-password" placeholder="????" required>
+                    <span>密码</span>
+                    <input id="authPasswordInput" name="password" type="password" autocomplete="current-password" placeholder="输入密码" required>
                 </label>
                 <label class="auth-field verify-only" for="authVerificationInput" id="authVerificationField" hidden>
-                    <span>?????</span>
-                    <input id="authVerificationInput" name="verification" type="text" inputmode="numeric" autocomplete="one-time-code" minlength="4" maxlength="16" placeholder="??????????">
+                    <span>邮箱验证码</span>
+                    <input id="authVerificationInput" name="verification" type="text" inputmode="numeric" autocomplete="one-time-code" minlength="4" maxlength="16" placeholder="输入邮箱收到的验证码">
                 </label>
-                <p class="auth-message" id="authModalMessage">????????????????? API ???</p>
+                <p class="auth-message" id="authModalMessage">登录后可使用团队资源；管理员可进入 API 设置。</p>
                 <div class="auth-secondary" id="authSecondaryActions">
-                    <button class="text-link-btn" type="button" data-auth-recover>?????</button>
-                    <button class="text-link-btn" type="button" data-auth-back-login hidden>????</button>
+                    <button class="text-link-btn" type="button" data-auth-recover>忘记密码？</button>
+                    <button class="text-link-btn" type="button" data-auth-back-login hidden>返回登录</button>
                 </div>
                 <div class="auth-actions">
-                    <button class="action-pill ghost" type="button" data-auth-close>??</button>
-                    <button class="action-pill ghost" type="button" data-auth-resend hidden>?????</button>
-                    <button class="action-pill hot" type="submit" data-auth-submit>??</button>
+                    <button class="action-pill ghost" type="button" data-auth-close>取消</button>
+                    <button class="action-pill ghost" type="button" data-auth-resend hidden>重发验证码</button>
+                    <button class="action-pill hot" type="submit" data-auth-submit>登录</button>
                 </div>
             </form>
         </div>

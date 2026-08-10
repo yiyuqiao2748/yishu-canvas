@@ -653,7 +653,7 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
             payload = await team_cloud.recover_password(team_cloud.AuthRecoverRequest(identifier="missing-user"))
 
         self.assertTrue(payload["ok"])
-        self.assertIn("??????", payload["message"])
+        self.assertIn("如果账号存在", payload["message"])
 
     async def test_cloudflare_access_disabled_does_not_accept_header(self):
         with patch.object(team_cloud.settings, "cloudflare_access_enabled", False), \
@@ -798,7 +798,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         script = (root / "static" / "js" / "team-cloud.js").read_text(encoding="utf-8")
 
         self.assertNotIn('id="teamApiPanel"', html)
-        self.assertNotIn('?? API', html)
+        self.assertNotIn('团队 API', html)
         self.assertIn('function currentTeamRole', script)
         self.assertIn('function canManageTeamApi', script)
         self.assertIn('function renderTeamApiAccess', script)
@@ -1027,7 +1027,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         script = (root / "static" / "js" / "workbench.js").read_text(encoding="utf-8")
         main_py = (root / "main.py").read_text(encoding="utf-8")
 
-        self.assertIn('id="workbenchUserLabel">???', html)
+        self.assertIn('id="workbenchUserLabel">未登录', html)
         self.assertIn('id="workbenchInspirationPoints">0', html)
         self.assertIn("/static/images/workbench-character.png", html)
         self.assertIn('data-api-settings-entry', html)
@@ -1040,7 +1040,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn('data-auth-recover', html)
         self.assertIn('data-auth-back-login', html)
         self.assertIn('data-open-page="admin-preview"', html)
-        self.assertIn('????', html)
+        self.assertIn('后台预览', html)
         self.assertIn('class="nav-chip points-chip status-chip"', html)
         self.assertNotIn('class="nav-chip points-chip" type="button" data-open-page="team-cloud"', html)
         self.assertIn('data-open-page="admin-preview">\n                        <span>Admin</span>', html)
@@ -1090,7 +1090,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("fetch('/api/online-image'", script)
         self.assertIn("studio-toggle-theme", script)
         self.assertIn("/api/team-cloud/me", script)
-        self.assertIn("? '???' : '0'", script)
+        self.assertIn("? '无限制' : '0'", script)
         self.assertIn("loadRecentCanvasBackground", script)
         self.assertIn("loadAssetBackground", script)
         self.assertIn("function loadWorkbenchVersion", script)
@@ -1131,7 +1131,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn(".rail-tool-popover[hidden]", workbench_css)
         self.assertIn('event.data?.type === "studio-theme"', admin_script)
         self.assertIn("function applyTheme", admin_script)
-        self.assertIn("????", admin_html)
+        self.assertIn("体验反馈", admin_html)
         self.assertIn('id="feedbackList"', admin_html)
         self.assertIn("/admin/feedback", admin_script)
         self.assertIn("function renderFeedback", admin_script)
@@ -1205,7 +1205,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("document.documentElement.classList.toggle('studio-theme-light', light);", canvas_js)
         self.assertIn("if(event.data?.type === 'studio-theme') applyTheme(event.data.theme || 'light');", canvas_js)
         self.assertIn("secondaryActionsToggle", canvas_js)
-        self.assertIn("label.textContent = open ? '??' : '??';", canvas_js)
+        self.assertIn("label.textContent = open ? '收起' : '更多';", canvas_js)
         self.assertIn("icon?.setAttribute('data-lucide', open ? 'chevrons-right' : 'chevrons-left');", canvas_js)
         self.assertIn('onclick="addLoopNode()"', canvas_html)
         self.assertIn('content:"CANVAS"', canvas_css)
@@ -1226,14 +1226,14 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("const AI_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;", canvas_script)
         self.assertIn("function uploadSizeError", canvas_script)
         self.assertIn("async function postAiUpload", canvas_script)
-        self.assertIn("???????????", canvas_script)
+        self.assertIn("上传接口返回了网页内容", canvas_script)
         self.assertNotIn("fetch('/api/ai/upload', {method:'POST', body:form}).then(r=>r.json())", canvas_script)
         self.assertNotIn("fetch('/api/ai/upload', {method:'POST', body:form}).then(r => r.json())", canvas_script)
 
         self.assertIn("const SMART_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;", smart_script)
         self.assertIn("function smartUploadSizeError", smart_script)
         self.assertIn("async function postSmartAiUpload", smart_script)
-        self.assertIn("???????????", smart_script)
+        self.assertIn("上传接口返回了网页内容", smart_script)
         self.assertNotIn("fetch('/api/ai/upload', {method:'POST', body:form}).then(r => r.json())", smart_script)
 
     def test_workbench_preview_exposes_reference_home_shell(self):
@@ -1247,8 +1247,8 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn('class="preview-quick-rail"', html)
         self.assertIn('class="preview-composer"', html)
         self.assertIn('/static/images/workbench-character-preview.png', html)
-        self.assertIn('????', html)
-        self.assertIn('????', html)
+        self.assertIn('体验反馈', html)
+        self.assertIn('新建画布', html)
         self.assertIn('data-visibility-target="private"', html)
         self.assertIn('data-lucide="sliders-horizontal"', html)
         self.assertIn('data-workbench-generate', html)

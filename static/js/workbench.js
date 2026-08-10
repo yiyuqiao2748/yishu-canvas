@@ -9,10 +9,10 @@
     let authSignupAwaitingVerification = false;
     let authPendingSignupEmail = '';
     const PROMPT_PLACEHOLDERS = [
-        '???????????????????????????????????????????????',
-        '???????????????????????????????????????????????',
-        '??????????????????????????????????????????????',
-        '????????????????????????????????????????????',
+        '例如：为城市展厅设计一张建筑概念图，玻璃幕墙、金红色灯带、入口有水景和人流，高级夜景摄影质感。',
+        '例如：设计一家现代中餐厅室内效果图，暖金灯光、深色木饰面、开放式吧台、圆桌包间、空间层次丰富。',
+        '例如：为商业综合体中庭做节日美陈方案，挑空空间、红金装置、环形动线、品牌橱窗和柔和人群氛围。',
+        '例如：设计一家高端咖啡餐厅门头，黑金招牌、落地窗、室外座位、暖色灯光、适合夜间社交打卡。',
     ];
     const PAGE_IDS = new Set([
         'workbench',
@@ -133,7 +133,7 @@
         return next;
     }
 
-    function apiErrorMessage(data, fallback = '????') {
+    function apiErrorMessage(data, fallback = '请求失败') {
         const detail = data && data.detail;
         if(detail && typeof detail === 'object') return detail.message || data.message || fallback;
         return detail || (data && data.message) || fallback;
@@ -164,7 +164,7 @@
         if(!modal) return;
         window.__urlReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         modal.hidden = false;
-        setUrlStatus('?????????????');
+        setUrlStatus('保存后可作为本次创作参考。');
         const focusInput = () => {
             input?.focus?.({ preventScroll: true });
             input?.select?.();
@@ -188,7 +188,7 @@
         const input = document.getElementById('urlInput');
         const raw = String(input?.value || '').trim();
         if(!raw) {
-            setUrlStatus('?????????');
+            setUrlStatus('请先输入一个链接。');
             input?.focus();
             return;
         }
@@ -196,7 +196,7 @@
         try {
             parsed = new URL(raw, location.origin);
         } catch(e) {
-            setUrlStatus('????????');
+            setUrlStatus('链接格式不正确。');
             input?.focus();
             return;
         }
@@ -211,7 +211,7 @@
         });
         saveReferences(refs);
         if(input) input.value = '';
-        setStatus(isLikelyImageUrl(url) ? '?? URL ??????' : '???????');
+        setStatus(isLikelyImageUrl(url) ? '图片 URL 已加入参考图' : '网页链接已保存');
         closeUrlModal();
     }
 
@@ -221,14 +221,14 @@
         if(!files.length) return;
         const form = new FormData();
         files.forEach(file => form.append('files', file));
-        setStatus('???????...');
+        setStatus('正在上传参考图...');
         try {
             const data = await fetchJson('/api/ai/upload', {
                 method: 'POST',
                 body: form,
             });
             const uploaded = (data.files || []).filter(item => item?.url);
-            if(!uploaded.length) throw new Error('?????????');
+            if(!uploaded.length) throw new Error('没有可用的上传结果');
             saveReferences([...uploaded.map(item => ({
                 url: item.url,
                 name: item.name || 'reference',
@@ -236,9 +236,9 @@
                 mime: item.mime || '',
                 addedAt: Date.now(),
             })), ...loadReferences()]);
-            setStatus(`??? ${uploaded.length} ????`);
+            setStatus(`已上传 ${uploaded.length} 张参考图`);
         } catch(e) {
-            setStatus(e.message || '???????');
+            setStatus(e.message || '参考图上传失败');
         } finally {
             if(input) input.value = '';
         }
@@ -246,7 +246,7 @@
 
     function shortUserName(user) {
         const value = user?.display_name || user?.username || user?.email || '';
-        if(!value) return '???';
+        if(!value) return '未登录';
         const text = String(value).trim();
         if(text.includes('@')) return text.split('@')[0] || text;
         return text;
@@ -259,13 +259,13 @@
         try {
             const data = await fetchJson('/api/team-cloud/me');
             label.textContent = shortUserName(data.user);
-            if(points) points.textContent = (data.user && Array.isArray(data.teams) && data.teams.length) ? '???' : '0';
+            if(points) points.textContent = (data.user && Array.isArray(data.teams) && data.teams.length) ? '无限制' : '0';
             currentWorkbenchUser = data.user || null;
             currentWorkbenchTeams = Array.isArray(data.teams) ? data.teams : [];
             window.__workbenchCurrentUser = currentWorkbenchUser;
             return data;
         } catch(e) {
-            label.textContent = '???';
+            label.textContent = '未登录';
             if(points) points.textContent = '0';
             currentWorkbenchUser = null;
             currentWorkbenchTeams = [];
@@ -327,19 +327,19 @@
         const recoverButton = document.querySelector('[data-auth-recover]');
         const backLoginButton = document.querySelector('[data-auth-back-login]');
         const submitButton = document.querySelector('[data-auth-submit]');
-        if(kicker) kicker.textContent = isAdmin ? '?????' : (isSignup ? '??????' : (isRecover ? '????' : '????'));
-        if(title) title.textContent = isAdmin ? '?????' : (isSignup ? '?? AI?????' : (isRecover ? '?? AI?????' : '??? AI???'));
+        if(kicker) kicker.textContent = isAdmin ? '管理员入口' : (isSignup ? '邮箱验证注册' : (isRecover ? '找回密码' : '账户登录'));
+        if(title) title.textContent = isAdmin ? '管理员登录' : (isSignup ? '注册 AI设计师账号' : (isRecover ? '找回 AI设计师账号' : '登录到 AI设计师'));
         if(usernameField) usernameField.hidden = !isSignup || verifyMode;
         if(usernameInput) {
             usernameInput.required = isSignup && !verifyMode;
             usernameInput.disabled = verifyMode;
         }
-        if(identifierLabel) identifierLabel.textContent = isSignup ? '??' : (isRecover ? '?? / ??' : '?? / ??');
+        if(identifierLabel) identifierLabel.textContent = isSignup ? '邮箱' : (isRecover ? '邮箱 / 账号' : '邮箱 / 账号');
         if(identifierInput) {
             identifierInput.type = isSignup ? 'email' : 'text';
             identifierInput.name = isSignup ? 'email' : 'identifier';
             identifierInput.autocomplete = isSignup ? 'email' : 'username';
-            identifierInput.placeholder = isSignup ? '?????????' : (isRecover ? '???????????' : '???????');
+            identifierInput.placeholder = isSignup ? '输入邮箱接收验证码' : (isRecover ? '输入邮箱或账号找回密码' : '输入邮箱或账号');
             identifierInput.disabled = verifyMode;
         }
         const passwordField = passwordInput?.closest?.('.auth-field');
@@ -355,11 +355,11 @@
         if(recoverButton) recoverButton.hidden = authModalMode !== 'user';
         if(backLoginButton) backLoginButton.hidden = authModalMode !== 'recover';
         if(submitButton) {
-            submitButton.textContent = isAdmin ? '?????' : (verifyMode ? '?????' : (isSignup ? '?????' : (isRecover ? '??????' : '??')));
+            submitButton.textContent = isAdmin ? '管理员登录' : (verifyMode ? '验证并注册' : (isSignup ? '发送验证码' : (isRecover ? '发送找回邮件' : '登录')));
         }
         setAuthMessage(isAdmin
-            ? '????????????? API ???'
-            : (isSignup ? '????????????????????????' : (isRecover ? '?????????????????????' : '????????????????? API ???')));
+            ? '管理员登录成功后会直接进入 API 设置。'
+            : (isSignup ? '注册需要邮箱验证码，邮箱之后用于找回和修改密码。' : (isRecover ? '输入邮箱或账号后，我们会发送重置密码邮件。' : '登录后可使用团队资源；管理员可进入 API 设置。')));
     }
 
     function openAuthModal(mode = 'user') {
@@ -377,7 +377,7 @@
     function closeAuthModal() {
         const modal = document.getElementById('authModal');
         if(modal) modal.hidden = true;
-        setAuthMessage('????????????????? API ???');
+        setAuthMessage('登录后可使用团队资源；管理员可进入 API 设置。');
         window.__authReturnFocus?.focus?.();
         window.__authReturnFocus = null;
     }
@@ -393,15 +393,15 @@
         const isRecover = authModalMode === 'recover';
         const verifyMode = isSignup && authSignupAwaitingVerification;
         if(!identifier || (!verifyMode && !isRecover && !password) || (isSignup && !verifyMode && !username)) {
-            setAuthMessage(isSignup ? '?????????????' : (isRecover ? '?????????' : '?????/??????'), 'error');
+            setAuthMessage(isSignup ? '请输入账号名、邮箱和密码。' : (isRecover ? '请输入邮箱或账号。' : '请输入邮箱/账号和密码。'), 'error');
             return;
         }
         if(verifyMode && !verification) {
-            setAuthMessage('?????????', 'error');
+            setAuthMessage('请输入邮箱验证码。', 'error');
             return;
         }
         if(button) button.disabled = true;
-        setAuthMessage(verifyMode ? '??????...' : (isSignup ? '???????...' : (isRecover ? '????????...' : '????...')));
+        setAuthMessage(verifyMode ? '正在验证邮箱...' : (isSignup ? '正在发送验证码...' : (isRecover ? '正在发送找回邮件...' : '正在登录...')));
         try {
             let data;
             if(isRecover) {
@@ -410,7 +410,7 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ identifier }),
                 });
-                setAuthMessage('??????????????????????', 'ok');
+                setAuthMessage('如果账号存在，找回密码邮件会发送到对应邮箱。', 'ok');
                 return;
             }
             if(verifyMode) {
@@ -431,7 +431,7 @@
                     setAuthMode('signup');
                     document.getElementById('authVerificationInput').value = '';
                     document.getElementById('authVerificationInput')?.focus?.({ preventScroll: true });
-                    setAuthMessage('???????????????????????', 'ok');
+                    setAuthMessage('验证码已发送，请查看邮箱并输入验证码完成注册。', 'ok');
                     return;
                 }
             } else {
@@ -441,14 +441,14 @@
                     body: JSON.stringify({ identifier, password }),
                 });
             }
-            if(!data.session_ready) throw new Error('??????????????');
+            if(!data.session_ready) throw new Error('登录未成功，请检查账号状态。');
             storeTeamAccessToken(data.access_token || '');
             authSignupAwaitingVerification = false;
             authPendingSignupEmail = '';
             await loadCurrentUser();
             if(authModalMode === 'admin') {
                 if(!hasApiSettingsAccess()) {
-                    setAuthMessage('?????????????? API ???', 'error');
+                    setAuthMessage('当前账户不是管理员，不能进入 API 设置。', 'error');
                     return;
                 }
                 closeAuthModal();
@@ -456,9 +456,9 @@
                 return;
             }
             closeAuthModal();
-            setStatus(isSignup ? '????' : '????');
+            setStatus(isSignup ? '注册成功' : '登录成功');
         } catch(e) {
-            setAuthMessage(e.message || (isSignup ? '??????????????' : '?????????'), 'error');
+            setAuthMessage(e.message || (isSignup ? '注册失败，请检查邮箱验证码。' : '账号或密码不正确。'), 'error');
         } finally {
             if(button) button.disabled = false;
         }
@@ -468,20 +468,20 @@
         const button = document.querySelector('[data-auth-resend]');
         const email = authPendingSignupEmail || String(document.getElementById('authIdentifierInput')?.value || '').trim();
         if(!email) {
-            setAuthMessage('???????', 'error');
+            setAuthMessage('请先填写邮箱。', 'error');
             return;
         }
         if(button) button.disabled = true;
-        setAuthMessage('???????...');
+        setAuthMessage('正在重发验证码...');
         try {
             await fetchJson('/api/team-cloud/auth/verification/resend', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ email }),
             });
-            setAuthMessage('???????????????', 'ok');
+            setAuthMessage('验证码已重新发送，请查看邮箱。', 'ok');
         } catch(e) {
-            setAuthMessage(e.message || '????????', 'error');
+            setAuthMessage(e.message || '验证码重发失败。', 'error');
         } finally {
             if(button) button.disabled = false;
         }
@@ -503,7 +503,7 @@
         }
         if(!hasApiSettingsAccess()) {
             openAuthModal('admin');
-            setAuthMessage('??????????? API ???', 'error');
+            setAuthMessage('需要管理员账户才能进入 API 设置。', 'error');
             return;
         }
         openPage('api-settings');
@@ -590,12 +590,12 @@
     function updateReferenceCount(items = loadReferences()) {
         const count = items.filter(item => (item.kind || 'image') === 'image').length;
         const label = document.querySelector('[data-reference-count]');
-        if(label) label.textContent = `${count}????`;
+        if(label) label.textContent = `${count}张参考图`;
     }
 
     function draftTitleFromPrompt(prompt) {
         const firstLine = String(prompt || '').trim().split(/\r?\n/)[0] || '';
-        return (firstLine || '????').slice(0, 42);
+        return (firstLine || '视觉设计').slice(0, 42);
     }
 
     function loadWorkbenchDrafts() {
@@ -618,7 +618,7 @@
         const input = document.getElementById('promptInput');
         const prompt = String(input?.value || '').trim();
         if(!prompt) {
-            setStatus('????????');
+            setStatus('请先输入设计需求');
             input?.focus();
             return null;
         }
@@ -666,7 +666,7 @@
 
     function selectedImageModel() {
         const value = selectedValue('modelSelect');
-        return value && !value.includes('??') ? value : '';
+        return value && !value.includes('默认') ? value : '';
     }
 
     function imageReferencesForRequest() {
@@ -687,7 +687,7 @@
         const images = (result?.images || []).filter(Boolean);
         if(!section || !grid || !images.length) return;
         grid.innerHTML = images.map((url, index) => `
-            <a class="result-card" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer" aria-label="????? ${index + 1}">
+            <a class="result-card" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer" aria-label="查看生成图 ${index + 1}">
                 <img src="${escapeAttr(url)}" alt="">
             </a>
         `).join('');
@@ -702,7 +702,7 @@
     }
 
     async function generateWorkbenchImage(draft) {
-        setStatus('????????????...');
+        setStatus('正在调用默认模型生成图片...');
         try {
             const response = await fetch('/api/online-image', {
                 method: 'POST',
@@ -719,30 +719,30 @@
                 }),
             });
             const data = await response.json().catch(() => ({}));
-            if(!response.ok) throw new Error(data.detail || data.message || `?????${response.status}`);
+            if(!response.ok) throw new Error(data.detail || data.message || `生成失败：${response.status}`);
             renderWorkbenchResult(data, draft);
-            setStatus('???????????????');
+            setStatus('已生成图片，可进入画布继续编辑');
         } catch(e) {
-            setStatus(e.message || '???????? API ??');
+            setStatus(e.message || '生成失败，请检查 API 设置');
         }
     }
 
     function optimizePromptFallback(prompt) {
         const text = String(prompt || '').trim();
         if(!text) return '';
-        const suffix = '??????????????????????????????????????????????????????????';
-        return text.endsWith('?') || text.endsWith('.') ? `${text}${suffix}` : `${text}${suffix}`;
+        const suffix = '，高级商业设计质感，空间层次清晰，主体明确，真实材质细节，柔和但有方向的灯光，专业摄影构图，干净背景，适合方案展示。';
+        return text.endsWith('。') || text.endsWith('.') ? `${text}${suffix}` : `${text}${suffix}`;
     }
 
     async function optimizePromptInPlace() {
         const input = document.getElementById('promptInput');
         const prompt = String(input?.value || '').trim();
         if(!prompt) {
-            setStatus('???????????');
+            setStatus('请先输入要优化的提示词');
             input?.focus();
             return;
         }
-        setStatus('???????...');
+        setStatus('正在优化提示词...');
         try {
             const response = await fetch('/api/canvas-llm', {
                 method: 'POST',
@@ -751,26 +751,26 @@
                 body: JSON.stringify({
                     provider: 'comfly',
                     model: '',
-                    message: `?????????????????????????????????????\n${prompt}`,
-                    system_prompt: '?????????????????????????????????????????',
+                    message: `把下面需求改写成适合图像生成的中文提示词。只输出优化后的提示词，不要解释：\n${prompt}`,
+                    system_prompt: '你是商业设计和建筑空间图像提示词专家。输出一句完整、具体、可用于生图的中文提示词。',
                     messages: [],
                     images: [],
                     videos: [],
                 }),
             });
             const data = await response.json().catch(() => ({}));
-            if(!response.ok) throw new Error(data.detail || data.message || 'LLM ????');
+            if(!response.ok) throw new Error(data.detail || data.message || 'LLM 优化失败');
             const next = String(data.text || '').trim();
-            if(!next) throw new Error('LLM ?????');
+            if(!next) throw new Error('LLM 未返回内容');
             input.value = next;
-            setStatus('??????');
+            setStatus('提示词已优化');
         } catch(e) {
             const next = optimizePromptFallback(prompt);
             if(next && input) {
                 input.value = next;
-                setStatus('???????????');
+                setStatus('已用本地模板优化提示词');
             } else {
-                setStatus(e.message || '????');
+                setStatus(e.message || '优化失败');
             }
         }
     }
@@ -888,7 +888,7 @@
         if(!modal) return;
         window.__feedbackReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         modal.hidden = false;
-        setFeedbackStatus('???????????????????');
+        setFeedbackStatus('反馈会保存到后台，后续可做管理页查看。');
         window.setTimeout(() => input?.focus(), 30);
     }
 
@@ -903,11 +903,11 @@
         const input = document.getElementById('feedbackInput');
         const message = String(input?.value || '').trim();
         if(!message) {
-            setFeedbackStatus('??????????');
+            setFeedbackStatus('请先写一点反馈内容。');
             input?.focus();
             return;
         }
-        setFeedbackStatus('????...');
+        setFeedbackStatus('正在发送...');
         try {
             await fetchJson('/api/workbench/feedback', {
                 method: 'POST',
@@ -925,10 +925,10 @@
                 }),
             });
             if(input) input.value = '';
-            setFeedbackStatus('??????????');
+            setFeedbackStatus('已发送，后台可查看。');
             window.setTimeout(closeFeedbackModal, 900);
         } catch(e) {
-            setFeedbackStatus('??????????????????????');
+            setFeedbackStatus('当前环境不能提交；部署到后端后会保存到后台。');
         }
     }
 
@@ -975,7 +975,7 @@
         document.querySelector('[data-clear-prompt]')?.addEventListener('click', () => {
             const input = document.getElementById('promptInput');
             if(input) input.value = '';
-            setStatus('????');
+            setStatus('准备就绪');
         });
 
         document.querySelector('[data-upload-placeholder]')?.addEventListener('click', () => {
