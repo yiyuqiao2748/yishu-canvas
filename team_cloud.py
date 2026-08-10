@@ -1,4 +1,6 @@
 import base64
+import asyncio
+import datetime
 import hashlib
 import json
 import os
@@ -7,12 +9,12 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 import httpx
 import jwt
-from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from team_storage import build_image_thumbnail, delete_team_asset_file, read_team_asset_file, save_team_asset, safe_filename
@@ -25,6 +27,20 @@ LOCAL_TEAM_STORE = os.path.join(DATA_DIR, "team_cloud.json")
 TEAM_ROLES = {"owner", "admin", "member"}
 VISIBILITY_VALUES = {"private", "team"}
 TEAM_ASSET_MAX_BYTES = int(os.getenv("TEAM_ASSET_MAX_BYTES", str(50 * 1024 * 1024)))
+TEAM_POINTS_DEFAULT_BALANCE = int(os.getenv("TEAM_POINTS_DEFAULT_BALANCE", "100"))
+TEAM_SESSION_HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("TEAM_SESSION_HEARTBEAT_INTERVAL_SECONDS", "60"))
+TEAM_SESSION_ONLINE_WINDOW_SECONDS = int(os.getenv("TEAM_SESSION_ONLINE_WINDOW_SECONDS", "300"))
+TEAM_CONFIG_CACHE_SECONDS = int(os.getenv("TEAM_CONFIG_CACHE_SECONDS", "60"))
+TEAM_ADMIN_USAGE_LIMIT = int(os.getenv("TEAM_ADMIN_USAGE_LIMIT", "1000"))
+TEAM_AUTH_VERIFICATION_RESEND_SECONDS = int(os.getenv("TEAM_AUTH_VERIFICATION_RESEND_SECONDS", "60"))
+
+DEFAULT_OPERATION_POINTS = {
+    "image": 1,
+    "upscale": 1,
+    "chat": 1,
+    "video": 5,
+    "workflow": 1,
+}
 
 
 @dataclass
@@ -62,6 +78,7 @@ settings = TeamCloudSettings()
 router = APIRouter(prefix="/api/team-cloud", tags=["team-cloud"])
 CF_ACCESS_CERTS_CACHE_TTL = 60 * 60
 _cf_access_certs_cache: Dict[str, Any] = {"expires_at": 0.0, "keys": []}
+_verification_resend_times: Dict[str, float] = {}
 
 
 class CurrentUser(BaseModel):
@@ -97,6 +114,15 @@ class AuthEmailPasswordRequest(BaseModel):
     identifier: Optional[str] = Field(None, min_length=3, max_length=254)
     username: Optional[str] = Field(None, min_length=3, max_length=32)
     password: str = Field(..., min_length=6, max_length=128)
+
+
+class AuthSignupVerifyRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=254)
+    token: str = Field(..., min_length=4, max_length=16)
+
+
+class AuthVerificationResendRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=254)
 
 
 class AuthPasswordUpdateRequest(BaseModel):
@@ -137,6 +163,37 @@ class TeamApiProviderModelsRequest(BaseModel):
     protocol: str = Field("openai", max_length=40)
     api_key: str = Field("", max_length=4096)
     wallet_api_key: str = Field("", max_length=4096)
+
+
+class TeamUsageLogRequest(BaseModel):
+    team_id: str = Field(..., min_length=1)
+    project_id: str = ""
+    canvas_id: str = ""
+    operation_type: str = "image"
+    provider_id: str = ""
+    model: str = ""
+    status: str = "succeeded"
+    points_charged: Optional[int] = None
+    request_count: int = 1
+    image_count: int = 0
+    video_count: int = 0
+    latency_ms: int = 0
+    request_summary: Dict[str, Any] = Field(default_factory=dict)
+    result_summary: Dict[str, Any] = Field(default_factory=dict)
+    error: str = ""
+
+
+class PointsAdjustRequest(BaseModel):
+    team_id: str = ""
+    delta: int = 0
+    mode: str = Field("adjust", pattern="^(adjust|set|reset)$")
+    note: str = Field("", max_length=500)
+
+
+class SessionHeartbeatRequest(BaseModel):
+    team_id: str = ""
+    session_id: str = ""
+    page: str = Field("", max_length=200)
 
 
 def now_ms() -> int:
@@ -183,6 +240,70 @@ def public_config() -> Dict[str, Any]:
         "cookie_auth": True,
         "cloudflare_access_auth": bool(settings.cloudflare_access_enabled),
     }
+
+
+def utc_now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def parse_timestamp(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        raw = float(value)
+        return raw / 1000.0 if raw > 10_000_000_000 else raw
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    if text.isdigit():
+        return parse_timestamp(int(text))
+    try:
+        return datetime.datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def normalize_operation_type(value: Any) -> str:
+    operation = str(value or "image").strip().lower()
+    return operation if operation in DEFAULT_OPERATION_POINTS else "image"
+
+
+def default_points_for_operation(operation_type: str) -> int:
+    return int(DEFAULT_OPERATION_POINTS.get(normalize_operation_type(operation_type), 1))
+
+
+def usage_points(payload: Dict[str, Any]) -> int:
+    explicit = payload.get("points_charged")
+    if explicit is not None:
+        try:
+            return max(0, int(explicit))
+        except (TypeError, ValueError):
+            return 0
+    operation = normalize_operation_type(payload.get("operation_type"))
+    unit_count = 1
+    if operation == "image":
+        unit_count = max(1, int(payload.get("image_count") or payload.get("request_count") or 1))
+    elif operation == "video":
+        unit_count = max(1, int(payload.get("video_count") or payload.get("request_count") or 1))
+    return default_points_for_operation(operation) * unit_count
+
+
+def public_member_user(member: Dict[str, Any], profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    profile = profile or {}
+    return {
+        "user_id": member.get("user_id") or profile.get("user_id") or "",
+        "email": profile.get("email") or member.get("email") or "",
+        "username": profile.get("username") or "",
+        "display_name": profile.get("display_name") or profile.get("username") or member.get("email") or member.get("user_id") or "",
+        "role": member.get("role") or "member",
+        "team_id": member.get("team_id") or "",
+        "joined_at": member.get("created_at"),
+    }
+
+
+def online_status_from_last_seen(last_seen_at: Any) -> bool:
+    last_seen = parse_timestamp(last_seen_at)
+    return bool(last_seen and time.time() - last_seen <= TEAM_SESSION_ONLINE_WINDOW_SECONDS)
 
 
 def decode_supabase_token(token: str) -> CurrentUser:
@@ -445,6 +566,21 @@ async def supabase_update_password(access_token: str, password: str) -> Dict[str
     return response.json()
 
 
+async def supabase_verify_signup_otp(email: str, token: str) -> Dict[str, Any]:
+    return await supabase_auth_request("verify", {
+        "type": "signup",
+        "email": email,
+        "token": str(token or "").strip(),
+    })
+
+
+async def supabase_resend_signup_otp(email: str) -> Dict[str, Any]:
+    return await supabase_auth_request("resend", {
+        "type": "signup",
+        "email": email,
+    })
+
+
 def sanitize_auth_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     user = data.get("user") or {}
     access_token = str(data.get("access_token") or "")
@@ -460,6 +596,19 @@ def sanitize_auth_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     if access_token:
         payload["access_token"] = access_token
     return payload
+
+
+def supabase_user_email_confirmed(user: Dict[str, Any]) -> bool:
+    return bool(
+        user.get("email_confirmed_at")
+        or user.get("confirmed_at")
+        or user.get("confirmation_sent_at") is None
+    )
+
+
+def user_metadata_username(user: Dict[str, Any]) -> str:
+    metadata = user.get("user_metadata") if isinstance(user.get("user_metadata"), dict) else {}
+    return normalize_username(str(metadata.get("username") or ""))
 
 
 def asset_reference_terms(asset: Dict[str, Any]) -> List[str]:
@@ -757,7 +906,21 @@ class LocalTeamStore:
 
     def _read(self) -> Dict[str, Any]:
         if not os.path.exists(self.path):
-            return {"teams": [], "members": [], "invitations": [], "projects": [], "canvases": [], "canvas_versions": [], "assets": [], "api_providers": [], "generation_logs": []}
+            return {
+                "teams": [],
+                "members": [],
+                "invitations": [],
+                "projects": [],
+                "canvases": [],
+                "canvas_versions": [],
+                "assets": [],
+                "api_providers": [],
+                "generation_logs": [],
+                "api_usage_logs": [],
+                "user_points": [],
+                "point_ledger": [],
+                "user_sessions": [],
+            }
         try:
             with open(self.path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
@@ -773,6 +936,10 @@ class LocalTeamStore:
             "assets": data.get("assets") or [],
             "api_providers": data.get("api_providers") or [],
             "generation_logs": data.get("generation_logs") or [],
+            "api_usage_logs": data.get("api_usage_logs") or [],
+            "user_points": data.get("user_points") or [],
+            "point_ledger": data.get("point_ledger") or [],
+            "user_sessions": data.get("user_sessions") or [],
         }
 
     def _write(self, data: Dict[str, Any]) -> None:
@@ -863,6 +1030,10 @@ class LocalTeamStore:
             data["assets"] = [item for item in data["assets"] if item.get("team_id") != team_id]
             data["api_providers"] = [item for item in data["api_providers"] if item.get("team_id") != team_id]
             data["generation_logs"] = [item for item in data["generation_logs"] if item.get("team_id") != team_id]
+            data["api_usage_logs"] = [item for item in data["api_usage_logs"] if item.get("team_id") != team_id]
+            data["user_points"] = [item for item in data["user_points"] if item.get("team_id") != team_id]
+            data["point_ledger"] = [item for item in data["point_ledger"] if item.get("team_id") != team_id]
+            data["user_sessions"] = [item for item in data["user_sessions"] if item.get("team_id") != team_id]
             self._write(data)
         removed_files = [
             key
@@ -1292,6 +1463,257 @@ class LocalTeamStore:
             logs.sort(key=lambda item: int(item.get("created_at") or 0), reverse=True)
             return logs[:max(1, min(200, int(limit or 100)))]
 
+    def bootstrap(self, user: CurrentUser, team_id: str = "", project_id: str = "") -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            memberships = [m for m in data["members"] if m.get("user_id") == user.id]
+            teams_by_id = {team["id"]: team for team in data["teams"]}
+            teams = [{**teams_by_id[m["team_id"]], "role": m.get("role", "member")} for m in memberships if m.get("team_id") in teams_by_id]
+            selected_team_id = team_id if any(team.get("id") == team_id for team in teams) else (teams[0].get("id") if teams else "")
+            members: List[Dict[str, Any]] = []
+            projects: List[Dict[str, Any]] = []
+            canvases: List[Dict[str, Any]] = []
+            providers: List[Dict[str, Any]] = []
+            logs: List[Dict[str, Any]] = []
+            summary = generation_log_summary([])
+            points = None
+            admin = False
+            selected_project_id = ""
+            if selected_team_id:
+                member = self._require_member(data, user.id, selected_team_id)
+                admin = member.get("role") in {"owner", "admin"}
+                members = [m for m in data["members"] if m.get("team_id") == selected_team_id]
+                projects = [p for p in data["projects"] if p.get("team_id") == selected_team_id and not p.get("archived_at")]
+                projects.sort(key=lambda item: int(item.get("updated_at") or 0), reverse=True)
+                selected_project_id = project_id if any(p.get("id") == project_id for p in projects) else (projects[0].get("id") if projects else "")
+                if selected_project_id:
+                    canvases = [
+                        self._canvas_summary(canvas)
+                        for canvas in data["canvases"]
+                        if canvas.get("project_id") == selected_project_id and record_is_visible_to_user(canvas, user, member)
+                    ]
+                if admin:
+                    providers = [
+                        public_team_api_provider(record)
+                        for record in data["api_providers"]
+                        if record.get("team_id") == selected_team_id
+                    ]
+                    providers.sort(key=lambda item: item.get("provider_id") or "")
+                logs = [item for item in data["generation_logs"] if item.get("team_id") == selected_team_id]
+                logs.sort(key=lambda item: int(item.get("created_at") or 0), reverse=True)
+                logs = logs[:100]
+                summary = generation_log_summary(logs)
+                points = self._ensure_points_record(data, selected_team_id, user.id)
+                self._write(data)
+            return {
+                "user": user.model_dump(),
+                "teams": teams,
+                "selected_team_id": selected_team_id,
+                "selected_project_id": selected_project_id,
+                "members": members,
+                "projects": projects,
+                "canvases": canvases,
+                "api_providers": providers,
+                "generation_logs": logs,
+                "generation_summary": summary,
+                "points": points,
+                "can_manage_team": admin,
+            }
+
+    def get_user_points(self, user: CurrentUser, team_id: str, target_user_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            actor = self._require_member(data, user.id, team_id)
+            if target_user_id != user.id:
+                require_team_admin(actor)
+            points = self._ensure_points_record(data, team_id, target_user_id)
+            self._write(data)
+            return points
+
+    def assert_points_available(self, user: CurrentUser, team_id: str, operation_type: str, provider_id: str = "", model: str = "", units: int = 1) -> Dict[str, Any]:
+        required = default_points_for_operation(operation_type) * max(1, int(units or 1))
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            points = self._ensure_points_record(data, team_id, user.id)
+            if int(points.get("balance") or 0) < required:
+                raise HTTPException(status_code=402, detail=f"点数不足：本次需要 {required} 点，当前余额 {points.get('balance') or 0} 点")
+            self._write(data)
+            return {"required_points": required, "points": points}
+
+    def create_usage_log(self, user: CurrentUser, team_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        operation_type = normalize_operation_type(payload.get("operation_type"))
+        status = str(payload.get("status") or "succeeded")
+        points = usage_points({**payload, "operation_type": operation_type}) if status == "succeeded" else 0
+        with self.lock:
+            data = self._read()
+            self._require_member(data, user.id, team_id)
+            record = {
+                "id": str(uuid.uuid4()),
+                "team_id": team_id,
+                "project_id": str(payload.get("project_id") or ""),
+                "canvas_id": str(payload.get("canvas_id") or ""),
+                "user_id": user.id,
+                "operation_type": operation_type,
+                "provider_id": str(payload.get("provider_id") or ""),
+                "model": str(payload.get("model") or ""),
+                "status": status,
+                "points_charged": points,
+                "request_count": max(1, int(payload.get("request_count") or 1)),
+                "image_count": max(0, int(payload.get("image_count") or 0)),
+                "video_count": max(0, int(payload.get("video_count") or 0)),
+                "latency_ms": max(0, int(payload.get("latency_ms") or 0)),
+                "request_summary": payload.get("request_summary") if isinstance(payload.get("request_summary"), dict) else {},
+                "result_summary": payload.get("result_summary") if isinstance(payload.get("result_summary"), dict) else {},
+                "error": str(payload.get("error") or "")[:1000],
+                "created_at": now_ms(),
+                "finished_at": now_ms() if status in {"succeeded", "failed"} else None,
+            }
+            data["api_usage_logs"].append(record)
+            if points:
+                point_record = self._ensure_points_record(data, team_id, user.id)
+                point_record["balance"] = int(point_record.get("balance") or 0) - points
+                point_record["updated_at"] = now_ms()
+                data["point_ledger"].append({
+                    "id": str(uuid.uuid4()),
+                    "team_id": team_id,
+                    "user_id": user.id,
+                    "delta": -points,
+                    "reason": f"usage:{operation_type}",
+                    "source_log_id": record["id"],
+                    "created_by": user.id,
+                    "note": "",
+                    "created_at": now_ms(),
+                })
+            self._write(data)
+            return record
+
+    def heartbeat_session(self, user: CurrentUser, payload: SessionHeartbeatRequest, request: Optional[Request] = None) -> Dict[str, Any]:
+        team_id = str(payload.team_id or "").strip()
+        session_id = str(payload.session_id or "").strip() or str(uuid.uuid4())
+        now = now_ms()
+        user_agent_hash = ""
+        if request:
+            ua = request.headers.get("user-agent", "")
+            user_agent_hash = hashlib.sha1(ua.encode("utf-8")).hexdigest()[:16] if ua else ""
+        with self.lock:
+            data = self._read()
+            if team_id:
+                self._require_member(data, user.id, team_id)
+            session = next((item for item in data["user_sessions"] if item.get("session_id") == session_id and item.get("user_id") == user.id), None)
+            if not session:
+                session = {
+                    "id": str(uuid.uuid4()),
+                    "session_id": session_id,
+                    "team_id": team_id,
+                    "user_id": user.id,
+                    "started_at": now,
+                    "last_seen_at": now,
+                    "page": payload.page,
+                    "user_agent_hash": user_agent_hash,
+                }
+                data["user_sessions"].append(session)
+            else:
+                session["team_id"] = team_id or session.get("team_id") or ""
+                session["last_seen_at"] = now
+                session["page"] = payload.page
+                if user_agent_hash:
+                    session["user_agent_hash"] = user_agent_hash
+            self._write(data)
+            return {**session, "online": True}
+
+    def adjust_user_points(self, user: CurrentUser, team_id: str, target_user_id: str, payload: PointsAdjustRequest) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            actor = self._require_member(data, user.id, team_id)
+            require_team_admin(actor)
+            self._require_member(data, target_user_id, team_id)
+            points = self._ensure_points_record(data, team_id, target_user_id)
+            old_balance = int(points.get("balance") or 0)
+            if payload.mode in {"set", "reset"}:
+                new_balance = max(0, int(payload.delta or 0))
+                delta = new_balance - old_balance
+            else:
+                delta = int(payload.delta or 0)
+                new_balance = max(0, old_balance + delta)
+                delta = new_balance - old_balance
+            points["balance"] = new_balance
+            points["updated_at"] = now_ms()
+            data["point_ledger"].append({
+                "id": str(uuid.uuid4()),
+                "team_id": team_id,
+                "user_id": target_user_id,
+                "delta": delta,
+                "reason": f"admin:{payload.mode}",
+                "source_log_id": "",
+                "created_by": user.id,
+                "note": payload.note,
+                "created_at": now_ms(),
+            })
+            self._write(data)
+            return {"points": points, "delta": delta}
+
+    def admin_overview(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            member = self._require_member(data, user.id, team_id)
+            require_team_admin(member)
+            logs = [item for item in data["api_usage_logs"] if item.get("team_id") == team_id]
+            sessions = [item for item in data["user_sessions"] if item.get("team_id") == team_id]
+            return build_admin_overview(team_id, logs, sessions)
+
+    def admin_users(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
+        with self.lock:
+            data = self._read()
+            member = self._require_member(data, user.id, team_id)
+            require_team_admin(member)
+            return build_admin_users(
+                team_id,
+                [m for m in data["members"] if m.get("team_id") == team_id],
+                [],
+                [p for p in data["user_points"] if p.get("team_id") == team_id],
+                [l for l in data["api_usage_logs"] if l.get("team_id") == team_id],
+                [s for s in data["user_sessions"] if s.get("team_id") == team_id],
+            )
+
+    def admin_user_detail(self, user: CurrentUser, team_id: str, target_user_id: str) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            member = self._require_member(data, user.id, team_id)
+            require_team_admin(member)
+            members = [m for m in data["members"] if m.get("team_id") == team_id]
+            if not any(m.get("user_id") == target_user_id for m in members):
+                raise HTTPException(status_code=404, detail="用户不在该团队")
+            logs = [l for l in data["api_usage_logs"] if l.get("team_id") == team_id and l.get("user_id") == target_user_id]
+            logs.sort(key=lambda item: parse_timestamp(item.get("created_at")), reverse=True)
+            sessions = [s for s in data["user_sessions"] if s.get("team_id") == team_id and s.get("user_id") == target_user_id]
+            points = self._ensure_points_record(data, team_id, target_user_id)
+            return build_admin_user_detail(target_user_id, points, logs, sessions)
+
+    def admin_usage_logs(self, user: CurrentUser, team_id: str, filters: Dict[str, Any]) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            member = self._require_member(data, user.id, team_id)
+            require_team_admin(member)
+            logs = [item for item in data["api_usage_logs"] if item.get("team_id") == team_id]
+            return filter_usage_logs(logs, filters)
+
+    def _ensure_points_record(self, data: Dict[str, Any], team_id: str, user_id: str) -> Dict[str, Any]:
+        record = next((item for item in data["user_points"] if item.get("team_id") == team_id and item.get("user_id") == user_id), None)
+        if record:
+            return record
+        record = {
+            "id": str(uuid.uuid4()),
+            "team_id": team_id,
+            "user_id": user_id,
+            "balance": TEAM_POINTS_DEFAULT_BALANCE,
+            "monthly_quota": TEAM_POINTS_DEFAULT_BALANCE,
+            "created_at": now_ms(),
+            "updated_at": now_ms(),
+        }
+        data["user_points"].append(record)
+        return record
+
     def _require_member(self, data: Dict[str, Any], user_id: str, team_id: str) -> Dict[str, Any]:
         for member in data["members"]:
             if member.get("team_id") == team_id and member.get("user_id") == user_id:
@@ -1369,20 +1791,34 @@ class SupabaseTeamStore:
             "Authorization": f"Bearer {service_key}",
             "Content-Type": "application/json",
         }
+        self._client: Optional[httpx.AsyncClient] = None
+        self._client_lock = asyncio.Lock()
 
     async def _request(self, method: str, path: str, *, json_body: Any = None) -> Any:
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.request(
-                method,
-                f"{self.rest_url}{path}",
-                headers={**self.headers, "Prefer": "return=representation"},
-                json=json_body,
-            )
+        client = await self._get_client()
+        response = await client.request(
+            method,
+            f"{self.rest_url}{path}",
+            headers={**self.headers, "Prefer": "return=representation"},
+            json=json_body,
+        )
         if response.status_code >= 400:
             raise HTTPException(status_code=502, detail=f"Supabase 请求失败：{response.text[:200]}")
         if not response.content:
             return None
         return response.json()
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client and not self._client.is_closed:
+            return self._client
+        async with self._client_lock:
+            if not self._client or self._client.is_closed:
+                self._client = httpx.AsyncClient(timeout=15)
+        return self._client
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     async def list_user_teams(self, user: CurrentUser) -> List[Dict[str, Any]]:
         rows = await self._request(
@@ -1822,6 +2258,254 @@ class SupabaseTeamStore:
             f"/generation_logs?team_id=eq.{team_id}&order=created_at.desc&limit={safe_limit}&select=*",
         )
 
+    async def bootstrap(self, user: CurrentUser, team_id: str = "", project_id: str = "") -> Dict[str, Any]:
+        teams = await self.list_user_teams(user)
+        selected_team_id = team_id if any(team.get("id") == team_id for team in teams) else (teams[0].get("id") if teams else "")
+        if not selected_team_id:
+            return {
+                "user": user.model_dump(),
+                "teams": teams,
+                "selected_team_id": "",
+                "selected_project_id": "",
+                "members": [],
+                "projects": [],
+                "canvases": [],
+                "api_providers": [],
+                "generation_logs": [],
+                "generation_summary": generation_log_summary([]),
+                "points": None,
+                "can_manage_team": False,
+            }
+        member = await self._require_member(user.id, selected_team_id)
+        can_manage = member.get("role") in {"owner", "admin"}
+        members_task = self._request("GET", f"/team_members?team_id=eq.{selected_team_id}&select=*")
+        projects_task = self._request("GET", f"/projects?team_id=eq.{selected_team_id}&archived_at=is.null&order=updated_at.desc&select=*")
+        logs_task = self.list_generation_logs(user, selected_team_id, 100)
+        providers_task = self.list_api_providers(user, selected_team_id) if can_manage else asyncio.sleep(0, result=[])
+        points_task = self.get_user_points(user, selected_team_id, user.id)
+        members, projects, logs, providers, points = await asyncio.gather(
+            members_task,
+            projects_task,
+            logs_task,
+            providers_task,
+            points_task,
+        )
+        selected_project_id = project_id if any(project.get("id") == project_id for project in projects or []) else ((projects or [{}])[0].get("id") or "")
+        canvases = await self.list_canvases(user, selected_project_id) if selected_project_id else []
+        return {
+            "user": user.model_dump(),
+            "teams": teams,
+            "selected_team_id": selected_team_id,
+            "selected_project_id": selected_project_id,
+            "members": members or [],
+            "projects": projects or [],
+            "canvases": canvases,
+            "api_providers": providers or [],
+            "generation_logs": logs or [],
+            "generation_summary": generation_log_summary(logs or []),
+            "points": points,
+            "can_manage_team": can_manage,
+        }
+
+    async def get_user_points(self, user: CurrentUser, team_id: str, target_user_id: str) -> Dict[str, Any]:
+        actor = await self._require_member(user.id, team_id)
+        if target_user_id != user.id:
+            require_team_admin(actor)
+        return await self._ensure_points_record(team_id, target_user_id)
+
+    async def assert_points_available(self, user: CurrentUser, team_id: str, operation_type: str, provider_id: str = "", model: str = "", units: int = 1) -> Dict[str, Any]:
+        await self._require_member(user.id, team_id)
+        required = default_points_for_operation(operation_type) * max(1, int(units or 1))
+        points = await self._ensure_points_record(team_id, user.id)
+        if int(points.get("balance") or 0) < required:
+            raise HTTPException(status_code=402, detail=f"点数不足：本次需要 {required} 点，当前余额 {points.get('balance') or 0} 点")
+        return {"required_points": required, "points": points}
+
+    async def create_usage_log(self, user: CurrentUser, team_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        await self._require_member(user.id, team_id)
+        operation_type = normalize_operation_type(payload.get("operation_type"))
+        status = str(payload.get("status") or "succeeded")
+        points = usage_points({**payload, "operation_type": operation_type}) if status == "succeeded" else 0
+        body = {
+            "team_id": team_id,
+            "project_id": payload.get("project_id") or None,
+            "canvas_id": payload.get("canvas_id") or None,
+            "user_id": user.id,
+            "operation_type": operation_type,
+            "provider_id": str(payload.get("provider_id") or ""),
+            "model": str(payload.get("model") or ""),
+            "status": status,
+            "points_charged": points,
+            "request_count": max(1, int(payload.get("request_count") or 1)),
+            "image_count": max(0, int(payload.get("image_count") or 0)),
+            "video_count": max(0, int(payload.get("video_count") or 0)),
+            "latency_ms": max(0, int(payload.get("latency_ms") or 0)),
+            "request_summary": payload.get("request_summary") if isinstance(payload.get("request_summary"), dict) else {},
+            "result_summary": payload.get("result_summary") if isinstance(payload.get("result_summary"), dict) else {},
+            "error": str(payload.get("error") or "")[:1000],
+            "finished_at": utc_now_iso() if status in {"succeeded", "failed"} else None,
+        }
+        created = await self._request("POST", "/api_usage_logs", json_body=[body])
+        record = created[0] if created else body
+        if points:
+            point_record = await self._ensure_points_record(team_id, user.id)
+            next_balance = max(0, int(point_record.get("balance") or 0) - points)
+            await self._request(
+                "PATCH",
+                f"/user_points?team_id=eq.{team_id}&user_id=eq.{user.id}",
+                json_body={"balance": next_balance, "updated_at": utc_now_iso()},
+            )
+            await self._request("POST", "/point_ledger", json_body=[{
+                "team_id": team_id,
+                "user_id": user.id,
+                "delta": -points,
+                "reason": f"usage:{operation_type}",
+                "source_log_id": record.get("id"),
+                "created_by": user.id,
+                "note": "",
+            }])
+        return record
+
+    async def heartbeat_session(self, user: CurrentUser, payload: SessionHeartbeatRequest, request: Optional[Request] = None) -> Dict[str, Any]:
+        team_id = str(payload.team_id or "").strip()
+        if team_id:
+            await self._require_member(user.id, team_id)
+        session_id = str(payload.session_id or "").strip() or str(uuid.uuid4())
+        user_agent_hash = ""
+        if request:
+            ua = request.headers.get("user-agent", "")
+            user_agent_hash = hashlib.sha1(ua.encode("utf-8")).hexdigest()[:16] if ua else ""
+        rows = await self._request(
+            "GET",
+            f"/user_sessions?session_id=eq.{quote(session_id, safe='')}&user_id=eq.{quote(user.id, safe='')}&select=*",
+        )
+        body = {
+            "team_id": team_id or None,
+            "last_seen_at": utc_now_iso(),
+            "page": payload.page,
+            "user_agent_hash": user_agent_hash,
+        }
+        if rows:
+            updated = await self._request(
+                "PATCH",
+                f"/user_sessions?session_id=eq.{quote(session_id, safe='')}&user_id=eq.{quote(user.id, safe='')}",
+                json_body=body,
+            )
+            session = updated[0] if updated else {**rows[0], **body}
+        else:
+            created = await self._request("POST", "/user_sessions", json_body=[{
+                "session_id": session_id,
+                "team_id": team_id or None,
+                "user_id": user.id,
+                "started_at": utc_now_iso(),
+                "last_seen_at": utc_now_iso(),
+                "page": payload.page,
+                "user_agent_hash": user_agent_hash,
+            }])
+            session = created[0] if created else {"session_id": session_id, **body}
+        return {**session, "online": True}
+
+    async def adjust_user_points(self, user: CurrentUser, team_id: str, target_user_id: str, payload: PointsAdjustRequest) -> Dict[str, Any]:
+        actor = await self._require_member(user.id, team_id)
+        require_team_admin(actor)
+        await self._require_member(target_user_id, team_id)
+        points = await self._ensure_points_record(team_id, target_user_id)
+        old_balance = int(points.get("balance") or 0)
+        if payload.mode in {"set", "reset"}:
+            new_balance = max(0, int(payload.delta or 0))
+            delta = new_balance - old_balance
+        else:
+            delta = int(payload.delta or 0)
+            new_balance = max(0, old_balance + delta)
+            delta = new_balance - old_balance
+        updated = await self._request(
+            "PATCH",
+            f"/user_points?team_id=eq.{team_id}&user_id=eq.{target_user_id}",
+            json_body={"balance": new_balance, "updated_at": utc_now_iso()},
+        )
+        await self._request("POST", "/point_ledger", json_body=[{
+            "team_id": team_id,
+            "user_id": target_user_id,
+            "delta": delta,
+            "reason": f"admin:{payload.mode}",
+            "source_log_id": None,
+            "created_by": user.id,
+            "note": payload.note,
+        }])
+        return {"points": (updated[0] if updated else {**points, "balance": new_balance}), "delta": delta}
+
+    async def admin_overview(self, user: CurrentUser, team_id: str) -> Dict[str, Any]:
+        member = await self._require_member(user.id, team_id)
+        require_team_admin(member)
+        logs, sessions = await asyncio.gather(
+            self._request("GET", f"/api_usage_logs?team_id=eq.{team_id}&order=created_at.desc&limit={TEAM_ADMIN_USAGE_LIMIT}&select=*"),
+            self._request("GET", f"/user_sessions?team_id=eq.{team_id}&order=last_seen_at.desc&limit=1000&select=*"),
+        )
+        return build_admin_overview(team_id, logs or [], sessions or [])
+
+    async def admin_users(self, user: CurrentUser, team_id: str) -> List[Dict[str, Any]]:
+        member = await self._require_member(user.id, team_id)
+        require_team_admin(member)
+        members, points, logs, sessions = await asyncio.gather(
+            self._request("GET", f"/team_members?team_id=eq.{team_id}&select=*"),
+            self._request("GET", f"/user_points?team_id=eq.{team_id}&select=*"),
+            self._request("GET", f"/api_usage_logs?team_id=eq.{team_id}&order=created_at.desc&limit={TEAM_ADMIN_USAGE_LIMIT}&select=*"),
+            self._request("GET", f"/user_sessions?team_id=eq.{team_id}&order=last_seen_at.desc&limit=1000&select=*"),
+        )
+        user_ids = [str(item.get("user_id") or "") for item in members or [] if item.get("user_id")]
+        profiles = await self._profiles_for_user_ids(user_ids)
+        return build_admin_users(team_id, members or [], profiles, points or [], logs or [], sessions or [])
+
+    async def admin_user_detail(self, user: CurrentUser, team_id: str, target_user_id: str) -> Dict[str, Any]:
+        member = await self._require_member(user.id, team_id)
+        require_team_admin(member)
+        await self._require_member(target_user_id, team_id)
+        points, logs, sessions = await asyncio.gather(
+            self._ensure_points_record(team_id, target_user_id),
+            self._request("GET", f"/api_usage_logs?team_id=eq.{team_id}&user_id=eq.{target_user_id}&order=created_at.desc&limit=500&select=*"),
+            self._request("GET", f"/user_sessions?team_id=eq.{team_id}&user_id=eq.{target_user_id}&order=last_seen_at.desc&limit=100&select=*"),
+        )
+        return build_admin_user_detail(target_user_id, points, logs or [], sessions or [])
+
+    async def admin_usage_logs(self, user: CurrentUser, team_id: str, filters: Dict[str, Any]) -> Dict[str, Any]:
+        member = await self._require_member(user.id, team_id)
+        require_team_admin(member)
+        logs = await self._request(
+            "GET",
+            f"/api_usage_logs?team_id=eq.{team_id}&order=created_at.desc&limit={TEAM_ADMIN_USAGE_LIMIT}&select=*",
+        )
+        return filter_usage_logs(logs or [], filters)
+
+    async def _ensure_points_record(self, team_id: str, user_id: str) -> Dict[str, Any]:
+        rows = await self._request(
+            "GET",
+            f"/user_points?team_id=eq.{team_id}&user_id=eq.{user_id}&select=*",
+        )
+        if rows:
+            return rows[0]
+        created = await self._request("POST", "/user_points", json_body=[{
+            "team_id": team_id,
+            "user_id": user_id,
+            "balance": TEAM_POINTS_DEFAULT_BALANCE,
+            "monthly_quota": TEAM_POINTS_DEFAULT_BALANCE,
+        }])
+        return created[0] if created else {
+            "team_id": team_id,
+            "user_id": user_id,
+            "balance": TEAM_POINTS_DEFAULT_BALANCE,
+            "monthly_quota": TEAM_POINTS_DEFAULT_BALANCE,
+        }
+
+    async def _profiles_for_user_ids(self, user_ids: List[str]) -> List[Dict[str, Any]]:
+        ids = [quote(str(item), safe="") for item in user_ids if str(item or "").strip()]
+        if not ids:
+            return []
+        joined = ",".join(ids)
+        try:
+            return await self._request("GET", f"/user_profiles?user_id=in.({joined})&select=user_id,email,username,display_name")
+        except HTTPException:
+            return []
+
     async def _require_member(self, user_id: str, team_id: str) -> Dict[str, Any]:
         rows = await self._request(
             "GET",
@@ -1879,6 +2563,16 @@ async def get_user_profile_by_username(username: str) -> Optional[Dict[str, Any]
     return rows[0] if rows else None
 
 
+async def get_user_profile_by_email(email: str) -> Optional[Dict[str, Any]]:
+    if not supabase_store:
+        return None
+    rows = await supabase_store._request(
+        "GET",
+        f"/user_profiles?email=eq.{quote(normalize_email(email), safe='')}&select=user_id,email,username,display_name&limit=1",
+    )
+    return rows[0] if rows else None
+
+
 async def get_user_profile_by_user_id(user_id: str) -> Optional[Dict[str, Any]]:
     if not supabase_store:
         return None
@@ -1887,6 +2581,66 @@ async def get_user_profile_by_user_id(user_id: str) -> Optional[Dict[str, Any]]:
         f"/user_profiles?user_id=eq.{quote(user_id, safe='')}&select=user_id,email,username,display_name&limit=1",
     )
     return rows[0] if rows else None
+
+
+async def pending_profile_request(method: str, path: str, *, json_body: Any = None) -> Any:
+    if not supabase_store:
+        return None
+    try:
+        return await supabase_store._request(method, path, json_body=json_body)
+    except HTTPException as exc:
+        # New deployments can run before the optional pending table migration is applied.
+        detail = str(exc.detail or "")
+        if "pending_user_profiles" in detail or "schema cache" in detail or "Could not find" in detail:
+            return None
+        raise
+
+
+async def get_pending_profile_by_email(email: str) -> Optional[Dict[str, Any]]:
+    rows = await pending_profile_request(
+        "GET",
+        f"/pending_user_profiles?email=eq.{quote(normalize_email(email), safe='')}&select=*&limit=1",
+    )
+    return rows[0] if rows else None
+
+
+async def get_pending_profile_by_username(username: str) -> Optional[Dict[str, Any]]:
+    rows = await pending_profile_request(
+        "GET",
+        f"/pending_user_profiles?username=eq.{quote(normalize_username(username), safe='')}&select=*&limit=1",
+    )
+    return rows[0] if rows else None
+
+
+async def save_pending_user_profile(user_id: str, email: str, username: str) -> None:
+    if not supabase_store:
+        return
+    email = normalize_email(email)
+    username = normalize_username(username)
+    existing = await get_pending_profile_by_email(email)
+    payload = {
+        "user_id": user_id,
+        "email": email,
+        "username": username,
+        "display_name": username,
+        "updated_at": utc_now_iso(),
+    }
+    if existing:
+        await pending_profile_request(
+            "PATCH",
+            f"/pending_user_profiles?email=eq.{quote(email, safe='')}",
+            json_body=payload,
+        )
+        return
+    await pending_profile_request("POST", "/pending_user_profiles", json_body=[payload])
+
+
+async def mark_pending_user_profile_verified(email: str, user_id: str) -> None:
+    await pending_profile_request(
+        "PATCH",
+        f"/pending_user_profiles?email=eq.{quote(normalize_email(email), safe='')}",
+        json_body={"user_id": user_id, "verified_at": utc_now_iso(), "updated_at": utc_now_iso()},
+    )
 
 
 async def create_user_profile(user_id: str, email: str, username: str) -> Dict[str, Any]:
@@ -1902,6 +2656,19 @@ async def create_user_profile(user_id: str, email: str, username: str) -> Dict[s
         }],
     )
     return rows[0] if rows else {}
+
+
+async def ensure_user_profile(user_id: str, email: str, username: str) -> Dict[str, Any]:
+    profile = await get_user_profile_by_user_id(user_id)
+    if profile:
+        return profile
+    existing_email = await get_user_profile_by_email(email)
+    if existing_email and existing_email.get("user_id") != user_id:
+        raise HTTPException(status_code=409, detail="该邮箱已绑定其他账号")
+    existing_username = await get_user_profile_by_username(username)
+    if existing_username and existing_username.get("user_id") != user_id:
+        raise HTTPException(status_code=409, detail="账号名已被使用")
+    return await create_user_profile(user_id, email, username)
 
 
 async def resolve_auth_identifier_email(identifier: str) -> str:
@@ -1936,6 +2703,27 @@ async def record_team_generation_log(user: CurrentUser, team_id: str, payload: D
     return await maybe_await(active_store().create_generation_log(user, team_id, payload))
 
 
+async def assert_team_points_available(
+    user: CurrentUser,
+    team_id: str,
+    operation_type: str,
+    provider_id: str = "",
+    model: str = "",
+    units: int = 1,
+) -> Dict[str, Any]:
+    checker = getattr(active_store(), "assert_points_available", None)
+    if not checker:
+        return {"required_points": 0, "points": None}
+    return await maybe_await(checker(user, team_id, operation_type, provider_id, model, units))
+
+
+async def record_team_usage_log(user: CurrentUser, team_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    writer = getattr(active_store(), "create_usage_log", None)
+    if not writer:
+        return {}
+    return await maybe_await(writer(user, team_id, payload))
+
+
 def generation_log_summary(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
     summary = {"total": len(logs), "succeeded": 0, "failed": 0, "providers": {}}
     for log in logs:
@@ -1949,31 +2737,260 @@ def generation_log_summary(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
     return summary
 
 
+def usage_summary(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    summary = {
+        "total": len(logs),
+        "succeeded": 0,
+        "failed": 0,
+        "image_count": 0,
+        "video_count": 0,
+        "points_charged": 0,
+        "slow_count": 0,
+        "models": {},
+        "providers": {},
+        "operations": {},
+    }
+    for log in logs:
+        status = str(log.get("status") or "")
+        if status == "succeeded":
+            summary["succeeded"] += 1
+        elif status == "failed":
+            summary["failed"] += 1
+        summary["image_count"] += int(log.get("image_count") or 0)
+        summary["video_count"] += int(log.get("video_count") or 0)
+        summary["points_charged"] += int(log.get("points_charged") or 0)
+        if int(log.get("latency_ms") or 0) >= 500:
+            summary["slow_count"] += 1
+        for key, field in (("models", "model"), ("providers", "provider_id"), ("operations", "operation_type")):
+            name = str(log.get(field) or "unknown")
+            summary[key][name] = int(summary[key].get(name) or 0) + 1
+    return summary
+
+
+def build_admin_overview(team_id: str, logs: List[Dict[str, Any]], sessions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    now = time.time()
+    today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    month_start = datetime.datetime.now(datetime.timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp()
+    today_logs = [log for log in logs if parse_timestamp(log.get("created_at")) >= today_start]
+    month_logs = [log for log in logs if parse_timestamp(log.get("created_at")) >= month_start]
+    active_user_ids = {
+        str(session.get("user_id") or "")
+        for session in sessions
+        if now - parse_timestamp(session.get("last_seen_at")) <= TEAM_SESSION_ONLINE_WINDOW_SECONDS
+    }
+    active_user_ids.discard("")
+    total = len(today_logs)
+    failed = sum(1 for log in today_logs if str(log.get("status") or "") == "failed")
+    return {
+        "team_id": team_id,
+        "today": usage_summary(today_logs),
+        "month": usage_summary(month_logs),
+        "all_time": usage_summary(logs),
+        "active_users": len(active_user_ids),
+        "error_rate": (failed / total) if total else 0,
+        "online_window_seconds": TEAM_SESSION_ONLINE_WINDOW_SECONDS,
+    }
+
+
+def build_admin_users(
+    team_id: str,
+    members: List[Dict[str, Any]],
+    profiles: List[Dict[str, Any]],
+    points_rows: List[Dict[str, Any]],
+    logs: List[Dict[str, Any]],
+    sessions: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    profiles_by_id = {str(item.get("user_id") or ""): item for item in profiles}
+    points_by_user = {str(item.get("user_id") or ""): item for item in points_rows}
+    rows = []
+    for member in members:
+        user_id = str(member.get("user_id") or "")
+        user_logs = [log for log in logs if str(log.get("user_id") or "") == user_id]
+        user_sessions = [session for session in sessions if str(session.get("user_id") or "") == user_id]
+        last_seen = max((parse_timestamp(session.get("last_seen_at")) for session in user_sessions), default=0)
+        active_seconds = 0
+        for session in user_sessions:
+            started = parse_timestamp(session.get("started_at"))
+            seen = parse_timestamp(session.get("last_seen_at"))
+            if started and seen and seen >= started:
+                active_seconds += min(int(seen - started), 24 * 60 * 60)
+        profile = profiles_by_id.get(user_id, {})
+        point_record = points_by_user.get(user_id) or {
+            "team_id": team_id,
+            "user_id": user_id,
+            "balance": TEAM_POINTS_DEFAULT_BALANCE,
+            "monthly_quota": TEAM_POINTS_DEFAULT_BALANCE,
+        }
+        rows.append({
+            **public_member_user(member, profile),
+            "points": point_record,
+            "usage": usage_summary(user_logs),
+            "last_seen_at": datetime.datetime.fromtimestamp(last_seen, datetime.timezone.utc).isoformat().replace("+00:00", "Z") if last_seen else None,
+            "online": online_status_from_last_seen(last_seen),
+            "active_seconds": active_seconds,
+        })
+    rows.sort(key=lambda item: (not item.get("online"), -(parse_timestamp(item.get("last_seen_at")) or 0), item.get("email") or item.get("user_id") or ""))
+    return rows
+
+
+def build_admin_user_detail(target_user_id: str, points: Dict[str, Any], logs: List[Dict[str, Any]], sessions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    day_counts: Dict[str, int] = {}
+    for log in logs:
+        ts = parse_timestamp(log.get("created_at"))
+        if not ts:
+            continue
+        day = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%d")
+        day_counts[day] = day_counts.get(day, 0) + 1
+    return {
+        "user_id": target_user_id,
+        "points": points,
+        "usage": usage_summary(logs),
+        "daily": [{"date": day, "count": count} for day, count in sorted(day_counts.items())[-30:]],
+        "recent_logs": sorted(logs, key=lambda item: parse_timestamp(item.get("created_at")), reverse=True)[:100],
+        "sessions": [
+            {**session, "online": online_status_from_last_seen(session.get("last_seen_at"))}
+            for session in sorted(sessions, key=lambda item: parse_timestamp(item.get("last_seen_at")), reverse=True)[:20]
+        ],
+    }
+
+
+def filter_usage_logs(logs: List[Dict[str, Any]], filters: Dict[str, Any]) -> Dict[str, Any]:
+    user_id = str(filters.get("user_id") or "").strip()
+    provider_id = str(filters.get("provider_id") or "").strip()
+    model = str(filters.get("model") or "").strip()
+    status = str(filters.get("status") or "").strip()
+    operation_type = str(filters.get("operation_type") or "").strip()
+    try:
+        limit = max(1, min(500, int(filters.get("limit") or 100)))
+    except (TypeError, ValueError):
+        limit = 100
+    try:
+        offset = max(0, int(filters.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    since = parse_timestamp(filters.get("since"))
+    until = parse_timestamp(filters.get("until"))
+    filtered = []
+    for log in logs:
+        ts = parse_timestamp(log.get("created_at"))
+        if user_id and str(log.get("user_id") or "") != user_id:
+            continue
+        if provider_id and str(log.get("provider_id") or "") != provider_id:
+            continue
+        if model and str(log.get("model") or "") != model:
+            continue
+        if status and str(log.get("status") or "") != status:
+            continue
+        if operation_type and str(log.get("operation_type") or "") != operation_type:
+            continue
+        if since and ts < since:
+            continue
+        if until and ts > until:
+            continue
+        filtered.append(log)
+    filtered.sort(key=lambda item: parse_timestamp(item.get("created_at")), reverse=True)
+    return {
+        "logs": filtered[offset:offset + limit],
+        "total": len(filtered),
+        "limit": limit,
+        "offset": offset,
+        "summary": usage_summary(filtered),
+    }
+
+
 @router.get("/config")
 async def team_cloud_config() -> Dict[str, Any]:
     return public_config()
 
 
-@router.post("/auth/signup")
-async def signup(payload: AuthEmailPasswordRequest, response: Response) -> Dict[str, Any]:
+async def start_email_password_signup(payload: AuthEmailPasswordRequest) -> Dict[str, Any]:
     email = auth_email_required(payload.email)
     username = normalize_username(payload.username or "")
     if await get_user_profile_by_username(username):
         raise HTTPException(status_code=409, detail="账号名已被使用")
+    if await get_user_profile_by_email(email):
+        raise HTTPException(status_code=409, detail="邮箱已注册，请直接登录或找回密码")
+    pending_email = await get_pending_profile_by_email(email)
+    if pending_email and pending_email.get("username") and pending_email.get("username") != username:
+        raise HTTPException(status_code=409, detail="该邮箱正在等待验证，请使用原账号名完成验证")
+    pending_username = await get_pending_profile_by_username(username)
+    if pending_username and pending_username.get("email") and normalize_email(pending_username.get("email")) != email:
+        raise HTTPException(status_code=409, detail="账号名已被使用")
     data = await supabase_auth_request("signup", {
         "email": email,
         "password": payload.password,
+        "data": {
+            "username": username,
+            "display_name": username,
+        },
     })
     user = data.get("user") or {}
     user_id = str(user.get("id") or "")
     if user_id:
-        await create_user_profile(user_id, email, username)
-    if data.get("access_token"):
-        set_auth_cookie(response, data["access_token"])
+        await save_pending_user_profile(user_id, email, username)
+    return {
+        "ok": True,
+        "verification_required": True,
+        "session_ready": False,
+        "email": email,
+        "username": username,
+        "message": "验证码已发送，请查看邮箱并完成验证。",
+    }
+
+
+@router.post("/auth/signup/start")
+async def signup_start(payload: AuthEmailPasswordRequest) -> Dict[str, Any]:
+    return await start_email_password_signup(payload)
+
+
+@router.post("/auth/signup")
+async def signup(payload: AuthEmailPasswordRequest) -> Dict[str, Any]:
+    return await start_email_password_signup(payload)
+
+
+@router.post("/auth/signup/verify")
+async def signup_verify(payload: AuthSignupVerifyRequest, response: Response) -> Dict[str, Any]:
+    email = auth_email_required(payload.email)
+    data = await supabase_verify_signup_otp(email, payload.token)
+    if not data.get("access_token"):
+        raise HTTPException(status_code=401, detail="验证码无效或已过期")
+    user = data.get("user") or {}
+    user_id = str(user.get("id") or "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="验证码已通过，但登录凭证缺少用户 ID")
+    pending = await get_pending_profile_by_email(email)
+    username = str((pending or {}).get("username") or "")
+    if not username:
+        try:
+            username = user_metadata_username(user)
+        except HTTPException:
+            username = email.split("@", 1)[0].lower()
+            username = re.sub(r"[^a-z0-9_-]+", "-", username).strip("-_")[:32] or f"user-{user_id[:8]}"
+            if len(username) < 3:
+                username = f"user-{user_id[:8]}"
+    username = normalize_username(username)
+    await ensure_user_profile(user_id, email, username)
+    await mark_pending_user_profile_verified(email, user_id)
+    set_auth_cookie(response, data["access_token"])
     payload_out = sanitize_auth_payload(data)
     payload_out["user"]["username"] = username
     payload_out["user"]["display_name"] = username
+    payload_out["verification_required"] = False
     return payload_out
+
+
+@router.post("/auth/verification/resend")
+async def verification_resend(payload: AuthVerificationResendRequest, request: Request) -> Dict[str, Any]:
+    email = auth_email_required(payload.email)
+    key = f"{email}:{request.client.host if request.client else ''}"
+    now = time.time()
+    last = float(_verification_resend_times.get(key) or 0)
+    if now - last < TEAM_AUTH_VERIFICATION_RESEND_SECONDS:
+        wait = int(TEAM_AUTH_VERIFICATION_RESEND_SECONDS - (now - last)) + 1
+        raise HTTPException(status_code=429, detail=f"验证码发送太频繁，请 {wait} 秒后再试")
+    _verification_resend_times[key] = now
+    await supabase_resend_signup_otp(email)
+    return {"ok": True, "message": "验证码已重新发送。"}
 
 
 @router.post("/auth/login")
@@ -1985,9 +3002,15 @@ async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[s
     })
     if not data.get("access_token"):
         raise HTTPException(status_code=401, detail="登录失败")
+    user = data.get("user") or {}
+    if not supabase_user_email_confirmed(user):
+        clear_auth_cookie(response)
+        raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")
+    if not await get_user_profile_by_user_id(str(user.get("id") or "")):
+        clear_auth_cookie(response)
+        raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")
     set_auth_cookie(response, data["access_token"])
     payload_out = sanitize_auth_payload(data)
-    user = data.get("user") or {}
     profile = await get_user_profile_by_user_id(str(user.get("id") or ""))
     if profile:
         payload_out["user"]["username"] = profile.get("username") or ""
@@ -1997,8 +3020,14 @@ async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[s
 
 @router.post("/auth/recover")
 async def recover_password(payload: AuthRecoverRequest) -> Dict[str, Any]:
-    email = await resolve_auth_identifier_email(auth_identifier(payload))
-    await supabase_auth_request("recover", {"email": email})
+    try:
+        email = await resolve_auth_identifier_email(auth_identifier(payload))
+    except HTTPException:
+        return {"ok": True, "message": "如果账号存在，将发送找回密码邮件。"}
+    try:
+        await supabase_auth_request("recover", {"email": email})
+    except HTTPException:
+        return {"ok": True, "message": "如果账号存在，将发送找回密码邮件。"}
     return {"ok": True}
 
 
@@ -2037,6 +3066,111 @@ async def team_cloud_me(user: CurrentUser = Depends(require_user)) -> Dict[str, 
     user = await enrich_user_profile(user)
     teams = await maybe_await(active_store().list_user_teams(user))
     return {"user": user.model_dump(), "teams": teams}
+
+
+@router.get("/bootstrap")
+async def team_cloud_bootstrap(
+    team_id: str = "",
+    project_id: str = "",
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    user = await enrich_user_profile(user)
+    bootstrap = getattr(active_store(), "bootstrap", None)
+    if not bootstrap:
+        teams = await maybe_await(active_store().list_user_teams(user))
+        return {"user": user.model_dump(), "teams": teams}
+    return await maybe_await(bootstrap(user, team_id, project_id))
+
+
+@router.post("/sessions/heartbeat")
+async def team_session_heartbeat(
+    payload: SessionHeartbeatRequest,
+    request: Request,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    heartbeat = getattr(active_store(), "heartbeat_session", None)
+    if not heartbeat:
+        return {"ok": True, "session": {"session_id": payload.session_id or "", "online": True}}
+    session = await maybe_await(heartbeat(user, payload, request))
+    return {"ok": True, "session": session}
+
+
+async def resolve_admin_team(user: CurrentUser, team_id: str = "") -> Tuple[str, List[Dict[str, Any]]]:
+    teams = await maybe_await(active_store().list_user_teams(user))
+    admin_teams = [team for team in teams if team.get("role") in {"owner", "admin"}]
+    if team_id:
+        if not any(team.get("id") == team_id for team in admin_teams):
+            raise HTTPException(status_code=403, detail="只有团队 owner/admin 可以访问后台")
+        return team_id, teams
+    if not admin_teams:
+        raise HTTPException(status_code=403, detail="没有可管理的团队")
+    return str(admin_teams[0].get("id") or ""), teams
+
+
+@router.get("/admin/overview")
+async def admin_overview(team_id: str = "", user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    user = await enrich_user_profile(user)
+    selected_team_id, teams = await resolve_admin_team(user, team_id)
+    overview = await maybe_await(active_store().admin_overview(user, selected_team_id))
+    return {"team_id": selected_team_id, "teams": teams, "overview": overview}
+
+
+@router.get("/admin/users")
+async def admin_users(team_id: str = "", user: CurrentUser = Depends(require_user)) -> Dict[str, Any]:
+    user = await enrich_user_profile(user)
+    selected_team_id, teams = await resolve_admin_team(user, team_id)
+    users = await maybe_await(active_store().admin_users(user, selected_team_id))
+    return {"team_id": selected_team_id, "teams": teams, "users": users}
+
+
+@router.get("/admin/users/{target_user_id}")
+async def admin_user_detail(
+    target_user_id: str,
+    team_id: str = "",
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    selected_team_id, _teams = await resolve_admin_team(user, team_id)
+    detail = await maybe_await(active_store().admin_user_detail(user, selected_team_id, target_user_id))
+    return {"team_id": selected_team_id, "detail": detail}
+
+
+@router.post("/admin/users/{target_user_id}/points")
+async def admin_adjust_user_points(
+    target_user_id: str,
+    payload: PointsAdjustRequest,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    selected_team_id, _teams = await resolve_admin_team(user, payload.team_id)
+    return await maybe_await(active_store().adjust_user_points(user, selected_team_id, target_user_id, payload))
+
+
+@router.get("/admin/usage/logs")
+async def admin_usage_logs(
+    team_id: str = "",
+    user_id: str = "",
+    provider_id: str = "",
+    model: str = "",
+    status: str = "",
+    operation_type: str = "",
+    since: str = "",
+    until: str = "",
+    limit: int = 100,
+    offset: int = 0,
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    selected_team_id, teams = await resolve_admin_team(user, team_id)
+    data = await maybe_await(active_store().admin_usage_logs(user, selected_team_id, {
+        "user_id": user_id,
+        "provider_id": provider_id,
+        "model": model,
+        "status": status,
+        "operation_type": operation_type,
+        "since": since,
+        "until": until,
+        "limit": limit,
+        "offset": offset,
+    }))
+    return {"team_id": selected_team_id, "teams": teams, **data}
 
 
 @router.get("/teams")

@@ -17,6 +17,7 @@ if ($target -notmatch "(^|[\\\/])yishu-canvas-fnos$") {
 
 $runtimeDirs = @(
     "deploy\fnos\api-env",
+    "deploy\fnos\assets",
     "deploy\fnos\data",
     "deploy\fnos\output",
     "deploy\fnos\team-assets",

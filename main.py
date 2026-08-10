@@ -45,8 +45,11 @@ if BASE_IMPORT_DIR not in sys.path:
 
 from team_cloud import (
     CurrentUser,
+    assert_team_points_available,
     record_team_generation_log,
+    record_team_usage_log,
     require_user,
+    resolve_admin_team,
     resolve_team_api_provider_config,
     router as team_cloud_router,
     settings as team_cloud_settings,
@@ -82,6 +85,10 @@ logging.getLogger("uvicorn.access").addFilter(QuietAccessLogFilter())
 
 app = FastAPI()
 
+SLOW_REQUEST_MS = int(os.getenv("YISHU_SLOW_REQUEST_MS", "500"))
+API_CONFIG_CACHE_TTL = int(os.getenv("YISHU_API_CONFIG_CACHE_TTL", "60"))
+API_CONFIG_CACHE = {"expires_at": 0.0, "data": None}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -89,6 +96,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(team_cloud_router)
+
+
+@app.middleware("http")
+async def request_timing_middleware(request: Request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    response.headers["X-Request-Duration-Ms"] = str(duration_ms)
+    if duration_ms >= SLOW_REQUEST_MS:
+        print(f"[slow-request] {request.method} {request.url.path} {duration_ms}ms", flush=True)
+    return response
 
 def health_version():
     try:
@@ -1400,6 +1418,8 @@ def save_api_providers(providers):
     with GLOBAL_CONFIG_LOCK:
         with open(API_PROVIDERS_FILE, "w", encoding="utf-8") as f:
             json.dump(providers, f, ensure_ascii=False, indent=2)
+    API_CONFIG_CACHE["data"] = None
+    API_CONFIG_CACHE["expires_at"] = 0.0
 
 def public_provider(provider):
     if provider.get("id") == "runninghub":
@@ -2816,6 +2836,11 @@ class CanvasAssetDownloadRequest(BaseModel):
     items: List[Dict[str, Any]] = []
     filename: str = "canvas-output-images.zip"
 
+class CanvasAssetDeleteRequest(BaseModel):
+    ids: List[str] = []
+    items: List[Dict[str, Any]] = []
+    delete_unreferenced_media: bool = True
+
 class CanvasWorkflowExportRequest(BaseModel):
     nodes: List[Dict[str, Any]] = []
     connections: List[Dict[str, Any]] = []
@@ -3588,6 +3613,96 @@ def extract_canvas_assets(canvas):
             items.append(item)
     return items
 
+def canvas_asset_match_key(item: Dict[str, Any]) -> str:
+    return f"{item.get('canvas_id') or ''}:{item.get('url') or ''}"
+
+def canvas_asset_target_matches(item: Dict[str, Any], ids: set, keys: set) -> bool:
+    return bool(item.get("id") in ids or canvas_asset_match_key(item) in keys)
+
+def remove_canvas_asset_refs_from_value(value: Any, target_urls: set, *, in_list: bool = False) -> Tuple[Any, int, bool]:
+    url = canvas_asset_downloadable_url(canvas_asset_url_value(value))
+    if url and url in target_urls:
+        return None if in_list else "", 1, in_list
+    if isinstance(value, list):
+        changed = 0
+        kept = []
+        for child in value:
+            updated, count, remove = remove_canvas_asset_refs_from_value(child, target_urls, in_list=True)
+            changed += count
+            if not remove:
+                kept.append(updated)
+        return kept, changed, False
+    if isinstance(value, dict):
+        changed = 0
+        updated = {}
+        for key, child in value.items():
+            child_updated, count, remove = remove_canvas_asset_refs_from_value(child, target_urls, in_list=False)
+            changed += count
+            if remove:
+                continue
+            updated[key] = child_updated
+        return updated, changed, False
+    return value, 0, False
+
+def remove_canvas_asset_refs_from_canvas(canvas: Dict[str, Any], target_urls: set) -> int:
+    removed = 0
+    nodes = canvas.get("nodes") if isinstance(canvas.get("nodes"), list) else []
+    updated_nodes = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            updated_nodes.append(node)
+            continue
+        updated = dict(node)
+        node_removed = 0
+        for key, value in list(node.items()):
+            if key == "id":
+                continue
+            next_value, count, remove = remove_canvas_asset_refs_from_value(value, target_urls, in_list=False)
+            node_removed += count
+            if remove:
+                updated.pop(key, None)
+            else:
+                updated[key] = next_value
+        if node_removed and str(updated.get("type") or "").strip().lower() == "image":
+            if not canvas_asset_downloadable_url(canvas_asset_url_value(updated)):
+                updated["mediaKind"] = "image"
+                updated["name"] = updated.get("name") or "空白图片"
+        removed += node_removed
+        updated_nodes.append(updated)
+    if removed:
+        canvas["nodes"] = updated_nodes
+    return removed
+
+def cleanup_unreferenced_canvas_asset_files(urls: List[str]) -> Tuple[List[str], List[str], int]:
+    removed_files = []
+    skipped_referenced = []
+    removed_previews = 0
+    candidate_paths = []
+    for url in urls:
+        try:
+            path = local_media_path_from_url(url)
+        except (HTTPException, OSError, ValueError):
+            path = None
+        if path and os.path.isfile(path) and path not in candidate_paths:
+            candidate_paths.append(path)
+    if not candidate_paths:
+        return removed_files, skipped_referenced, removed_previews
+    deletable_paths = []
+    for path in candidate_paths:
+        if persisted_json_references_media_path(path):
+            skipped_referenced.append(os.path.basename(path))
+        else:
+            deletable_paths.append(path)
+    prune_generation_history_for_media(deletable_paths)
+    for path in deletable_paths:
+        try:
+            removed_previews += delete_media_preview_cache(path)
+            os.remove(path)
+            removed_files.append(os.path.basename(path))
+        except OSError:
+            skipped_referenced.append(os.path.basename(path))
+    return removed_files, skipped_referenced, removed_previews
+
 def canvas_assets_index():
     canvases = []
     items = []
@@ -3631,6 +3746,26 @@ def payload_team_id(payload) -> str:
     return str(getattr(payload, "team_id", "") or "").strip()
 
 
+def payload_operation_type(payload) -> str:
+    if isinstance(payload, OnlineImageRequest):
+        return "upscale" if str(getattr(payload, "operation", "") or "").strip().lower() == "upscale" else "image"
+    if isinstance(payload, CanvasVideoRequest):
+        return "video"
+    if isinstance(payload, (CanvasLLMRequest, ChatRequest, CanvasAgentSuggestRequest)):
+        return "chat"
+    if isinstance(payload, GenerateRequest):
+        return "workflow"
+    return "image"
+
+
+def payload_requested_units(payload, operation_type: str) -> int:
+    if operation_type == "image":
+        return max(1, int(getattr(payload, "n", 1) or 1))
+    if operation_type == "video":
+        return 1
+    return 1
+
+
 async def team_user_for_payload(payload, request: Optional[Request]):
     if not payload_team_id(payload):
         return None
@@ -3650,6 +3785,32 @@ async def request_api_provider(provider_id: str, payload, request: Optional[Requ
         return provider, None
     if user is None:
         user = await team_user_for_payload(payload, request)
+    try:
+        team_provider = await resolve_team_api_provider_config(user, team_id, provider_id)
+        provider.update({
+            "id": team_provider.get("provider_id") or team_provider.get("id") or provider.get("id"),
+            "name": team_provider.get("label") or provider.get("name") or provider.get("id"),
+            "base_url": team_provider.get("base_url") or provider.get("base_url") or "",
+            "protocol": team_provider.get("protocol") or provider.get("protocol") or "openai",
+            "api_key": team_provider.get("api_key") or provider.get("api_key") or "",
+            "wallet_api_key": team_provider.get("wallet_api_key") or provider.get("wallet_api_key") or "",
+            "image_models": team_provider.get("image_models") or provider.get("image_models") or [],
+            "chat_models": team_provider.get("chat_models") or provider.get("chat_models") or [],
+            "video_models": team_provider.get("video_models") or provider.get("video_models") or [],
+        })
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+    operation_type = payload_operation_type(payload)
+    model = str(getattr(payload, "model", "") or getattr(payload, "image_model", "") or "").strip()
+    await assert_team_points_available(
+        user,
+        team_id,
+        operation_type,
+        provider.get("id") or provider_id,
+        model,
+        payload_requested_units(payload, operation_type),
+    )
     return provider, user
 
 
@@ -3671,8 +3832,42 @@ async def log_team_generation(payload, user, provider, model="", status="succeed
             "result_summary": result_summary or {},
             "error": str(error or "")[:1000],
         })
+        result = result_summary or {}
+        operation_type = payload_operation_type(payload)
+        await record_team_usage_log(user, team_id, {
+            "project_id": getattr(payload, "project_id", "") or "",
+            "canvas_id": getattr(payload, "canvas_id", "") or "",
+            "operation_type": operation_type,
+            "provider_id": provider.get("id") or getattr(payload, "provider_id", "") or getattr(payload, "provider", ""),
+            "model": model,
+            "status": status,
+            "request_count": payload_requested_units(payload, operation_type),
+            "image_count": int(result.get("image_count") or 0),
+            "video_count": int(result.get("video_count") or 0),
+            "latency_ms": int(result.get("latency_ms") or 0),
+            "request_summary": {
+                "type": type(payload).__name__,
+                "prompt_length": len(str(getattr(payload, "prompt", "") or getattr(payload, "message", "") or "")),
+            },
+            "result_summary": result,
+            "error": str(error or "")[:1000],
+        })
     except Exception as exc:
         print(f"[team-generation-log] skipped: {exc}", flush=True)
+
+
+async def log_and_return_team_generation(payload, user, provider, model, result, started_at: float):
+    summary = {}
+    if isinstance(result, dict):
+        summary = {
+            "image_count": len(result.get("images") or []),
+            "video_count": len(result.get("videos") or []),
+            "task_id": result.get("task_id") or "",
+            "request_id": result.get("request_id") or "",
+            "latency_ms": int((time.perf_counter() - started_at) * 1000) if started_at else 0,
+        }
+    await log_team_generation(payload, user, provider, model, "succeeded", summary)
+    return result
 
 
 def resolve_chat_provider(provider: str, model: str, ms_model: str, provider_config=None):
@@ -13254,9 +13449,12 @@ async def jimeng_query_media(payload: JimengQueryMediaRequest):
 
 @app.get("/api/config")
 async def ai_config():
+    now = time.time()
+    if API_CONFIG_CACHE["data"] is not None and float(API_CONFIG_CACHE["expires_at"]) > now:
+        return API_CONFIG_CACHE["data"]
     preferred_chat_model = next((m for m in CHAT_MODELS if m == "gpt-5.5"), CHAT_MODELS[0] if CHAT_MODELS else CHAT_MODEL)
     providers = public_api_providers()
-    return {
+    data = {
         "base_url": AI_BASE_URL,
         "chat_model": preferred_chat_model,
         "image_model": IMAGE_MODEL,
@@ -13269,6 +13467,9 @@ async def ai_config():
         "ms_chat_models": MODELSCOPE_CHAT_MODELS,
         "has_ms_key": bool(modelscope_api_key()),
     }
+    API_CONFIG_CACHE["data"] = data
+    API_CONFIG_CACHE["expires_at"] = now + API_CONFIG_CACHE_TTL
+    return data
 
 @app.get("/api/models")
 async def ai_models():
@@ -14077,6 +14278,7 @@ async def fetch_upstream_models(provider_id: str):
     return await fetch_models_from_upstream(provider.get("base_url") or "", api_key, provider_protocol(provider), provider.get("image_request_mode") or "openai")
 
 async def build_online_image_result(payload: OnlineImageRequest, request: Optional[Request] = None, user=None):
+    started_at = time.perf_counter()
     provider, resolved_user = await request_api_provider(payload.provider_id, payload, request, user)
     if user is None:
         user = resolved_user
@@ -14148,6 +14350,7 @@ async def build_online_image_result(payload: OnlineImageRequest, request: Option
         "image_count": len(local_urls),
         "task_id": result.get("task_id") or "",
         "request_id": result.get("request_id") or "",
+        "latency_ms": int((time.perf_counter() - started_at) * 1000),
     })
     if GLOBAL_LOOP:
         asyncio.run_coroutine_threadsafe(manager.broadcast_new_image(result), GLOBAL_LOOP)
@@ -15428,12 +15631,15 @@ def volcengine_video_prompt_text(prompt, aspect_ratio="", duration=None):
 
 @app.post("/api/canvas-video")
 async def canvas_video(payload: CanvasVideoRequest, request: Request):
+    started_at = time.perf_counter()
     provider, user = await request_api_provider(payload.provider_id, payload, request)
     if is_jimeng_provider(provider):
-        return await generate_jimeng_video(payload, provider)
+        result = await generate_jimeng_video(payload, provider)
+        return await log_and_return_team_generation(payload, user, provider, payload.model, result, started_at)
     if is_runninghub_provider(provider):
         try:
-            return await generate_runninghub_video(payload, provider)
+            result = await generate_runninghub_video(payload, provider)
+            return await log_and_return_team_generation(payload, user, provider, payload.model, result, started_at)
         except HTTPException as exc:
             print(f"RunningHub 视频生成失败 model={payload.model}: {exc.detail}")
             raise
@@ -15462,7 +15668,8 @@ async def canvas_video(payload: CanvasVideoRequest, request: Request):
     if is_grok_provider(provider, requested_model):
         try:
             async with httpx.AsyncClient(timeout=VIDEO_POLL_TIMEOUT) as grok_client:
-                return await generate_grok_video(grok_client, payload, provider, base_url, requested_model)
+                result = await generate_grok_video(grok_client, payload, provider, base_url, requested_model)
+                return await log_and_return_team_generation(payload, user, provider, requested_model, result, started_at)
         except httpx.HTTPStatusError as exc:
             text = exc.response.text
             friendly = friendly_video_error_detail(text, requested_model, provider)
@@ -15475,7 +15682,8 @@ async def canvas_video(payload: CanvasVideoRequest, request: Request):
     if is_tudou_base_url(base_url) and is_tudou_video_model(requested_model):
         try:
             async with httpx.AsyncClient(timeout=VIDEO_POLL_TIMEOUT) as tudou_client:
-                return await generate_tudou_video(tudou_client, payload, provider, base_url, requested_model)
+                result = await generate_tudou_video(tudou_client, payload, provider, base_url, requested_model)
+                return await log_and_return_team_generation(payload, user, provider, requested_model, result, started_at)
         except httpx.HTTPStatusError as exc:
             text = exc.response.text
             friendly = friendly_video_error_detail(text, requested_model, provider)
@@ -15487,7 +15695,8 @@ async def canvas_video(payload: CanvasVideoRequest, request: Request):
     if is_agnes:
         try:
             async with httpx.AsyncClient(timeout=VIDEO_POLL_TIMEOUT) as agnes_client:
-                return await generate_agnes_video(agnes_client, payload, provider, base_url, requested_model)
+                result = await generate_agnes_video(agnes_client, payload, provider, base_url, requested_model)
+                return await log_and_return_team_generation(payload, user, provider, requested_model, result, started_at)
         except httpx.HTTPStatusError as exc:
             text = exc.response.text
             friendly = friendly_video_error_detail(text, requested_model, provider)
@@ -15498,7 +15707,8 @@ async def canvas_video(payload: CanvasVideoRequest, request: Request):
     if is_lingjing:
         try:
             async with httpx.AsyncClient(timeout=VIDEO_POLL_TIMEOUT) as lingjing_client:
-                return await generate_lingjing_openai_video(lingjing_client, payload, provider, base_url, requested_model)
+                result = await generate_lingjing_openai_video(lingjing_client, payload, provider, base_url, requested_model)
+                return await log_and_return_team_generation(payload, user, provider, requested_model, result, started_at)
         except httpx.HTTPStatusError as exc:
             text = exc.response.text
             friendly = friendly_video_error_detail(text, requested_model, provider)
@@ -15511,7 +15721,8 @@ async def canvas_video(payload: CanvasVideoRequest, request: Request):
     if is_yuli and yuli_is_veo_openai_model(requested_model):
         try:
             async with httpx.AsyncClient(timeout=VIDEO_POLL_TIMEOUT) as yuli_client:
-                return await generate_yuli_openai_video(yuli_client, payload, provider, base_url, requested_model)
+                result = await generate_yuli_openai_video(yuli_client, payload, provider, base_url, requested_model)
+                return await log_and_return_team_generation(payload, user, provider, requested_model, result, started_at)
         except httpx.HTTPStatusError as exc:
             text = exc.response.text
             friendly = friendly_video_error_detail(text, requested_model, provider)
@@ -15855,7 +16066,14 @@ async def canvas_video(payload: CanvasVideoRequest, request: Request):
             if not urls:
                 raise HTTPException(status_code=502, detail=f"视频生成成功但没有返回视频：{result}")
             local_urls = [await save_remote_video_to_output(url) for url in urls]
-            return {"videos": local_urls, "task_id": task_id, "raw": result}
+            return await log_and_return_team_generation(
+                payload,
+                user,
+                provider,
+                body.get("model", requested_model) if isinstance(body, dict) else requested_model,
+                {"videos": local_urls, "task_id": task_id, "raw": result},
+                started_at,
+            )
     except httpx.HTTPStatusError as exc:
         text = exc.response.text
         try:
@@ -15924,18 +16142,19 @@ async def canvas_video(payload: CanvasVideoRequest, request: Request):
 
 @app.post("/api/canvas-llm")
 async def canvas_llm(payload: CanvasLLMRequest, request: Request):
+    started_at = time.perf_counter()
     _provider, user = await request_api_provider(payload.provider, payload, request)
     if is_codex_provider(_provider):
         model = selected_model(payload.model, (_provider.get("chat_models") or CODEX_DEFAULT_CHAT_MODELS)[0])
         payload.model = model
         text, raw = await codex_chat_text(payload, payload.messages)
-        await log_team_generation(payload, user, _provider, model, "succeeded", {"text_length": len(text or "")})
+        await log_team_generation(payload, user, _provider, model, "succeeded", {"text_length": len(text or ""), "latency_ms": int((time.perf_counter() - started_at) * 1000)})
         return {"text": text, "model": model, "raw_usage": None, "raw": raw}
     if is_gemini_cli_provider(_provider):
         model = selected_model(payload.model, (_provider.get("chat_models") or GEMINI_CLI_DEFAULT_CHAT_MODELS)[0])
         payload.model = model
         text, raw = await gemini_cli_chat_text(payload, payload.messages)
-        await log_team_generation(payload, user, _provider, model, "succeeded", {"text_length": len(text or "")})
+        await log_team_generation(payload, user, _provider, model, "succeeded", {"text_length": len(text or ""), "latency_ms": int((time.perf_counter() - started_at) * 1000)})
         return {"text": text, "model": model, "raw_usage": None, "raw": raw}
     chat_base, chat_hdrs, model = resolve_chat_provider(payload.provider, payload.model, payload.ms_model, provider_config=_provider)
     # 判断协议：APIMart 异步 vs 标准 OpenAI
@@ -16015,7 +16234,7 @@ async def canvas_llm(payload: CanvasLLMRequest, request: Request):
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"解析回复内容失败：{exc}") from exc
     raw_data = unwrap_apimart_response(raw) if isinstance(raw, dict) else {}
-    await log_team_generation(payload, user, _provider, model, "succeeded", {"text_length": len(text or "")})
+    await log_team_generation(payload, user, _provider, model, "succeeded", {"text_length": len(text or ""), "latency_ms": int((time.perf_counter() - started_at) * 1000)})
     return {"text": text, "model": model, "raw_usage": raw_data.get("usage")}
 
 # --- Canvas Agent API ---
@@ -16689,6 +16908,26 @@ async def submit_workbench_feedback(payload: WorkbenchFeedbackRequest, request: 
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
     return {"ok": True, "feedback": {"id": record["id"], "created_at": record["created_at"]}}
 
+@app.get("/api/team-cloud/admin/feedback")
+async def list_workbench_feedback(team_id: str = "", limit: int = 100, user: CurrentUser = Depends(require_user)):
+    selected_team_id, teams = await resolve_admin_team(user, team_id)
+    limit = max(1, min(int(limit or 100), 500))
+    rows: List[Dict[str, Any]] = []
+    if os.path.exists(WORKBENCH_FEEDBACK_FILE):
+        with open(WORKBENCH_FEEDBACK_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(item, dict):
+                    rows.append(item)
+    rows = sorted(rows, key=lambda item: str(item.get("created_at") or ""), reverse=True)[:limit]
+    return {"team_id": selected_team_id, "teams": teams, "feedback": rows, "count": len(rows)}
+
 @app.get("/api/canvases/{canvas_id}/meta")
 async def get_canvas_meta(canvas_id: str):
     canvas = load_canvas(canvas_id)
@@ -16830,6 +17069,70 @@ async def download_canvas_assets(payload: CanvasAssetDownloadRequest):
     encoded = urllib.parse.quote(filename)
     headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"}
     return Response(buffer.getvalue(), media_type="application/zip", headers=headers)
+
+@app.post("/api/canvas-assets/delete")
+async def delete_canvas_assets(payload: CanvasAssetDeleteRequest):
+    ids = {str(item or "").strip() for item in (payload.ids or []) if str(item or "").strip()}
+    keys = {
+        f"{str(item.get('canvas_id') or '').strip()}:{str(item.get('url') or '').strip()}"
+        for item in (payload.items or [])
+        if isinstance(item, dict) and str(item.get("canvas_id") or "").strip() and str(item.get("url") or "").strip()
+    }
+    if not ids and not keys:
+        raise HTTPException(status_code=400, detail="请选择要删除的画布资产")
+
+    def mutate_canvases():
+        with CANVAS_LOCK:
+            index = canvas_assets_index()
+            targets = [
+                item for item in (index.get("items") or [])
+                if canvas_asset_target_matches(item, ids, keys)
+            ]
+            if not targets:
+                raise HTTPException(status_code=404, detail="画布资产不存在或已被删除")
+            by_canvas: Dict[str, List[Dict[str, Any]]] = {}
+            for item in targets:
+                canvas_id = str(item.get("canvas_id") or "").strip()
+                url = str(item.get("url") or "").strip()
+                if canvas_id and url:
+                    by_canvas.setdefault(canvas_id, []).append(item)
+            changed_canvas_ids = []
+            removed_refs = 0
+            removed_urls = []
+            for canvas_id, canvas_targets in by_canvas.items():
+                canvas = load_canvas(canvas_id)
+                urls = {str(item.get("url") or "").strip() for item in canvas_targets if str(item.get("url") or "").strip()}
+                count = remove_canvas_asset_refs_from_canvas(canvas, urls)
+                if count:
+                    save_canvas(canvas)
+                    changed_canvas_ids.append(canvas_id)
+                    removed_refs += count
+                    removed_urls.extend(sorted(urls))
+            return targets, changed_canvas_ids, removed_refs, removed_urls
+
+    targets, changed_canvas_ids, removed_refs, removed_urls = await asyncio.to_thread(mutate_canvases)
+
+    removed_files = []
+    skipped_referenced = []
+    removed_previews = 0
+    if payload.delete_unreferenced_media and removed_urls:
+        def locked_cleanup():
+            with CANVAS_LOCK:
+                return cleanup_unreferenced_canvas_asset_files(removed_urls)
+        removed_files, skipped_referenced, removed_previews = await asyncio.to_thread(locked_cleanup)
+
+    for canvas_id in changed_canvas_ids:
+        await manager.broadcast_canvas_updated(canvas_id, now_ms())
+
+    return {
+        "ok": True,
+        "removed": len(targets),
+        "removed_refs": removed_refs,
+        "removed_files": removed_files,
+        "removed_previews": removed_previews,
+        "skipped_referenced": skipped_referenced,
+        "canvas_ids": changed_canvas_ids,
+    }
 
 def sanitize_export_filename(name: str, fallback: str) -> str:
     base = os.path.basename(str(name or "").strip()) or fallback

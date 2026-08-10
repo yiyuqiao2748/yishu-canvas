@@ -2063,7 +2063,7 @@ body.theme-dark,
 body.studio-theme-dark,
 html.theme-dark body,
 html.studio-theme-dark body {
-    --page:#070608;
+    --page:#080608;
     --grid:rgba(255,255,255,.055);
     --panel:rgba(13,10,11,.88);
     --card:rgba(23,18,19,.92);
@@ -2078,11 +2078,11 @@ html.studio-theme-dark body {
     --shadow:rgba(0,0,0,.42);
     --strong:#f43f3f;
     --strong-text:#ffffff;
-    --canvas-shell:#070608;
+    --canvas-shell:#080608;
     --canvas-grid:rgba(255,255,255,.055);
     --canvas-grid-strong:rgba(255,255,255,.028);
-    --canvas-dock:rgba(13,10,11,.88);
-    --canvas-dock-2:rgba(35,24,25,.88);
+    --canvas-dock:rgba(37,23,22,.84);
+    --canvas-dock-2:rgba(43,28,27,.88);
     --canvas-card:rgba(23,18,19,.92);
     --canvas-line:rgba(255,210,166,.14);
     --canvas-line-hot:rgba(255,138,76,.42);
@@ -2090,7 +2090,7 @@ html.studio-theme-dark body {
     --canvas-muted:rgba(255,237,213,.68);
     --canvas-faint:rgba(255,237,213,.46);
     --canvas-red:#f43f3f;
-    --canvas-orange:#ff8a4c;
+    --canvas-orange:#f7a54a;
     color:var(--canvas-text);
     color-scheme:dark;
 }
@@ -2131,9 +2131,9 @@ body.theme-dark,
 body.studio-theme-dark,
 body:not(.theme-dark):not(.studio-theme-dark) {
     background:
-        radial-gradient(circle at 8% 4%, color-mix(in srgb, var(--canvas-red) 34%, transparent), transparent 31%),
-        radial-gradient(circle at 86% 12%, rgba(6,78,59,.28), transparent 34%),
-        linear-gradient(105deg, var(--canvas-shell) 0%, color-mix(in srgb, var(--canvas-shell) 88%, #000 12%) 48%, #03100d 100%) !important;
+        radial-gradient(circle at 24% 18%, color-mix(in srgb, var(--canvas-red) 30%, transparent), transparent 28%),
+        radial-gradient(circle at 80% 8%, rgba(37,55,42,.42), transparent 30%),
+        linear-gradient(105deg, var(--canvas-shell) 0%, color-mix(in srgb, var(--canvas-shell) 88%, #000 12%) 48%, #07100d 100%) !important;
 }
 body:not(.theme-dark):not(.studio-theme-dark) {
     background:
@@ -2372,22 +2372,46 @@ html.studio-theme-dark body .shell #board.board,
 body.theme-dark .shell #board.board,
 body.studio-theme-dark .shell #board.board {
     border-color:rgba(255,138,76,.18) !important;
-    background-color:#070608 !important;
+    background-color:#080608 !important;
     background-image:
         linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px),
         linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px),
-        radial-gradient(circle at 8% 4%, rgba(127,29,29,.46), transparent 30%),
-        radial-gradient(circle at 86% 12%, rgba(6,78,59,.3), transparent 34%),
-        linear-gradient(105deg, #210506 0%, #0b0708 48%, #03100d 100%) !important;
+        radial-gradient(circle at 24% 18%, rgba(100,36,24,.45), transparent 28%),
+        radial-gradient(circle at 80% 8%, rgba(37,55,42,.42), transparent 30%),
+        linear-gradient(105deg, #43070d 0%, #26090b 22%, #161110 54%, #07100d 100%) !important;
     background-size:36px 36px, 36px 36px, 180px 180px, 180px 180px, auto, auto, auto !important;
 }
 html.theme-dark body,
 html.studio-theme-dark body,
 body.theme-dark,
 body.studio-theme-dark {
-    background-color:#070608 !important;
+    background-color:#080608 !important;
+}
+
+body.theme-dark .theme-toggle.active,
+body.studio-theme-dark .theme-toggle.active,
+body.theme-dark .secondary-btn.active,
+body.theme-dark .create-confirm,
+body.studio-theme-dark .secondary-btn.active,
+body.studio-theme-dark .create-confirm {
+    background:linear-gradient(135deg, #f43f3f, #f7a54a) !important;
+    border-color:rgba(255,219,184,.28) !important;
+    color:#fff !important;
+}
+
+body.theme-dark .canvas-item.active,
+body.studio-theme-dark .canvas-item.active {
+    background:linear-gradient(135deg, rgba(244,63,63,.26), rgba(247,165,74,.15)) !important;
+    border-color:rgba(255,138,76,.42) !important;
+}
+
+body.theme-dark .canvas-item.active .canvas-card-title,
+body.theme-dark .canvas-item.active .canvas-card-time,
+body.studio-theme-dark .canvas-item.active .canvas-card-title,
+body.studio-theme-dark .canvas-item.active .canvas-card-time {
+    color:#fff4df !important;
 }
 html:not(.theme-dark):not(.studio-theme-dark) body .shell #board.board,
 body:not(.theme-dark):not(.studio-theme-dark) .shell #board.board {
@@ -2402,4 +2426,341 @@ body:not(.theme-dark):not(.studio-theme-dark) .shell #board.board {
         radial-gradient(circle at 86% 12%, rgba(198,230,213,.58), transparent 34%),
         linear-gradient(105deg, #fff0e8 0%, #fffaf4 48%, #eef8f2 100%) !important;
     background-size:36px 36px, 36px 36px, 180px 180px, 180px 180px, auto, auto, auto !important;
+}
+
+/* ===== 2026-08-09 editor canvas warm skin alignment ===== */
+html.theme-dark body .shell .canvas-nav,
+html.theme-dark body .shell .canvas-secondary-actions,
+html.theme-dark body .shell #quickToolbar.toolbar,
+html.theme-dark body .shell .canvas-asset-panel,
+html.theme-dark body .shell .workflow-transfer-panel,
+html.theme-dark body .shell .log-panel,
+html.theme-dark body .shell .minimap,
+html.studio-theme-dark body .shell .canvas-nav,
+html.studio-theme-dark body .shell .canvas-secondary-actions,
+html.studio-theme-dark body .shell #quickToolbar.toolbar,
+html.studio-theme-dark body .shell .canvas-asset-panel,
+html.studio-theme-dark body .shell .workflow-transfer-panel,
+html.studio-theme-dark body .shell .log-panel,
+html.studio-theme-dark body .shell .minimap,
+body.theme-dark .shell .canvas-nav,
+body.theme-dark .shell .canvas-secondary-actions,
+body.theme-dark .shell #quickToolbar.toolbar,
+body.theme-dark .shell .canvas-asset-panel,
+body.theme-dark .shell .workflow-transfer-panel,
+body.theme-dark .shell .log-panel,
+body.theme-dark .shell .minimap,
+body.studio-theme-dark .shell .canvas-nav,
+body.studio-theme-dark .shell .canvas-secondary-actions,
+body.studio-theme-dark .shell #quickToolbar.toolbar,
+body.studio-theme-dark .shell .canvas-asset-panel,
+body.studio-theme-dark .shell .workflow-transfer-panel,
+body.studio-theme-dark .shell .log-panel,
+body.studio-theme-dark .shell .minimap {
+    background:rgba(37,23,22,.84) !important;
+    border-color:rgba(255,219,184,.15) !important;
+    color:#fff4df !important;
+    box-shadow:0 22px 64px rgba(0,0,0,.42) !important;
+}
+
+html.theme-dark body .shell .tool-btn,
+html.theme-dark body .shell .canvas-asset-icon-btn,
+html.theme-dark body .shell .canvas-asset-action,
+html.theme-dark body .shell .workflow-transfer-btn,
+html.theme-dark body .shell .preview-icon-btn,
+html.theme-dark body .shell .minimap-arrange-btn,
+html.studio-theme-dark body .shell .tool-btn,
+html.studio-theme-dark body .shell .canvas-asset-icon-btn,
+html.studio-theme-dark body .shell .canvas-asset-action,
+html.studio-theme-dark body .shell .workflow-transfer-btn,
+html.studio-theme-dark body .shell .preview-icon-btn,
+html.studio-theme-dark body .shell .minimap-arrange-btn,
+body.theme-dark .shell .tool-btn,
+body.theme-dark .shell .canvas-asset-icon-btn,
+body.theme-dark .shell .canvas-asset-action,
+body.theme-dark .shell .workflow-transfer-btn,
+body.theme-dark .shell .preview-icon-btn,
+body.theme-dark .shell .minimap-arrange-btn,
+body.studio-theme-dark .shell .tool-btn,
+body.studio-theme-dark .shell .canvas-asset-icon-btn,
+body.studio-theme-dark .shell .canvas-asset-action,
+body.studio-theme-dark .shell .workflow-transfer-btn,
+body.studio-theme-dark .shell .preview-icon-btn,
+body.studio-theme-dark .shell .minimap-arrange-btn {
+    background:rgba(255,244,223,.06) !important;
+    border-color:rgba(255,219,184,.12) !important;
+    color:rgba(255,237,213,.7) !important;
+}
+
+html.theme-dark body .shell .tool-btn:hover,
+html.theme-dark body .shell .canvas-asset-icon-btn:hover,
+html.theme-dark body .shell .canvas-asset-action:hover,
+html.theme-dark body .shell .workflow-transfer-btn:hover,
+html.theme-dark body .shell .preview-icon-btn:hover,
+html.theme-dark body .shell .minimap-arrange-btn:hover,
+html.studio-theme-dark body .shell .tool-btn:hover,
+html.studio-theme-dark body .shell .canvas-asset-icon-btn:hover,
+html.studio-theme-dark body .shell .canvas-asset-action:hover,
+html.studio-theme-dark body .shell .workflow-transfer-btn:hover,
+html.studio-theme-dark body .shell .preview-icon-btn:hover,
+html.studio-theme-dark body .shell .minimap-arrange-btn:hover,
+body.theme-dark .shell .tool-btn:hover,
+body.theme-dark .shell .canvas-asset-icon-btn:hover,
+body.theme-dark .shell .canvas-asset-action:hover,
+body.theme-dark .shell .workflow-transfer-btn:hover,
+body.theme-dark .shell .preview-icon-btn:hover,
+body.theme-dark .shell .minimap-arrange-btn:hover,
+body.studio-theme-dark .shell .tool-btn:hover,
+body.studio-theme-dark .shell .canvas-asset-icon-btn:hover,
+body.studio-theme-dark .shell .canvas-asset-action:hover,
+body.studio-theme-dark .shell .workflow-transfer-btn:hover,
+body.studio-theme-dark .shell .preview-icon-btn:hover,
+body.studio-theme-dark .shell .minimap-arrange-btn:hover {
+    background:rgba(247,165,74,.14) !important;
+    border-color:rgba(255,146,89,.38) !important;
+    color:#fff4df !important;
+}
+
+html.theme-dark body .shell .canvas-asset-toggle.active,
+html.studio-theme-dark body .shell .canvas-asset-toggle.active,
+body.theme-dark .shell .canvas-asset-toggle.active,
+body.studio-theme-dark .shell .canvas-asset-toggle.active {
+    background:linear-gradient(135deg, #f43f3f, #f7a54a) !important;
+    border-color:rgba(255,219,184,.28) !important;
+    color:#fff !important;
+}
+
+html.theme-dark body .shell .canvas-asset-select,
+html.studio-theme-dark body .shell .canvas-asset-select,
+body.theme-dark .shell .canvas-asset-select,
+body.studio-theme-dark .shell .canvas-asset-select {
+    background:rgba(9,7,8,.56) !important;
+    border-color:rgba(255,219,184,.16) !important;
+    color:#fff4df !important;
+}
+
+html.theme-dark body .shell .canvas-asset-drop,
+html.theme-dark body .shell .canvas-asset-empty,
+html.theme-dark body .shell .minimap-content,
+html.studio-theme-dark body .shell .canvas-asset-drop,
+html.studio-theme-dark body .shell .canvas-asset-empty,
+html.studio-theme-dark body .shell .minimap-content,
+body.theme-dark .shell .canvas-asset-drop,
+body.theme-dark .shell .canvas-asset-empty,
+body.theme-dark .shell .minimap-content,
+body.studio-theme-dark .shell .canvas-asset-drop,
+body.studio-theme-dark .shell .canvas-asset-empty,
+body.studio-theme-dark .shell .minimap-content {
+    background:rgba(9,7,8,.42) !important;
+    border-color:rgba(255,219,184,.16) !important;
+    color:rgba(255,237,213,.66) !important;
+}
+
+html.theme-dark body .shell .canvas-asset-panel.drag-over,
+html.theme-dark body .shell .canvas-asset-grid.drag-over,
+html.theme-dark body .shell .canvas-asset-drop.drag-over,
+html.studio-theme-dark body .shell .canvas-asset-panel.drag-over,
+html.studio-theme-dark body .shell .canvas-asset-grid.drag-over,
+html.studio-theme-dark body .shell .canvas-asset-drop.drag-over,
+body.theme-dark .shell .canvas-asset-panel.drag-over,
+body.theme-dark .shell .canvas-asset-grid.drag-over,
+body.theme-dark .shell .canvas-asset-drop.drag-over,
+body.studio-theme-dark .shell .canvas-asset-panel.drag-over,
+body.studio-theme-dark .shell .canvas-asset-grid.drag-over,
+body.studio-theme-dark .shell .canvas-asset-drop.drag-over {
+    border-color:rgba(247,165,74,.58) !important;
+}
+
+html.theme-dark body .shell .canvas-asset-grid.drag-over .canvas-asset-empty,
+html.studio-theme-dark body .shell .canvas-asset-grid.drag-over .canvas-asset-empty,
+body.theme-dark .shell .canvas-asset-grid.drag-over .canvas-asset-empty,
+body.studio-theme-dark .shell .canvas-asset-grid.drag-over .canvas-asset-empty {
+    background:rgba(247,165,74,.14) !important;
+    border-color:rgba(247,165,74,.62) !important;
+    color:#ffd6a3 !important;
+}
+
+html.theme-dark body .shell .minimap-empty,
+html.studio-theme-dark body .shell .minimap-empty,
+body.theme-dark .shell .minimap-empty,
+body.studio-theme-dark .shell .minimap-empty {
+    color:rgba(255,237,213,.54) !important;
+}
+
+html.theme-dark body .shell .minimap-viewport,
+html.studio-theme-dark body .shell .minimap-viewport,
+body.theme-dark .shell .minimap-viewport,
+body.studio-theme-dark .shell .minimap-viewport {
+    border-color:#ffd6a3 !important;
+    background:rgba(247,165,74,.12) !important;
+    box-shadow:0 0 0 1px rgba(8,6,8,.76) !important;
+}
+
+/* 2026-08-09 light canvas contrast sync for embedded studio pages */
+html.theme-light body .shell .canvas-nav,
+html.theme-light body .shell .canvas-secondary-actions,
+html.theme-light body .shell #quickToolbar.toolbar,
+html.studio-theme-light body .shell .canvas-nav,
+html.studio-theme-light body .shell .canvas-secondary-actions,
+html.studio-theme-light body .shell #quickToolbar.toolbar,
+body.theme-light .shell .canvas-nav,
+body.theme-light .shell .canvas-secondary-actions,
+body.theme-light .shell #quickToolbar.toolbar,
+body.studio-theme-light .shell .canvas-nav,
+body.studio-theme-light .shell .canvas-secondary-actions,
+body.studio-theme-light .shell #quickToolbar.toolbar,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .canvas-nav,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .canvas-secondary-actions,
+body:not(.theme-dark):not(.studio-theme-dark) .shell #quickToolbar.toolbar {
+    background:rgba(255,250,244,.9) !important;
+    border-color:rgba(127,79,58,.18) !important;
+    color:#251612 !important;
+    box-shadow:0 18px 46px rgba(104,63,40,.14) !important;
+}
+
+html.theme-light body .shell .canvas-nav::before,
+html.studio-theme-light body .shell .canvas-nav::before,
+body.theme-light .shell .canvas-nav::before,
+body.studio-theme-light .shell .canvas-nav::before,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .canvas-nav::before {
+    background:rgba(239,68,68,.12) !important;
+    border-color:rgba(239,68,68,.2) !important;
+    color:#8f2f24 !important;
+}
+
+html.theme-light body .shell .current-canvas-title,
+html.studio-theme-light body .shell .current-canvas-title,
+body.theme-light .shell .current-canvas-title,
+body.studio-theme-light .shell .current-canvas-title,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .current-canvas-title {
+    color:#251612 !important;
+}
+
+html.theme-light body .shell .current-canvas-time,
+html.studio-theme-light body .shell .current-canvas-time,
+body.theme-light .shell .current-canvas-time,
+body.studio-theme-light .shell .current-canvas-time,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .current-canvas-time,
+html.theme-light body .shell #saveState,
+html.studio-theme-light body .shell #saveState,
+body.theme-light .shell #saveState,
+body.studio-theme-light .shell #saveState,
+body:not(.theme-dark):not(.studio-theme-dark) .shell #saveState {
+    color:rgba(55,37,30,.72) !important;
+}
+
+html.theme-light body .shell .tool-btn,
+html.theme-light body .shell .canvas-asset-icon-btn,
+html.theme-light body .shell .canvas-asset-action,
+html.theme-light body .shell .workflow-transfer-btn,
+html.theme-light body .shell .preview-icon-btn,
+html.theme-light body .shell .minimap-arrange-btn,
+html.studio-theme-light body .shell .tool-btn,
+html.studio-theme-light body .shell .canvas-asset-icon-btn,
+html.studio-theme-light body .shell .canvas-asset-action,
+html.studio-theme-light body .shell .workflow-transfer-btn,
+html.studio-theme-light body .shell .preview-icon-btn,
+html.studio-theme-light body .shell .minimap-arrange-btn,
+body.theme-light .shell .tool-btn,
+body.theme-light .shell .canvas-asset-icon-btn,
+body.theme-light .shell .canvas-asset-action,
+body.theme-light .shell .workflow-transfer-btn,
+body.theme-light .shell .preview-icon-btn,
+body.theme-light .shell .minimap-arrange-btn,
+body.studio-theme-light .shell .tool-btn,
+body.studio-theme-light .shell .canvas-asset-icon-btn,
+body.studio-theme-light .shell .canvas-asset-action,
+body.studio-theme-light .shell .workflow-transfer-btn,
+body.studio-theme-light .shell .preview-icon-btn,
+body.studio-theme-light .shell .minimap-arrange-btn,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .tool-btn,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .canvas-asset-icon-btn,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .canvas-asset-action,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .workflow-transfer-btn,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .preview-icon-btn,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .minimap-arrange-btn {
+    background:rgba(255,255,255,.74) !important;
+    border-color:rgba(127,79,58,.18) !important;
+    color:#3b241b !important;
+}
+
+html.theme-light body .shell .tool-btn:hover,
+html.theme-light body .shell .canvas-asset-icon-btn:hover,
+html.theme-light body .shell .canvas-asset-action:hover,
+html.theme-light body .shell .workflow-transfer-btn:hover,
+html.theme-light body .shell .preview-icon-btn:hover,
+html.theme-light body .shell .minimap-arrange-btn:hover,
+html.studio-theme-light body .shell .tool-btn:hover,
+html.studio-theme-light body .shell .canvas-asset-icon-btn:hover,
+html.studio-theme-light body .shell .canvas-asset-action:hover,
+html.studio-theme-light body .shell .workflow-transfer-btn:hover,
+html.studio-theme-light body .shell .preview-icon-btn:hover,
+html.studio-theme-light body .shell .minimap-arrange-btn:hover,
+body.theme-light .shell .tool-btn:hover,
+body.theme-light .shell .canvas-asset-icon-btn:hover,
+body.theme-light .shell .canvas-asset-action:hover,
+body.theme-light .shell .workflow-transfer-btn:hover,
+body.theme-light .shell .preview-icon-btn:hover,
+body.theme-light .shell .minimap-arrange-btn:hover,
+body.studio-theme-light .shell .tool-btn:hover,
+body.studio-theme-light .shell .canvas-asset-icon-btn:hover,
+body.studio-theme-light .shell .canvas-asset-action:hover,
+body.studio-theme-light .shell .workflow-transfer-btn:hover,
+body.studio-theme-light .shell .preview-icon-btn:hover,
+body.studio-theme-light .shell .minimap-arrange-btn:hover,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .tool-btn:hover,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .canvas-asset-icon-btn:hover,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .canvas-asset-action:hover,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .workflow-transfer-btn:hover,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .preview-icon-btn:hover,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .minimap-arrange-btn:hover {
+    background:rgba(255,255,255,.96) !important;
+    border-color:rgba(239,68,68,.28) !important;
+    color:#251612 !important;
+}
+
+html.theme-light body .shell .tool-btn.active,
+html.theme-light body .shell .toolbar-agent.active,
+html.theme-light body .shell .canvas-asset-toggle.active,
+html.studio-theme-light body .shell .tool-btn.active,
+html.studio-theme-light body .shell .toolbar-agent.active,
+html.studio-theme-light body .shell .canvas-asset-toggle.active,
+body.theme-light .shell .tool-btn.active,
+body.theme-light .shell .toolbar-agent.active,
+body.theme-light .shell .canvas-asset-toggle.active,
+body.studio-theme-light .shell .tool-btn.active,
+body.studio-theme-light .shell .toolbar-agent.active,
+body.studio-theme-light .shell .canvas-asset-toggle.active,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .tool-btn.active,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .toolbar-agent.active,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .canvas-asset-toggle.active {
+    background:linear-gradient(135deg,#ef4444,#fb6b3d) !important;
+    border-color:rgba(239,68,68,.3) !important;
+    color:#fff !important;
+}
+
+html.theme-light body .shell .canvas-asset-panel,
+html.theme-light body .shell .workflow-transfer-panel,
+html.theme-light body .shell .log-panel,
+html.theme-light body .shell .minimap,
+html.studio-theme-light body .shell .canvas-asset-panel,
+html.studio-theme-light body .shell .workflow-transfer-panel,
+html.studio-theme-light body .shell .log-panel,
+html.studio-theme-light body .shell .minimap,
+body.theme-light .shell .canvas-asset-panel,
+body.theme-light .shell .workflow-transfer-panel,
+body.theme-light .shell .log-panel,
+body.theme-light .shell .minimap,
+body.studio-theme-light .shell .canvas-asset-panel,
+body.studio-theme-light .shell .workflow-transfer-panel,
+body.studio-theme-light .shell .log-panel,
+body.studio-theme-light .shell .minimap,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .canvas-asset-panel,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .workflow-transfer-panel,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .log-panel,
+body:not(.theme-dark):not(.studio-theme-dark) .shell .minimap {
+    background:rgba(255,250,244,.9) !important;
+    border-color:rgba(127,79,58,.18) !important;
+    color:#251612 !important;
+    box-shadow:0 22px 64px rgba(104,63,40,.16) !important;
 }

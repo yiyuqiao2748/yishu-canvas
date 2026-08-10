@@ -691,3 +691,177 @@ body.studio-theme-dark .detail-empty {
     border-color:var(--line);
     color:var(--text);
 }
+
+/* Light theme for the AI designer management skin. */
+html.theme-light body,
+body.theme-light,
+html.studio-theme-light body,
+body.studio-theme-light {
+    --page:#fff7ef;
+    --panel:rgba(255,250,244,.88);
+    --card:rgba(255,255,255,.76);
+    --soft:rgba(127,59,38,.055);
+    --soft-2:rgba(244,63,63,.08);
+    --line:rgba(127,59,38,.16);
+    --line-2:rgba(127,59,38,.28);
+    --text:#251612;
+    --muted:#735f55;
+    --faint:#9c8a80;
+    --strong:#ef4444;
+    --strong-text:#fff;
+    --danger:#b42318;
+    --ok:#047857;
+    --shadow:rgba(127,59,38,.13);
+    background:
+        radial-gradient(circle at 24% 14%, rgba(255,203,186,.56), transparent 26%),
+        radial-gradient(circle at 82% 8%, rgba(198,230,213,.5), transparent 28%),
+        linear-gradient(105deg, #fff0e8 0%, #fffaf4 50%, #eef8f2 100%) !important;
+    color:var(--text) !important;
+}
+
+html.theme-light body::before,
+body.theme-light::before,
+html.studio-theme-light body::before,
+body.studio-theme-light::before {
+    background-image:
+        linear-gradient(rgba(127,59,38,.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127,59,38,.055) 1px, transparent 1px);
+}
+
+html.theme-light body .asset-page-head,
+body.theme-light .asset-page-head,
+html.studio-theme-light body .asset-page-head,
+body.studio-theme-light .asset-page-head,
+html.theme-light body .asset-tabs,
+body.theme-light .asset-tabs,
+html.studio-theme-light body .asset-tabs,
+body.studio-theme-light .asset-tabs,
+html.theme-light body .asset-panel,
+body.theme-light .asset-panel,
+html.studio-theme-light body .asset-panel,
+body.studio-theme-light .asset-panel,
+html.theme-light body .storage-settings-modal,
+body.theme-light .storage-settings-modal,
+html.studio-theme-light body .storage-settings-modal,
+body.studio-theme-light .storage-settings-modal {
+    background:var(--panel);
+    border-color:var(--line);
+    box-shadow:0 20px 58px var(--shadow);
+}
+
+html.theme-light body .asset-btn,
+body.theme-light .asset-btn,
+html.studio-theme-light body .asset-btn,
+body.studio-theme-light .asset-btn,
+html.theme-light body .asset-icon-btn,
+body.theme-light .asset-icon-btn,
+html.studio-theme-light body .asset-icon-btn,
+body.studio-theme-light .asset-icon-btn,
+html.theme-light body .asset-status,
+body.theme-light .asset-status,
+html.studio-theme-light body .asset-status,
+body.studio-theme-light .asset-status,
+html.theme-light body .nav-row,
+body.theme-light .nav-row,
+html.studio-theme-light body .nav-row,
+body.studio-theme-light .nav-row,
+html.theme-light body .tree-row,
+body.theme-light .tree-row,
+html.studio-theme-light body .tree-row,
+body.studio-theme-light .tree-row,
+html.theme-light body .upload-grid-card,
+body.theme-light .upload-grid-card,
+html.studio-theme-light body .upload-grid-card,
+body.studio-theme-light .upload-grid-card,
+html.theme-light body .asset-card,
+body.theme-light .asset-card,
+html.studio-theme-light body .asset-card,
+body.studio-theme-light .asset-card,
+html.theme-light body .detail-empty,
+body.theme-light .detail-empty,
+html.studio-theme-light body .detail-empty,
+body.studio-theme-light .detail-empty,
+html.theme-light body input,
+body.theme-light input,
+html.studio-theme-light body input,
+body.studio-theme-light input,
+html.theme-light body textarea,
+body.theme-light textarea,
+html.studio-theme-light body textarea,
+body.studio-theme-light textarea,
+html.theme-light body select,
+body.theme-light select,
+html.studio-theme-light body select,
+body.studio-theme-light select {
+    background:var(--card);
+    border-color:var(--line);
+    color:var(--text);
+}
+
+html.theme-light body .asset-btn:hover,
+body.theme-light .asset-btn:hover,
+html.studio-theme-light body .asset-btn:hover,
+body.studio-theme-light .asset-btn:hover,
+html.theme-light body .asset-icon-btn:hover,
+body.theme-light .asset-icon-btn:hover,
+html.studio-theme-light body .asset-icon-btn:hover,
+body.studio-theme-light .asset-icon-btn:hover,
+html.theme-light body .nav-row:hover,
+body.theme-light .nav-row:hover,
+html.studio-theme-light body .nav-row:hover,
+body.studio-theme-light .nav-row:hover,
+html.theme-light body .tree-row:hover,
+body.theme-light .tree-row:hover,
+html.studio-theme-light body .tree-row:hover,
+body.studio-theme-light .tree-row:hover,
+html.theme-light body .upload-grid-card:hover,
+body.theme-light .upload-grid-card:hover,
+html.studio-theme-light body .upload-grid-card:hover,
+body.studio-theme-light .upload-grid-card:hover,
+html.theme-light body .asset-card:hover,
+body.theme-light .asset-card:hover,
+html.studio-theme-light body .asset-card:hover,
+body.studio-theme-light .asset-card:hover {
+    border-color:var(--line-2);
+    background:rgba(255,255,255,.92);
+    color:var(--text);
+}
+
+html.theme-light body .asset-tabs button,
+body.theme-light .asset-tabs button,
+html.studio-theme-light body .asset-tabs button,
+body.studio-theme-light .asset-tabs button {
+    color:var(--muted);
+}
+
+html.theme-light body .asset-tabs button.active,
+body.theme-light .asset-tabs button.active,
+html.studio-theme-light body .asset-tabs button.active,
+body.studio-theme-light .asset-tabs button.active,
+html.theme-light body .asset-btn.primary,
+body.theme-light .asset-btn.primary,
+html.studio-theme-light body .asset-btn.primary,
+body.studio-theme-light .asset-btn.primary {
+    background:linear-gradient(135deg,#ef4444,#fb6b3d) !important;
+    border-color:rgba(239,68,68,.28) !important;
+    color:#fff !important;
+}
+
+html.theme-light body select,
+body.theme-light select,
+html.studio-theme-light body select,
+body.studio-theme-light select {
+    color-scheme:light;
+}
+
+html.theme-light body select option,
+body.theme-light select option,
+html.studio-theme-light body select option,
+body.studio-theme-light select option,
+html.theme-light body select optgroup,
+body.theme-light select optgroup,
+html.studio-theme-light body select optgroup,
+body.studio-theme-light select optgroup {
+    background:#fffaf4 !important;
+    color:#251612 !important;
+}

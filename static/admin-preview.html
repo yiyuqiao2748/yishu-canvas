@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后台管理预览</title>
+    <script>
+        (function(){
+            try {
+                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'dark';
+                if(theme === 'dark') {
+                    document.documentElement.classList.add('theme-dark');
+                }
+            } catch(e) {}
+        })();
+    </script>
+    <script src="/static/vendor/js/lucide.js?v=2026.08.03.6.1786247470"></script>
+    <link rel="stylesheet" href="/static/css/admin-preview.css?v=2026.08.09.4">
+</head>
+<body>
+    <main class="admin-shell">
+        <header class="admin-topbar">
+            <div>
+                <h1>后台管理预览</h1>
+                <p id="adminSubtitle">查看用户调用、点数、模型和在线状态，验收通过后再接入主站</p>
+            </div>
+            <div class="toolbar">
+                <button id="homeBtn" class="home-btn" type="button" title="返回主页">
+                    <i data-lucide="home"></i>
+                    <span>返回主页</span>
+                </button>
+                <button id="refreshBtn" class="icon-btn" type="button" title="刷新">
+                    <i data-lucide="refresh-cw"></i>
+                </button>
+            </div>
+        </header>
+
+        <section id="message" class="message" hidden></section>
+
+        <section class="metric-grid" id="metricGrid"></section>
+
+        <section class="admin-layout">
+            <div class="panel users-panel">
+                <div class="panel-head">
+                    <div>
+                        <strong>用户</strong>
+                        <span id="userCount">0 人</span>
+                    </div>
+                    <input id="userSearch" type="search" placeholder="搜索用户">
+                </div>
+                <div id="userList" class="user-list"></div>
+            </div>
+
+            <div class="panel detail-panel">
+                <div class="panel-head">
+                    <div>
+                        <strong id="detailTitle">用户详情</strong>
+                        <span id="detailMeta">选择用户查看</span>
+                    </div>
+                    <button id="pointsBtn" class="primary-btn" type="button" disabled>
+                        <i data-lucide="coins"></i>
+                        <span>调整点数</span>
+                    </button>
+                </div>
+                <div id="detailBody" class="detail-body"></div>
+            </div>
+        </section>
+
+        <section class="panel logs-panel">
+            <div class="panel-head">
+                <div>
+                    <strong>调用日志</strong>
+                    <span id="logCount">0 条</span>
+                </div>
+                <div class="filters">
+                    <select id="operationFilter" aria-label="功能类型">
+                        <option value="">全部功能</option>
+                        <option value="image">生图</option>
+                        <option value="video">视频</option>
+                        <option value="chat">聊天</option>
+                        <option value="upscale">放大</option>
+                        <option value="workflow">工作流</option>
+                    </select>
+                    <select id="statusFilter" aria-label="状态">
+                        <option value="">全部状态</option>
+                        <option value="succeeded">成功</option>
+                        <option value="failed">失败</option>
+                        <option value="pending">进行中</option>
+                    </select>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>用户</th>
+                            <th>功能</th>
+                            <th>平台</th>
+                            <th>模型</th>
+                            <th>状态</th>
+                            <th>点数</th>
+                            <th>耗时</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logTable"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel feedback-panel">
+            <div class="panel-head">
+                <div>
+                    <strong>体验反馈</strong>
+                    <span id="feedbackCount">0 条</span>
+                </div>
+                <button id="feedbackRefreshBtn" class="icon-btn" type="button" title="刷新反馈">
+                    <i data-lucide="messages-square"></i>
+                </button>
+            </div>
+            <div id="feedbackList" class="feedback-list"></div>
+        </section>
+    </main>
+
+    <dialog id="pointsDialog">
+        <form method="dialog" class="dialog-panel">
+            <header>
+                <strong>调整点数</strong>
+                <button class="icon-btn" value="cancel" type="submit" title="关闭">
+                    <i data-lucide="x"></i>
+                </button>
+            </header>
+            <label>
+                <span>模式</span>
+                <select id="pointsMode">
+                    <option value="adjust">增加/扣减</option>
+                    <option value="set">设置余额</option>
+                    <option value="reset">重置余额</option>
+                </select>
+            </label>
+            <label>
+                <span>数值</span>
+                <input id="pointsDelta" type="number" value="10">
+            </label>
+            <label>
+                <span>备注</span>
+                <input id="pointsNote" type="text" maxlength="500" placeholder="例如：月度配额">
+            </label>
+            <footer>
+                <button value="cancel" type="submit">取消</button>
+                <button id="pointsSubmit" class="primary-btn" value="default" type="button">保存</button>
+            </footer>
+        </form>
+    </dialog>
+
+    <script src="/static/js/admin-preview.js?v=2026.08.09.4"></script>
+</body>
+</html>

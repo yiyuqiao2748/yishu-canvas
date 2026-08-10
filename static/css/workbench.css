@@ -20,6 +20,10 @@
     box-sizing: border-box;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 html,
 body {
     min-height: 100%;
@@ -29,9 +33,10 @@ body {
 body {
     color: var(--preview-text);
     background:
-        radial-gradient(circle at 29% 19%, rgba(100, 36, 24, .48), transparent 22%),
-        radial-gradient(circle at 79% 12%, rgba(37, 55, 42, .52), transparent 25%),
-        linear-gradient(105deg, #43070d 0%, #26090b 19%, #161110 51%, #07100d 100%);
+        radial-gradient(circle at 24% 18%, rgba(104, 35, 27, .34), transparent 24%),
+        radial-gradient(circle at 78% 13%, rgba(40, 62, 48, .5), transparent 27%),
+        radial-gradient(circle at 50% 70%, rgba(95, 54, 39, .18), transparent 34%),
+        linear-gradient(105deg, #2a070b 0%, #1a0d0e 28%, #121311 57%, #07110d 100%);
     font-family: 'Inter', 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     letter-spacing: 0;
     overflow-x: hidden;
@@ -85,7 +90,7 @@ button {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 18px;
+    gap: 10px;
     padding: 7px 8px;
     border: 1px solid rgba(255, 255, 255, .1);
     border-radius: 999px;
@@ -107,6 +112,7 @@ button {
 
 .preview-brand {
     min-width: 218px;
+    flex: 0 0 auto;
     gap: 9px;
     padding: 4px 14px 4px 5px;
     text-align: left;
@@ -155,6 +161,7 @@ button {
     align-items: center;
     justify-content: flex-end;
     gap: 7px;
+    flex: 1 1 auto;
     min-width: 0;
     overflow: auto;
     scrollbar-width: none;
@@ -167,7 +174,7 @@ button {
 .nav-chip {
     flex: 0 0 auto;
     gap: 6px;
-    padding: 0 10px;
+    padding: 0 11px;
     color: rgba(255, 242, 219, .82);
     border: 1px solid rgba(255, 255, 255, .08);
     background: rgba(255, 255, 255, .055);
@@ -180,6 +187,14 @@ button {
     font-weight: 950;
 }
 
+.nav-chip.status-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    cursor: default;
+    user-select: none;
+}
+
 .nav-chip.muted {
     color: rgba(255, 242, 219, .72);
     background: rgba(255, 255, 255, .07);
@@ -188,17 +203,20 @@ button {
 .nav-chip.user-chip {
     gap: 7px;
     padding: 0 11px;
+    width: 118px;
+    max-width: 118px;
+    overflow: hidden;
+}
+
+.nav-chip.user-chip #workbenchUserLabel {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .nav-chip.user-chip .icon {
     width: 14px;
     height: 14px;
-}
-
-.nav-chip.compact {
-    width: 48px;
-    justify-content: center;
-    padding: 0;
 }
 
 .nav-chip.icon-only {
@@ -218,6 +236,39 @@ button {
     color: #fff;
     border-color: var(--preview-line-hot);
     background: rgba(255, 255, 255, .1);
+}
+
+.nav-chip.status-chip:hover {
+    color: rgba(255, 242, 219, .82);
+    border-color: rgba(255, 255, 255, .08);
+    background: rgba(255, 255, 255, .055);
+}
+
+@media (max-width: 1160px) {
+    .preview-top-dock {
+        gap: 8px;
+    }
+
+    .preview-brand {
+        min-width: 190px;
+        padding-right: 10px;
+    }
+
+    .nav-chip {
+        gap: 5px;
+        padding: 0 8px;
+        font-size: 11.5px;
+    }
+
+    .nav-chip.user-chip {
+        width: 100px;
+        max-width: 100px;
+        padding: 0 8px;
+    }
+
+    .nav-chip.icon-only {
+        width: 36px;
+    }
 }
 
 .preview-quick-rail {
@@ -359,23 +410,23 @@ button {
     width: min(920px, calc(100vw - 44px));
     position: relative;
     z-index: 1;
-    margin: 35px auto 0;
+    margin: 24px auto 0;
 }
 
 .preview-hero {
-    min-height: 213px;
+    min-height: 184px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
     text-align: center;
     padding-top: 6px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 .hero-avatar-wrap {
-    width: 98px;
-    height: 96px;
+    width: 88px;
+    height: 84px;
     position: relative;
     display: grid;
     place-items: center;
@@ -394,8 +445,8 @@ button {
 }
 
 .hero-avatar.character {
-    width: 112px;
-    height: 112px;
+    width: 96px;
+    height: 96px;
     border-radius: 0;
     object-fit: contain;
     background: transparent;
@@ -441,9 +492,9 @@ button {
 }
 
 .preview-hero h1 {
-    margin: 14px 0 0;
+    margin: 12px 0 0;
     color: #fff2dc;
-    font-size: 44px;
+    font-size: 40px;
     line-height: 1;
     font-weight: 1000;
     text-shadow: 0 12px 38px rgba(0, 0, 0, .55);
@@ -451,7 +502,7 @@ button {
 
 .preview-hero p {
     max-width: 560px;
-    margin: 22px 0 0;
+    margin: 14px 0 0;
     color: var(--preview-muted);
     font-size: 13px;
     line-height: 1.6;
@@ -484,7 +535,7 @@ button {
 .preview-composer {
     position: relative;
     z-index: 8;
-    min-height: 265px;
+    min-height: 244px;
     padding: 15px 15px 17px;
 }
 
@@ -531,7 +582,7 @@ button {
 
 textarea {
     width: 100%;
-    height: 130px;
+    height: 112px;
     display: block;
     resize: vertical;
     padding: 16px;
@@ -779,8 +830,10 @@ textarea::placeholder {
 }
 
 .action-pill.ghost {
-    background: linear-gradient(135deg, rgba(154, 23, 32, .88), rgba(196, 35, 43, .88));
-    box-shadow: 0 14px 28px rgba(117, 13, 21, .26);
+    color: rgba(255, 244, 224, .92);
+    border: 1px solid rgba(255, 219, 184, .14);
+    background: rgba(255, 255, 255, .075);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, .18);
 }
 
 .action-pill.hot {
@@ -1090,28 +1143,40 @@ textarea::placeholder {
 
 .auth-mode-row {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     padding: 4px;
     margin-bottom: 14px;
-    border: 1px solid rgba(255, 219, 184, .12);
+    border: 1px solid rgba(255, 219, 184, .18);
     border-radius: 8px;
     background: rgba(8, 7, 8, .45);
 }
 
 .auth-mode {
     min-height: 34px;
+    border: 1px solid transparent;
     border-radius: 7px;
     color: var(--preview-muted);
+    background: rgba(255, 255, 255, .04);
     font-size: 12px;
     font-weight: 900;
-    transition: color .16s ease, background .16s ease, transform .16s ease;
+    transition: color .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease;
 }
 
-.auth-mode.active,
 .auth-mode:hover {
     color: var(--preview-text);
     background: rgba(255, 255, 255, .08);
+}
+
+.auth-mode.active {
+    color: #fff8ed !important;
+    border-color: rgba(255, 112, 89, .9);
+    background: linear-gradient(135deg, #dc2626, #fb6b3d) !important;
+    box-shadow: 0 10px 24px rgba(239, 68, 68, .34);
+}
+
+.auth-mode-row .auth-mode.active {
+    color: #fff8ed !important;
 }
 
 .auth-field {
@@ -1154,6 +1219,26 @@ textarea::placeholder {
 
 .auth-message.ok {
     color: #86efac;
+}
+
+.auth-secondary {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 26px;
+    margin-top: 10px;
+}
+
+.text-link-btn {
+    color: #ffd0bd;
+    font-size: 12px;
+    font-weight: 900;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.text-link-btn:hover {
+    color: #fff8ed;
 }
 
 .auth-actions {
@@ -1405,6 +1490,17 @@ body.theme-light .nav-chip.primary,
 body.theme-light .action-pill.primary,
 body.theme-light .feedback-submit {
     color:#fff;
+}
+
+body.theme-light .nav-chip.status-chip,
+body.theme-light .nav-chip.status-chip strong {
+    color:#3b241b;
+}
+
+body.theme-light .nav-chip.status-chip:hover {
+    background:rgba(255,255,255,.58);
+    border-color:rgba(127, 59, 38, .14);
+    color:#3b241b;
 }
 
 body.theme-light textarea,

@@ -7,7 +7,7 @@ from fastapi import HTTPException, Response
 from unittest.mock import AsyncMock, patch
 
 import team_cloud
-from team_cloud import AuthPasswordUpdateRequest, CanvasSaveRequest, CurrentUser, LocalTeamStore, TeamApiProviderModelsRequest, TeamApiProviderSaveRequest, current_user_from_supabase_payload
+from team_cloud import AuthPasswordUpdateRequest, CanvasSaveRequest, CurrentUser, LocalTeamStore, PointsAdjustRequest, SessionHeartbeatRequest, TeamApiProviderModelsRequest, TeamApiProviderSaveRequest, current_user_from_supabase_payload
 
 
 class TeamCloudStoreTests(unittest.TestCase):
@@ -357,6 +357,83 @@ class TeamCloudStoreTests(unittest.TestCase):
         self.assertEqual(models["chat_models"], ["gpt-4o"])
         self.assertEqual(models["video_models"], ["wan-video"])
 
+    def test_usage_log_deducts_points_only_on_success(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+
+        before = self.store.get_user_points(self.owner, team["id"], self.owner.id)
+        self.assertEqual(before["balance"], team_cloud.TEAM_POINTS_DEFAULT_BALANCE)
+
+        log = self.store.create_usage_log(self.owner, team["id"], {
+            "operation_type": "image",
+            "provider_id": "openai",
+            "model": "gpt-image-1",
+            "status": "succeeded",
+            "image_count": 2,
+        })
+        after_success = self.store.get_user_points(self.owner, team["id"], self.owner.id)
+
+        self.assertEqual(log["points_charged"], 2)
+        self.assertEqual(after_success["balance"], team_cloud.TEAM_POINTS_DEFAULT_BALANCE - 2)
+
+        failed = self.store.create_usage_log(self.owner, team["id"], {
+            "operation_type": "video",
+            "provider_id": "openai",
+            "model": "veo3-fast",
+            "status": "failed",
+            "video_count": 1,
+            "error": "upstream failed",
+        })
+        after_failed = self.store.get_user_points(self.owner, team["id"], self.owner.id)
+
+        self.assertEqual(failed["points_charged"], 0)
+        self.assertEqual(after_failed["balance"], after_success["balance"])
+
+    def test_points_guard_and_admin_adjustment(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        self.store.adjust_user_points(
+            self.owner,
+            team["id"],
+            self.owner.id,
+            PointsAdjustRequest(mode="set", delta=1, note="test"),
+        )
+
+        with self.assertRaises(HTTPException) as points_error:
+            self.store.assert_points_available(self.owner, team["id"], "video")
+        self.assertEqual(points_error.exception.status_code, 402)
+
+        adjusted = self.store.adjust_user_points(
+            self.owner,
+            team["id"],
+            self.owner.id,
+            PointsAdjustRequest(mode="adjust", delta=10, note="top up"),
+        )
+        self.assertEqual(adjusted["points"]["balance"], 11)
+        self.assertEqual(adjusted["delta"], 10)
+
+    def test_admin_users_include_usage_and_online_state(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        self.store.heartbeat_session(
+            self.owner,
+            SessionHeartbeatRequest(team_id=team["id"], session_id="session-1", page="/static/admin-preview.html"),
+        )
+        self.store.create_usage_log(self.owner, team["id"], {
+            "operation_type": "chat",
+            "provider_id": "openai",
+            "model": "gpt-4o",
+            "status": "succeeded",
+            "request_count": 1,
+        })
+
+        overview = self.store.admin_overview(self.owner, team["id"])
+        users = self.store.admin_users(self.owner, team["id"])
+        detail = self.store.admin_user_detail(self.owner, team["id"], self.owner.id)
+
+        self.assertEqual(overview["today"]["total"], 1)
+        self.assertEqual(overview["active_users"], 1)
+        self.assertEqual(users[0]["user_id"], self.owner.id)
+        self.assertTrue(users[0]["online"])
+        self.assertEqual(detail["usage"]["total"], 1)
+
     def test_team_api_provider_management_requires_admin(self):
         team = self.store.create_team(self.owner, "Design Lab")
         member = CurrentUser(id="member-1", email="member@example.com", provider="test")
@@ -456,6 +533,88 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
             })
 
         self.assertEqual(error.exception.status_code, 400)
+
+    async def test_signup_start_sends_email_verification_and_saves_pending_profile(self):
+        auth_mock = AsyncMock(return_value={"user": {"id": "user-1", "email": "person@example.com"}})
+        save_pending = AsyncMock()
+
+        with patch.object(team_cloud, "get_user_profile_by_username", AsyncMock(return_value=None)), \
+             patch.object(team_cloud, "get_user_profile_by_email", AsyncMock(return_value=None)), \
+             patch.object(team_cloud, "get_pending_profile_by_email", AsyncMock(return_value=None)), \
+             patch.object(team_cloud, "get_pending_profile_by_username", AsyncMock(return_value=None)), \
+             patch.object(team_cloud, "supabase_auth_request", auth_mock), \
+             patch.object(team_cloud, "save_pending_user_profile", save_pending):
+            payload = await team_cloud.signup_start(team_cloud.AuthEmailPasswordRequest(
+                username="YiWei",
+                email="Person@Example.com",
+                password="secret-123",
+            ))
+
+        auth_mock.assert_awaited_once()
+        called_path, called_payload = auth_mock.await_args.args
+        self.assertEqual(called_path, "signup")
+        self.assertEqual(called_payload["email"], "person@example.com")
+        self.assertEqual(called_payload["data"]["username"], "yiwei")
+        save_pending.assert_awaited_once_with("user-1", "person@example.com", "yiwei")
+        self.assertTrue(payload["verification_required"])
+        self.assertFalse(payload["session_ready"])
+
+    async def test_signup_verify_creates_profile_and_sets_cookie(self):
+        response = Response()
+        verify_mock = AsyncMock(return_value={
+            "access_token": "verified-token",
+            "user": {
+                "id": "user-1",
+                "email": "person@example.com",
+                "user_metadata": {"username": "yiwei"},
+            },
+        })
+
+        with patch.object(team_cloud, "supabase_verify_signup_otp", verify_mock), \
+             patch.object(team_cloud, "get_pending_profile_by_email", AsyncMock(return_value={"username": "yiwei"})), \
+             patch.object(team_cloud, "ensure_user_profile", AsyncMock(return_value={"username": "yiwei"})) as ensure_mock, \
+             patch.object(team_cloud, "mark_pending_user_profile_verified", AsyncMock()) as mark_mock:
+            payload = await team_cloud.signup_verify(
+                team_cloud.AuthSignupVerifyRequest(email="Person@Example.com", token="123456"),
+                response,
+            )
+
+        verify_mock.assert_awaited_once_with("person@example.com", "123456")
+        ensure_mock.assert_awaited_once_with("user-1", "person@example.com", "yiwei")
+        mark_mock.assert_awaited_once_with("person@example.com", "user-1")
+        self.assertTrue(payload["session_ready"])
+        self.assertFalse(payload["verification_required"])
+        self.assertIn("team_cloud_access_token=verified-token", response.headers["set-cookie"])
+
+    async def test_login_requires_verified_profile(self):
+        response = Response()
+        auth_mock = AsyncMock(return_value={
+            "access_token": "session-token",
+            "user": {
+                "id": "user-1",
+                "email": "person@example.com",
+                "email_confirmed_at": "2026-08-09T00:00:00Z",
+            },
+        })
+
+        with patch.object(team_cloud, "resolve_auth_identifier_email", AsyncMock(return_value="person@example.com")), \
+             patch.object(team_cloud, "supabase_auth_request", auth_mock), \
+             patch.object(team_cloud, "get_user_profile_by_user_id", AsyncMock(return_value=None)):
+            with self.assertRaises(HTTPException) as error:
+                await team_cloud.login(
+                    team_cloud.AuthEmailPasswordRequest(identifier="person@example.com", password="secret-123"),
+                    response,
+                )
+
+        self.assertEqual(error.exception.status_code, 403)
+        self.assertIn("邮箱验证码", error.exception.detail)
+
+    async def test_recover_password_does_not_reveal_missing_account(self):
+        with patch.object(team_cloud, "resolve_auth_identifier_email", AsyncMock(side_effect=HTTPException(status_code=401, detail="missing"))):
+            payload = await team_cloud.recover_password(team_cloud.AuthRecoverRequest(identifier="missing-user"))
+
+        self.assertTrue(payload["ok"])
+        self.assertIn("如果账号存在", payload["message"])
 
     async def test_cloudflare_access_disabled_does_not_accept_header(self):
         with patch.object(team_cloud.settings, "cloudflare_access_enabled", False), \
@@ -565,6 +724,26 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function renderTeamApiModelRows", script)
         self.assertIn("function escapeAttr", script)
 
+    def test_team_cloud_signup_uses_email_verification_flow(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "static" / "team-cloud.html").read_text(encoding="utf-8")
+        script = (root / "static" / "js" / "team-cloud.js").read_text(encoding="utf-8")
+        schema = (root / "docs" / "supabase" / "team_cloud_schema.sql").read_text(encoding="utf-8")
+        index_html = (root / "static" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="verificationField"', html)
+        self.assertIn('id="verificationToken"', html)
+        self.assertIn('id="resendVerificationBtn"', html)
+        self.assertIn("team-cloud.js?v=2026.08.09.1", html)
+        self.assertIn("awaitingSignupVerification", script)
+        self.assertIn('/auth/signup/start', script)
+        self.assertIn('/auth/signup/verify', script)
+        self.assertIn('/auth/verification/resend', script)
+        self.assertIn("function resendVerification", script)
+        self.assertIn("pending_user_profiles", schema)
+        self.assertIn("grant all on table public.pending_user_profiles to service_role;", schema)
+        self.assertIn('/static/team-cloud.html?v=2026.08.09.1', index_html)
+
     def test_team_api_fetch_models_merges_with_manual_rows(self):
         root = Path(__file__).resolve().parents[1]
         script = (root / "static" / "js" / "team-cloud.js").read_text(encoding="utf-8")
@@ -613,6 +792,20 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("hasCanvasAssetDrag(event.dataTransfer)", script)
         self.assertIn("bindAssetItemDragGuard(canvasAssetGrid, '.canvas-asset-item'", script)
 
+    def test_asset_manager_exposes_delete_actions_for_asset_tabs(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "asset-manager.js").read_text(encoding="utf-8")
+
+        self.assertIn("data-canvas-asset-delete-selected", script)
+        self.assertIn("data-canvas-asset-clear-canvas", script)
+        self.assertIn("apiJson('/api/canvas-assets/delete'", script)
+        self.assertIn("data-team-asset-delete-selected", script)
+        self.assertIn("selectedTeamAssetIds", script)
+        self.assertIn("data-asset-delete-selected", script)
+        self.assertIn("data-workflow-delete-selected", script)
+        self.assertIn("data-prompt-delete-selected", script)
+        self.assertIn("data-localup-delete-selected", script)
+
     def test_dark_native_select_menus_stay_readable(self):
         root = Path(__file__).resolve().parents[1]
         css_files = [
@@ -623,6 +816,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
             "theme.css",
             "api-settings.css",
             "asset-manager.css",
+            "comfyui-settings.css",
         ]
 
         for filename in css_files:
@@ -647,6 +841,13 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("html.studio-scale-managed body .field-frame.protocol-selector-wrap", api_settings_css)
         self.assertIn("html.studio-scale-managed body .field-frame.image-request-mode-wrap", api_settings_css)
         self.assertIn("final production recommend-panel contrast", api_settings_css)
+        self.assertIn("Final light override for regular API editor blocks and model lists", api_settings_css)
+        self.assertIn("Final light polish for API onboarding and branded provider rows", api_settings_css)
+        self.assertIn("Last-mile light polish for the inline recommendation form cells", api_settings_css)
+        self.assertIn("html.studio-scale-managed.studio-theme-light body .layout > .content .block", api_settings_css)
+        self.assertIn("html.studio-scale-managed.studio-theme-light body .layout > .content .model-row", api_settings_css)
+        self.assertIn("html.studio-scale-managed.studio-theme-light body .provider-card.provider-card-banner.active", api_settings_css)
+        self.assertIn("html.studio-scale-managed.studio-theme-light body .provider-onboarding-card", api_settings_css)
         self.assertIn("html.studio-scale-managed body.show-recommend-mode .provider-onboarding-card.recommend-inline-card", api_settings_css)
         self.assertIn("html.studio-scale-managed body.show-recommend-mode .recommend-card.recommend-platform-card", api_settings_css)
 
@@ -657,11 +858,13 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         sync_script = (root / "deploy" / "sync-nas-source.ps1").read_text(encoding="utf-8")
 
         self.assertIn("./api-env:/app/API", compose)
+        self.assertIn("./assets:/app/assets", compose)
         self.assertIn("./data:/app/data", compose)
         self.assertIn("./output:/app/output", compose)
         self.assertNotIn("./:/app", compose)
         self.assertIn("deploy/fnos/api-env/", dockerignore)
         self.assertIn("deploy/fnos/.env", dockerignore)
+        self.assertIn("deploy/fnos/assets/", dockerignore)
         self.assertIn("deploy/fnos/data/", dockerignore)
         self.assertIn("deploy/fnos/output/", dockerignore)
         self.assertIn("deploy/fnos/team-assets/", dockerignore)
@@ -724,9 +927,12 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         html = (root / "static" / "canvas-list.html").read_text(encoding="utf-8")
         index_html = (root / "static" / "index.html").read_text(encoding="utf-8")
 
-        self.assertIn("canvas-list.html?v=2026.08.03.3", index_html)
-        self.assertIn("canvas-list.css?v=2026.07.28.6", html)
-        self.assertIn("canvas-list.js?v=2026.08.03.3", html)
+        self.assertIn("canvas-list.html?v=2026.08.09.9", index_html)
+        self.assertIn("canvas-list.css?v=2026.08.09.3", html)
+        self.assertIn("canvas-list.js?v=2026.08.09.8", html)
+        self.assertIn("Light theme topbar readability", css)
+        self.assertIn("body.theme-light .ws-top-kicker", css)
+        self.assertIn("color:#7c2d12;", css)
         self.assertIn('id="backHomeBtn"', html)
         self.assertIn("studio-open-page", html)
         self.assertIn("AI designer workbench skin", css)
@@ -788,7 +994,18 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn('data-api-settings-entry', html)
         self.assertIn('data-account-entry', html)
         self.assertIn('id="authModal"', html)
-        self.assertIn('data-open-page="team-cloud"', html)
+        self.assertIn('data-auth-mode="signup"', html)
+        self.assertIn('id="authUsernameField"', html)
+        self.assertIn('id="authVerificationField"', html)
+        self.assertIn('data-auth-resend', html)
+        self.assertIn('data-auth-recover', html)
+        self.assertIn('data-auth-back-login', html)
+        self.assertIn('data-open-page="admin-preview"', html)
+        self.assertIn('后台预览', html)
+        self.assertIn('class="nav-chip points-chip status-chip"', html)
+        self.assertNotIn('class="nav-chip points-chip" type="button" data-open-page="team-cloud"', html)
+        self.assertIn('data-open-page="admin-preview">\n                        <span>Admin</span>', html)
+        self.assertIn("workbench.css?v=2026.08.10.3", html)
         self.assertIn('data-open-page="asset-manager"', html)
         self.assertIn('data-open-page="comfyui-settings"', html)
         self.assertIn("data-theme-toggle", html)
@@ -802,6 +1019,12 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("PROMPT_PLACEHOLDERS", script)
         self.assertIn("loadCurrentUser", script)
         self.assertIn("/api/team-cloud/auth/login", script)
+        self.assertIn("/api/team-cloud/auth/signup/start", script)
+        self.assertIn("/api/team-cloud/auth/signup/verify", script)
+        self.assertIn("/api/team-cloud/auth/verification/resend", script)
+        self.assertIn("/api/team-cloud/auth/recover", script)
+        self.assertIn("authSignupAwaitingVerification", script)
+        self.assertIn("function resendAuthVerification", script)
         self.assertIn("function submitAuthModal", script)
         self.assertIn("function openApiSettingsEntry", script)
         self.assertIn("function hasApiSettingsAccess", script)
@@ -833,16 +1056,23 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("/api/workbench/feedback", script)
         self.assertIn('WORKBENCH_FEEDBACK_FILE = os.path.join(DATA_DIR, "workbench_feedback.jsonl")', main_py)
         self.assertIn('@app.post("/api/workbench/feedback")', main_py)
+        self.assertIn('@app.get("/api/team-cloud/admin/feedback")', main_py)
+        self.assertIn("resolve_admin_team(user, team_id)", main_py)
 
     def test_workbench_home_owns_the_full_studio_shell(self):
         root = Path(__file__).resolve().parents[1]
         index_html = (root / "static" / "index.html").read_text(encoding="utf-8")
         workbench_css = (root / "static" / "css" / "workbench.css").read_text(encoding="utf-8")
+        admin_html = (root / "static" / "admin-preview.html").read_text(encoding="utf-8")
+        admin_script = (root / "static" / "js" / "admin-preview.js").read_text(encoding="utf-8")
+        admin_css = (root / "static" / "css" / "admin-preview.css").read_text(encoding="utf-8")
 
         self.assertIn("body.studio-immersive-mode .sidebar", index_html)
         self.assertIn("body.studio-immersive-mode .stage", index_html)
-        self.assertIn("const IMMERSIVE_PAGE_IDS = new Set(['workbench', 'canvas', 'team-cloud', 'asset-manager', 'api-settings', 'comfyui-settings']);", index_html)
+        self.assertIn("const IMMERSIVE_PAGE_IDS = new Set(['workbench', 'canvas', 'team-cloud', 'admin-preview', 'asset-manager', 'api-settings', 'comfyui-settings']);", index_html)
         self.assertIn("IMMERSIVE_PAGE_IDS.has(id)", index_html)
+        self.assertIn('id="frame-admin-preview"', index_html)
+        self.assertIn("'admin-preview'", index_html)
         self.assertIn("function setStudioPageMode", index_html)
         self.assertIn("studio-toggle-theme", index_html)
         self.assertIn("studio shell sidebar dark active contrast", index_html)
@@ -850,9 +1080,24 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("html.theme-dark .side-pill.active,\n        body.theme-dark .side-pill.active,\n        html.studio-theme-dark .side-pill.active,\n        body.studio-theme-dark .side-pill.active", index_html)
         self.assertIn("background:rgba(220,38,38,.22);", index_html)
         self.assertIn(".preview-quick-rail button.active", workbench_css)
+        self.assertIn(".nav-chip.user-chip #workbenchUserLabel", workbench_css)
+        self.assertIn(".nav-chip.status-chip", workbench_css)
+        self.assertIn("body.theme-light .nav-chip.status-chip,\nbody.theme-light .nav-chip.status-chip strong", workbench_css)
+        self.assertNotIn(".nav-chip.points-chip span {\n        position: absolute;", workbench_css)
         self.assertIn(".preview-quick-rail::before", workbench_css)
         self.assertIn(".preview-quick-rail button:hover span", workbench_css)
         self.assertIn(".rail-tool-popover[hidden]", workbench_css)
+        self.assertIn('event.data?.type === "studio-theme"', admin_script)
+        self.assertIn("function applyTheme", admin_script)
+        self.assertIn("体验反馈", admin_html)
+        self.assertIn('id="feedbackList"', admin_html)
+        self.assertIn("/admin/feedback", admin_script)
+        self.assertIn("function renderFeedback", admin_script)
+        self.assertIn(".feedback-item", admin_css)
+        self.assertIn('/static/asset-manager.html?v=2026.08.09.8', index_html)
+        self.assertIn('/static/admin-preview.html?v=2026.08.09.6', index_html)
+        self.assertIn('/static/api-settings.html?v=2026.08.09.12', index_html)
+        self.assertIn('/static/comfyui-settings.html?v=2026.08.09.8', index_html)
 
     def test_workbench_home_annotation_polish_is_preserved(self):
         root = Path(__file__).resolve().parents[1]
@@ -861,14 +1106,14 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         workbench_script = (root / "static" / "js" / "workbench.js").read_text(encoding="utf-8")
 
         self.assertIn("bottom: -12px;", workbench_css)
-        self.assertIn("min-height: 213px;", workbench_css)
+        self.assertIn("min-height: 184px;", workbench_css)
         self.assertIn("margin-bottom: 10px;", workbench_css)
         self.assertIn("margin-top: 8px;", workbench_css)
         self.assertIn("border-radius: 16px;", workbench_css)
         self.assertIn("box-shadow:\n        inset 0 1px 0 rgba(255, 255, 255, .16),\n        inset 0 -18px 38px rgba(255, 255, 255, .035),\n        0 12px 30px rgba(0, 0, 0, .16);", workbench_css)
         self.assertEqual(html.count('data-custom-select'), 3)
-        self.assertIn("workbench.css?v=2026.07.30.5", html)
-        self.assertIn("workbench.js?v=2026.07.30.4", html)
+        self.assertIn("workbench.css?v=2026.08.10.3", html)
+        self.assertIn("workbench.js?v=2026.08.10.3", html)
         self.assertIn('class="select-display"', html)
         self.assertIn('class="select-menu"', html)
         self.assertIn("function initCustomSelects", workbench_script)
@@ -888,12 +1133,16 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         canvas_css = (root / "static" / "css" / "canvas.css").read_text(encoding="utf-8")
         smart_css = (root / "static" / "css" / "smart-canvas.css").read_text(encoding="utf-8")
 
-        self.assertIn("canvas.css?v=2026.07.30.1", canvas_html)
-        self.assertIn("canvas.js?v=2026.08.05.1", canvas_html)
+        agent_css = (root / "static" / "css" / "agent-panel.css").read_text(encoding="utf-8")
+        self.assertIn("canvas.css?v=2026.08.09.8", canvas_html)
+        self.assertIn("canvas.js?v=2026.08.09.8", canvas_html)
+        self.assertIn("agent-panel.css?v=2026.08.09.8", canvas_html)
         self.assertIn("smart-canvas.css?v=2026.07.30.3", smart_html)
         self.assertIn("smart-canvas.js?v=2026.08.05.1", smart_html)
         self.assertIn("2026-07-28 secondary canvas workbench alignment", canvas_css)
         self.assertIn("2026-07-30 classic canvas final theme sweep", canvas_css)
+        self.assertIn("2026-08-09 light canvas contrast sync for embedded studio pages", canvas_css)
+        self.assertIn("2026-08-09 embedded light theme sync", agent_css)
         self.assertIn("2026-07-28 secondary canvas workbench alignment", smart_css)
         self.assertIn("#quickToolbar.toolbar", canvas_css)
         self.assertIn("canvas-secondary-actions", canvas_html)
@@ -909,9 +1158,10 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("order:99;", canvas_css)
         self.assertIn('id="secondaryActionsToggle"', canvas_html)
         self.assertIn('id="agentToggle"', canvas_html)
-        self.assertIn('/static/css/agent-panel.css?v=2026.08.02.2', canvas_html)
         self.assertIn('/static/js/canvas-agent-classic-bridge.js?v=2026.07.30.1', canvas_html)
         canvas_js = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+        self.assertIn("document.documentElement.classList.toggle('studio-theme-light', light);", canvas_js)
+        self.assertIn("if(event.data?.type === 'studio-theme') applyTheme(event.data.theme || 'light');", canvas_js)
         self.assertIn("secondaryActionsToggle", canvas_js)
         self.assertIn("label.textContent = open ? '收起' : '更多';", canvas_js)
         self.assertIn("icon?.setAttribute('data-lucide', open ? 'chevrons-right' : 'chevrons-left');", canvas_js)
@@ -1015,7 +1265,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         canvas_html = (root / "static" / "canvas.html").read_text(encoding="utf-8")
 
         self.assertIn("/static/js/canvas-agent-panel.js?v=2026.08.02.2", smart_html)
-        self.assertIn("/static/css/agent-panel.css?v=2026.08.02.2", smart_html)
+        self.assertIn("/static/css/agent-panel.css?v=2026.08.09.8", smart_html)
         self.assertIn("/api/canvas-agent/suggest", panel_script)
         self.assertIn("/api/canvas-agent/feedback", panel_script)
         self.assertIn("teamCloudAuthHeaders", panel_script)

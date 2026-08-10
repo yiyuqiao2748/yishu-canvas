@@ -366,36 +366,72 @@ html[data-studio-scale="off"].studio-scale-managed .ws-paste-btn span {
 
 /* ===== AI designer workbench skin ===== */
 :root {
-    --ai-bg:#08090d;
-    --ai-panel:rgba(21,16,18,.86);
+    --ai-bg:#080608;
+    --ai-panel:rgba(37,23,22,.84);
     --ai-card:rgba(31,26,28,.9);
-    --ai-line:rgba(255,119,92,.22);
+    --ai-line:rgba(255,219,184,.15);
     --ai-line-strong:rgba(255,146,89,.42);
-    --ai-text:#fff7ed;
-    --ai-muted:#b8a9a2;
-    --ai-faint:#7f716d;
-    --ai-red:#dc2626;
-    --ai-red-2:#f97316;
-    --ai-gold:#f4c979;
+    --ai-text:#fff4df;
+    --ai-muted:rgba(255,237,213,.66);
+    --ai-faint:rgba(255,237,213,.44);
+    --ai-red:#f43f3f;
+    --ai-red-2:#f7a54a;
+    --ai-gold:#ffd6a3;
+}
+html.theme-dark,
+body.theme-dark,
+html.studio-theme-dark,
+body.studio-theme-dark {
+    --page:#080608;
+    --grid:rgba(255,255,255,.055);
+    --panel:rgba(37,23,22,.84);
+    --panel-solid:rgba(31,23,23,.9);
+    --card:rgba(31,26,28,.9);
+    --card-solid:rgba(31,26,28,.92);
+    --soft:rgba(255,244,223,.06);
+    --soft-2:rgba(255,244,223,.1);
+    --line:rgba(255,219,184,.15);
+    --line-2:rgba(255,146,89,.42);
+    --text:#fff4df;
+    --muted:rgba(255,237,213,.66);
+    --faint:rgba(255,237,213,.44);
+    --shadow:rgba(0,0,0,.42);
+    --shadow-strong:rgba(0,0,0,.52);
+    --strong:#f43f3f;
+    --strong-text:#fff;
+    --accent:#f7a54a;
+    --accent-soft:rgba(247,165,74,.14);
+    --accent-line:rgba(247,165,74,.32);
 }
 body {
     background:
-        linear-gradient(110deg, rgba(80,5,17,.78) 0%, rgba(30,9,13,.64) 31%, rgba(7,9,12,.96) 70%),
-        var(--ai-bg);
+        radial-gradient(circle at 24% 18%, rgba(100,36,24,.45), transparent 24%),
+        radial-gradient(circle at 80% 8%, rgba(37,55,42,.42), transparent 28%),
+        linear-gradient(105deg, #43070d 0%, #26090b 22%, #161110 54%, #07100d 100%);
     color:var(--ai-text);
+}
+html.theme-dark body,
+html.studio-theme-dark body,
+body.theme-dark,
+body.studio-theme-dark {
+    background:
+        radial-gradient(circle at 24% 18%, rgba(100,36,24,.45), transparent 24%),
+        radial-gradient(circle at 80% 8%, rgba(37,55,42,.42), transparent 28%),
+        linear-gradient(105deg, #43070d 0%, #26090b 22%, #161110 54%, #07100d 100%) !important;
+    color:var(--ai-text) !important;
 }
 .workspace {
     background:
-        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
-        radial-gradient(circle at 55% 0%, rgba(249,115,22,.12), transparent 36%);
+        linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px),
+        radial-gradient(circle at 58% 0%, rgba(247,165,74,.12), transparent 36%);
     background-size:40px 40px, 40px 40px, auto;
 }
 .ws-sidebar {
     margin:18px 0 18px 18px;
     border:1px solid var(--ai-line);
     border-radius:24px;
-    background:rgba(11,10,14,.74);
+    background:rgba(37,23,22,.74);
     box-shadow:0 28px 80px rgba(0,0,0,.42);
 }
 .ws-brand {
@@ -460,7 +496,7 @@ body {
     color:var(--ai-text);
 }
 .ws-project-row.active {
-    background:linear-gradient(135deg, rgba(220,38,38,.88), rgba(249,115,22,.78));
+    background:linear-gradient(135deg, rgba(244,63,63,.9), rgba(247,165,74,.78));
     border-color:rgba(255,211,141,.45);
     color:#fff;
     box-shadow:0 16px 32px rgba(220,38,38,.22);
@@ -477,7 +513,7 @@ body {
     position:absolute;
     inset:0;
     pointer-events:none;
-    background:linear-gradient(180deg, rgba(220,38,38,.18), transparent 28%);
+    background:linear-gradient(180deg, rgba(244,63,63,.18), transparent 28%);
 }
 .ws-topbar {
     min-height:64px;
@@ -496,7 +532,7 @@ body {
     display:inline-flex;
     align-items:center;
     color:#fee2e2;
-    background:rgba(220,38,38,.18);
+    background:rgba(244,63,63,.18);
     border:1px solid rgba(248,113,113,.25);
     font-size:11px;
     font-weight:900;
@@ -518,7 +554,7 @@ body {
     color:var(--ai-text);
 }
 .ws-filter-btn.active {
-    background:linear-gradient(135deg, rgba(220,38,38,.92), rgba(249,115,22,.86));
+    background:linear-gradient(135deg, rgba(244,63,63,.92), rgba(247,165,74,.86));
     color:#fff;
 }
 .ws-primary-btn,
@@ -528,7 +564,28 @@ body {
     background:linear-gradient(135deg, var(--ai-red), var(--ai-red-2));
     color:#fff;
     border-color:rgba(255,211,141,.36);
-    box-shadow:0 16px 34px rgba(220,38,38,.24);
+    box-shadow:0 16px 34px rgba(244,63,63,.24);
+}
+html.theme-dark body .ws-primary-btn,
+html.theme-dark body .ws-paste-btn,
+html.theme-dark body .ws-create-confirm,
+html.theme-dark body .ws-card-open,
+html.studio-theme-dark body .ws-primary-btn,
+html.studio-theme-dark body .ws-paste-btn,
+html.studio-theme-dark body .ws-create-confirm,
+html.studio-theme-dark body .ws-card-open,
+body.theme-dark .ws-primary-btn,
+body.theme-dark .ws-paste-btn,
+body.theme-dark .ws-create-confirm,
+body.theme-dark .ws-card-open,
+body.studio-theme-dark .ws-primary-btn,
+body.studio-theme-dark .ws-paste-btn,
+body.studio-theme-dark .ws-create-confirm,
+body.studio-theme-dark .ws-card-open {
+    background:linear-gradient(135deg, var(--ai-red), var(--ai-red-2)) !important;
+    color:#fff !important;
+    border-color:rgba(255,211,141,.36) !important;
+    box-shadow:0 16px 34px rgba(244,63,63,.24) !important;
 }
 .ws-primary-btn:hover,
 .ws-paste-btn:hover,
@@ -540,12 +597,12 @@ body {
 .ws-board {
     border:1px solid var(--ai-line);
     border-radius:28px;
-    background-color:rgba(3,6,12,.78);
+    background-color:rgba(8,6,8,.78);
     background-image:
         linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px),
-        linear-gradient(rgba(220,38,38,.1) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(220,38,38,.1) 1px, transparent 1px);
+        linear-gradient(rgba(244,63,63,.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(244,63,63,.1) 1px, transparent 1px);
     background-size:40px 40px, 40px 40px, 200px 200px, 200px 200px;
     box-shadow:inset 0 0 0 1px rgba(255,255,255,.025), 0 26px 90px rgba(0,0,0,.32);
 }
@@ -561,7 +618,7 @@ body {
     box-shadow:0 0 0 1px rgba(249,115,22,.18), 0 24px 72px rgba(0,0,0,.42);
 }
 .ws-card-kind.smart {
-    background:rgba(220,38,38,.18);
+    background:rgba(244,63,63,.18);
     border-color:rgba(248,113,113,.32);
     color:#fecaca;
 }
@@ -589,7 +646,7 @@ body {
 .ws-trash-note,
 .ws-trash-label { color:var(--ai-muted); }
 .ws-status {
-    background:linear-gradient(135deg, rgba(220,38,38,.96), rgba(249,115,22,.94));
+    background:linear-gradient(135deg, rgba(244,63,63,.96), rgba(247,165,74,.94));
     color:#fff;
 }
 html[data-studio-scale="off"].studio-scale-managed .ws-sidebar {
@@ -782,6 +839,7 @@ body.studio-theme-light .ws-brand-title {
 }
 
 body.theme-light .ws-brand-sub,
+body.theme-light .ws-top-kicker,
 body.theme-light .ws-filter-btn,
 body.theme-light .ws-board-empty-sub,
 body.theme-light .ws-card-time,
@@ -789,6 +847,7 @@ body.theme-light .ws-card-nodes,
 body.theme-light .ws-trash-note,
 body.theme-light .ws-trash-label,
 body.studio-theme-light .ws-brand-sub,
+body.studio-theme-light .ws-top-kicker,
 body.studio-theme-light .ws-filter-btn,
 body.studio-theme-light .ws-board-empty-sub,
 body.studio-theme-light .ws-card-time,
@@ -871,4 +930,33 @@ body.studio-theme-light .ws-card-visibility.team {
     background:rgba(249,115,22,.12);
     border-color:rgba(249,115,22,.28);
     color:#9a3412;
+}
+
+/* Light theme topbar readability: keep the small page label legible on the warm glass bar. */
+body.theme-light .ws-top-kicker,
+body.studio-theme-light .ws-top-kicker,
+html.theme-light body .ws-top-kicker,
+html.studio-theme-light body .ws-top-kicker {
+    background:rgba(255,255,255,.78);
+    border-color:rgba(127,59,38,.18);
+    color:#7c2d12;
+    text-shadow:none;
+    box-shadow:0 8px 18px rgba(127,59,38,.08);
+}
+
+body.theme-light .ws-board-count,
+body.studio-theme-light .ws-board-count,
+html.theme-light body .ws-board-count,
+html.studio-theme-light body .ws-board-count {
+    background:rgba(127,59,38,.08);
+    border:1px solid rgba(127,59,38,.14);
+    color:#7c2d12;
+}
+
+body.theme-light .ws-topbar-left svg,
+body.studio-theme-light .ws-topbar-left svg,
+html.theme-light body .ws-topbar-left svg,
+html.studio-theme-light body .ws-topbar-left svg {
+    color:#7c2d12;
+    stroke:currentColor;
 }

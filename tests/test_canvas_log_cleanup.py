@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import main
 
@@ -30,6 +32,7 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.global_config.write_text("{}", encoding="utf-8")
         self.patches = [
             patch.object(main, "ASSETS_DIR", str(self.assets)),
+            patch.object(main, "OUTPUT_INPUT_DIR", str(self.inputs)),
             patch.object(main, "OUTPUT_OUTPUT_DIR", str(self.generated)),
             patch.object(main, "OUTPUT_DIR", str(self.legacy)),
             patch.object(main, "DATA_DIR", str(self.data)),
@@ -168,6 +171,31 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(path.exists())
         self.assertEqual(result["removed_files"], [])
         self.assertEqual(result["canvas"]["logs"], [])
+
+    async def test_delete_canvas_asset_removes_refs_and_unreferenced_input_file(self):
+        path = self.inputs / "ref.png"
+        path.write_bytes(b"image")
+        url = "/assets/input/ref.png"
+        canvas_id = "asset_canvas"
+        self.write_canvas(
+            canvas_id,
+            [],
+            nodes=[
+                {"id": "image-node", "type": "image", "url": url, "name": "ref"},
+                {"id": "generator", "type": "online", "images": [{"url": url, "name": "ref"}]},
+            ],
+        )
+        asset_id = main.hashlib.sha1(f"{canvas_id}:{url}".encode("utf-8")).hexdigest()[:24]
+
+        result = await main.delete_canvas_assets(main.CanvasAssetDeleteRequest(ids=[asset_id]))
+        saved = json.loads((self.canvases / f"{canvas_id}.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(result["removed"], 1)
+        self.assertEqual(result["removed_refs"], 2)
+        self.assertEqual(result["removed_files"], ["ref.png"])
+        self.assertEqual(saved["nodes"][0]["url"], "")
+        self.assertEqual(saved["nodes"][1]["images"], [])
+        self.assertFalse(path.exists())
 
     async def test_cleanup_keeps_media_referenced_by_a_node(self):
         path, url = self.generated_file()
@@ -701,11 +729,13 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         }
 
         with patch.object(main, "get_api_provider", return_value=global_provider) as get_provider:
-            with patch.object(main, "resolve_team_api_provider_config") as team_provider:
-                provider, resolved_user = await main.request_api_provider("grsai", Payload(), None, user)
+            with patch.object(main, "resolve_team_api_provider_config", side_effect=HTTPException(status_code=404, detail="missing")) as team_provider:
+                with patch.object(main, "assert_team_points_available", new=AsyncMock()) as points_check:
+                    provider, resolved_user = await main.request_api_provider("grsai", Payload(), None, user)
 
         get_provider.assert_called_once_with("grsai")
-        team_provider.assert_not_called()
+        team_provider.assert_awaited_once()
+        points_check.assert_awaited_once()
         self.assertEqual(provider["api_key"], "global-key")
         self.assertIs(resolved_user, user)
 

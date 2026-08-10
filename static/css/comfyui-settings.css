@@ -442,3 +442,248 @@ body.studio-theme-dark .graph-svg-wrap {
         rgba(5,7,8,.72) !important;
     background-size:40px 40px,40px 40px,auto !important;
 }
+
+/* Light theme for the AI designer workflow-settings skin. */
+html.theme-light body,
+body.theme-light,
+html.studio-theme-light body,
+body.studio-theme-light {
+    --bg:#fff7ef;
+    --panel:rgba(255,250,244,.88);
+    --soft:rgba(127,59,38,.055);
+    --line:rgba(127,59,38,.16);
+    --line-strong:rgba(127,59,38,.28);
+    --text:#251612;
+    --muted:#735f55;
+    --faint:#9c8a80;
+    --accent:#ef4444;
+    background:
+        radial-gradient(circle at 24% 14%, rgba(255,203,186,.56), transparent 26%),
+        radial-gradient(circle at 82% 8%, rgba(198,230,213,.5), transparent 28%),
+        linear-gradient(105deg, #fff0e8 0%, #fffaf4 50%, #eef8f2 100%) !important;
+    color:var(--text) !important;
+}
+
+html.theme-light body::before,
+body.theme-light::before,
+html.studio-theme-light body::before,
+body.studio-theme-light::before {
+    background-image:
+        linear-gradient(rgba(127,59,38,.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127,59,38,.055) 1px, transparent 1px);
+}
+
+html.theme-light body .page-head,
+body.theme-light .page-head,
+html.studio-theme-light body .page-head,
+body.studio-theme-light .page-head,
+html.theme-light body .side-card,
+body.theme-light .side-card,
+html.studio-theme-light body .side-card,
+body.studio-theme-light .side-card,
+html.theme-light body .graph-card,
+body.theme-light .graph-card,
+html.studio-theme-light body .graph-card,
+body.studio-theme-light .graph-card,
+html.theme-light body .content-head,
+body.theme-light .content-head,
+html.studio-theme-light body .content-head,
+body.studio-theme-light .content-head,
+html.theme-light body .node-card,
+body.theme-light .node-card,
+html.studio-theme-light body .node-card,
+body.studio-theme-light .node-card,
+html.theme-light body .popup-panel,
+body.theme-light .popup-panel,
+html.studio-theme-light body .popup-panel,
+body.studio-theme-light .popup-panel,
+html.theme-light body .empty-state,
+body.theme-light .empty-state,
+html.studio-theme-light body .empty-state,
+body.studio-theme-light .empty-state {
+    background:var(--panel) !important;
+    border-color:var(--line) !important;
+    box-shadow:0 20px 58px rgba(127,59,38,.13);
+}
+
+html.theme-light body .action-btn,
+body.theme-light .action-btn,
+html.studio-theme-light body .action-btn,
+body.studio-theme-light .action-btn,
+html.theme-light body .upload-btn,
+body.theme-light .upload-btn,
+html.studio-theme-light body .upload-btn,
+body.studio-theme-light .upload-btn,
+html.theme-light body .workflow-card,
+body.theme-light .workflow-card,
+html.studio-theme-light body .workflow-card,
+body.studio-theme-light .workflow-card,
+html.theme-light body .small-input,
+body.theme-light .small-input,
+html.studio-theme-light body .small-input,
+body.studio-theme-light .small-input,
+html.theme-light body .small-select,
+body.theme-light .small-select,
+html.studio-theme-light body .small-select,
+body.studio-theme-light .small-select,
+html.theme-light body .pfield-input,
+body.theme-light .pfield-input,
+html.studio-theme-light body .pfield-input,
+body.studio-theme-light .pfield-input,
+html.theme-light body .pfield-textarea,
+body.theme-light .pfield-textarea,
+html.studio-theme-light body .pfield-textarea,
+body.studio-theme-light .pfield-textarea,
+html.theme-light body .pfield-select,
+body.theme-light .pfield-select,
+html.studio-theme-light body .pfield-select,
+body.studio-theme-light .pfield-select,
+html.theme-light body .mini-tool,
+body.theme-light .mini-tool,
+html.studio-theme-light body .mini-tool,
+body.studio-theme-light .mini-tool,
+html.theme-light body .mini-textarea,
+body.theme-light .mini-textarea,
+html.studio-theme-light body .mini-textarea,
+body.studio-theme-light .mini-textarea,
+html.theme-light body .mini-input,
+body.theme-light .mini-input,
+html.studio-theme-light body .mini-input,
+body.studio-theme-light .mini-input,
+html.theme-light body .mini-image-drop,
+body.theme-light .mini-image-drop,
+html.studio-theme-light body .mini-image-drop,
+body.studio-theme-light .mini-image-drop,
+html.theme-light body .random-btn,
+body.theme-light .random-btn,
+html.studio-theme-light body .random-btn,
+body.studio-theme-light .random-btn,
+html.theme-light body .random-toggle,
+body.theme-light .random-toggle,
+html.studio-theme-light body .random-toggle,
+body.studio-theme-light .random-toggle,
+html.theme-light body input,
+body.theme-light input,
+html.studio-theme-light body input,
+body.studio-theme-light input,
+html.theme-light body textarea,
+body.theme-light textarea,
+html.studio-theme-light body textarea,
+body.studio-theme-light textarea,
+html.theme-light body select,
+body.theme-light select,
+html.studio-theme-light body select,
+body.studio-theme-light select {
+    background:rgba(255,255,255,.76) !important;
+    border-color:var(--line) !important;
+    color:var(--text) !important;
+}
+
+html.theme-light body .graph-svg-wrap,
+body.theme-light .graph-svg-wrap,
+html.studio-theme-light body .graph-svg-wrap,
+body.studio-theme-light .graph-svg-wrap,
+html.theme-light body .mini-canvas,
+body.theme-light .mini-canvas,
+html.studio-theme-light body .mini-canvas,
+body.studio-theme-light .mini-canvas {
+    background:
+        linear-gradient(rgba(127,59,38,.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127,59,38,.055) 1px, transparent 1px),
+        rgba(255,255,255,.68) !important;
+    background-size:40px 40px,40px 40px,auto !important;
+    border-color:var(--line) !important;
+}
+
+html.theme-light body .action-btn:hover,
+body.theme-light .action-btn:hover,
+html.studio-theme-light body .action-btn:hover,
+body.studio-theme-light .action-btn:hover,
+html.theme-light body .upload-btn:hover,
+body.theme-light .upload-btn:hover,
+html.studio-theme-light body .upload-btn:hover,
+body.studio-theme-light .upload-btn:hover,
+html.theme-light body .workflow-card:hover,
+body.theme-light .workflow-card:hover,
+html.studio-theme-light body .workflow-card:hover,
+body.studio-theme-light .workflow-card:hover,
+html.theme-light body .node-card-head:hover,
+body.theme-light .node-card-head:hover,
+html.studio-theme-light body .node-card-head:hover,
+body.studio-theme-light .node-card-head:hover,
+html.theme-light body .mini-tool:hover,
+body.theme-light .mini-tool:hover,
+html.studio-theme-light body .mini-tool:hover,
+body.studio-theme-light .mini-tool:hover,
+html.theme-light body .random-btn:hover,
+body.theme-light .random-btn:hover,
+html.studio-theme-light body .random-btn:hover,
+body.studio-theme-light .random-btn:hover {
+    border-color:var(--line-strong) !important;
+    background:rgba(255,255,255,.92) !important;
+    color:var(--text) !important;
+}
+
+html.theme-light body .action-btn.save-btn,
+body.theme-light .action-btn.save-btn,
+html.studio-theme-light body .action-btn.save-btn,
+body.studio-theme-light .action-btn.save-btn,
+html.theme-light body .run-btn,
+body.theme-light .run-btn,
+html.studio-theme-light body .run-btn,
+body.studio-theme-light .run-btn,
+html.theme-light body .check-toggle.checked,
+body.theme-light .check-toggle.checked,
+html.studio-theme-light body .check-toggle.checked,
+body.studio-theme-light .check-toggle.checked,
+html.theme-light body .workflow-card.active,
+body.theme-light .workflow-card.active,
+html.studio-theme-light body .workflow-card.active,
+body.studio-theme-light .workflow-card.active,
+html.theme-light body .workspace-mode-tabs button.active,
+body.theme-light .workspace-mode-tabs button.active,
+html.studio-theme-light body .workspace-mode-tabs button.active,
+body.studio-theme-light .workspace-mode-tabs button.active,
+html.theme-light body .random-btn.active,
+body.theme-light .random-btn.active,
+html.studio-theme-light body .random-btn.active,
+body.studio-theme-light .random-btn.active {
+    background:linear-gradient(135deg,#ef4444,#fb6b3d) !important;
+    border-color:rgba(239,68,68,.28) !important;
+    color:#fff !important;
+}
+
+html.theme-light body .home-btn,
+body.theme-light .home-btn,
+html.studio-theme-light body .home-btn,
+body.studio-theme-light .home-btn,
+html.theme-light body .workspace-mode-tabs,
+body.theme-light .workspace-mode-tabs,
+html.studio-theme-light body .workspace-mode-tabs,
+body.studio-theme-light .workspace-mode-tabs {
+    background:rgba(255,255,255,.62) !important;
+    border-color:var(--line) !important;
+    color:var(--text) !important;
+}
+
+/* native select menu contrast */
+select option,
+select optgroup {
+    background:#1f1718 !important;
+    color:#fff7ed !important;
+}
+select option:disabled {
+    color:#8f8178 !important;
+}
+
+html.theme-light body select option,
+body.theme-light select option,
+html.studio-theme-light body select option,
+body.studio-theme-light select option,
+html.theme-light body select optgroup,
+body.theme-light select optgroup,
+html.studio-theme-light body select optgroup,
+body.studio-theme-light select optgroup {
+    background:#fffaf4 !important;
+    color:#251612 !important;
+}

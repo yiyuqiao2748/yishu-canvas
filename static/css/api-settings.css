@@ -6399,3 +6399,777 @@ html.studio-scale-managed body .provider-card-banner img,
 html body:not(.force-light-api) .provider-card-banner img {
     filter:drop-shadow(0 8px 16px rgba(0,0,0,.34));
 }
+
+/* Light theme for API settings after the production dark overrides. */
+html.theme-light body,
+body.theme-light,
+html.studio-theme-light body,
+body.studio-theme-light {
+    --bg:#fff7ef;
+    --panel:rgba(255,250,244,.88);
+    --soft:rgba(127,59,38,.055);
+    --line:rgba(127,59,38,.16);
+    --line-strong:rgba(127,59,38,.28);
+    --text:#251612;
+    --muted:#735f55;
+    --faint:#9c8a80;
+    --accent:#ef4444;
+    background:
+        radial-gradient(circle at 24% 14%, rgba(255,203,186,.56), transparent 26%),
+        radial-gradient(circle at 82% 8%, rgba(198,230,213,.5), transparent 28%),
+        linear-gradient(105deg, #fff0e8 0%, #fffaf4 50%, #eef8f2 100%) !important;
+    color:var(--text) !important;
+}
+
+html.theme-light body .page,
+body.theme-light .page,
+html.studio-theme-light body .page,
+body.studio-theme-light .page {
+    background:transparent !important;
+}
+
+html.theme-light body .page::before,
+body.theme-light .page::before,
+html.studio-theme-light body .page::before,
+body.studio-theme-light .page::before {
+    background-image:
+        linear-gradient(rgba(127,59,38,.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(127,59,38,.055) 1px, transparent 1px) !important;
+}
+
+html.theme-light body .page-head,
+body.theme-light .page-head,
+html.studio-theme-light body .page-head,
+body.studio-theme-light .page-head,
+html.theme-light body .layout > .sidebar,
+body.theme-light .layout > .sidebar,
+html.studio-theme-light body .layout > .sidebar,
+body.studio-theme-light .layout > .sidebar,
+html.theme-light body .wrap .sidebar,
+body.theme-light .wrap .sidebar,
+html.studio-theme-light body .wrap .sidebar,
+body.studio-theme-light .wrap .sidebar,
+html.theme-light body .content-head,
+body.theme-light .content-head,
+html.studio-theme-light body .content-head,
+body.studio-theme-light .content-head,
+html.theme-light body .block,
+body.theme-light .block,
+html.studio-theme-light body .block,
+body.studio-theme-light .block,
+html.theme-light body .provider-onboarding-card,
+body.theme-light .provider-onboarding-card,
+html.studio-theme-light body .provider-onboarding-card,
+body.studio-theme-light .provider-onboarding-card,
+html.theme-light body .recommend-inline-card,
+body.theme-light .recommend-inline-card,
+html.studio-theme-light body .recommend-inline-card,
+body.studio-theme-light .recommend-inline-card,
+html.theme-light body .recommend-card,
+body.theme-light .recommend-card,
+html.studio-theme-light body .recommend-card,
+body.studio-theme-light .recommend-card,
+html.theme-light body .recommend-platform-card,
+body.theme-light .recommend-platform-card,
+html.studio-theme-light body .recommend-platform-card,
+body.studio-theme-light .recommend-platform-card,
+html.theme-light body .recommend-platform-info,
+body.theme-light .recommend-platform-info,
+html.studio-theme-light body .recommend-platform-info,
+body.studio-theme-light .recommend-platform-info,
+html.theme-light body .recommend-platform-setup,
+body.theme-light .recommend-platform-setup,
+html.studio-theme-light body .recommend-platform-setup,
+body.studio-theme-light .recommend-platform-setup,
+html.theme-light body .recommend-guide-source,
+body.theme-light .recommend-guide-source,
+html.studio-theme-light body .recommend-guide-source,
+body.studio-theme-light .recommend-guide-source,
+html.theme-light body .recommend-guide-save,
+body.theme-light .recommend-guide-save,
+html.studio-theme-light body .recommend-guide-save,
+body.studio-theme-light .recommend-guide-save,
+html.theme-light body .onboarding-rh-source-group,
+body.theme-light .onboarding-rh-source-group,
+html.studio-theme-light body .onboarding-rh-source-group,
+body.studio-theme-light .onboarding-rh-source-group,
+html.theme-light body .onboarding-key-field,
+body.theme-light .onboarding-key-field,
+html.studio-theme-light body .onboarding-key-field,
+body.studio-theme-light .onboarding-key-field {
+    background:var(--panel) !important;
+    border-color:var(--line) !important;
+    color:var(--text) !important;
+    box-shadow:0 20px 58px rgba(127,59,38,.13) !important;
+}
+
+html.theme-light body .field-frame,
+body.theme-light .field-frame,
+html.studio-theme-light body .field-frame,
+body.studio-theme-light .field-frame,
+html.theme-light body .key-panel,
+body.theme-light .key-panel,
+html.studio-theme-light body .key-panel,
+body.studio-theme-light .key-panel,
+html.theme-light body .provider-card,
+body.theme-light .provider-card,
+html.studio-theme-light body .provider-card,
+body.studio-theme-light .provider-card,
+html.theme-light body .provider-card.provider-card-banner,
+body.theme-light .provider-card.provider-card-banner,
+html.studio-theme-light body .provider-card.provider-card-banner,
+body.studio-theme-light .provider-card.provider-card-banner,
+html.theme-light body .add-btn,
+body.theme-light .add-btn,
+html.studio-theme-light body .add-btn,
+body.studio-theme-light .add-btn,
+html.theme-light body .api-link-btn,
+body.theme-light .api-link-btn,
+html.studio-theme-light body .api-link-btn,
+body.studio-theme-light .api-link-btn,
+html.theme-light body .cli-quick-btn,
+body.theme-light .cli-quick-btn,
+html.studio-theme-light body .cli-quick-btn,
+body.studio-theme-light .cli-quick-btn,
+html.theme-light body .action-btn,
+body.theme-light .action-btn,
+html.studio-theme-light body .action-btn,
+body.studio-theme-light .action-btn,
+html.theme-light body .key-btn,
+body.theme-light .key-btn,
+html.studio-theme-light body .key-btn,
+body.studio-theme-light .key-btn,
+html.theme-light body .model-row,
+body.theme-light .model-row,
+html.studio-theme-light body .model-row,
+body.studio-theme-light .model-row,
+html.theme-light body .lora-row,
+body.theme-light .lora-row,
+html.studio-theme-light body .lora-row,
+body.studio-theme-light .lora-row,
+html.theme-light body .recommend-tag,
+body.theme-light .recommend-tag,
+html.studio-theme-light body .recommend-tag,
+body.studio-theme-light .recommend-tag,
+html.theme-light body .recommend-badge,
+body.theme-light .recommend-badge,
+html.studio-theme-light body .recommend-badge,
+body.studio-theme-light .recommend-badge,
+html.theme-light body .recommend-note,
+body.theme-light .recommend-note,
+html.studio-theme-light body .recommend-note,
+body.studio-theme-light .recommend-note,
+html.theme-light body .onboarding-key-btn,
+body.theme-light .onboarding-key-btn,
+html.studio-theme-light body .onboarding-key-btn,
+body.studio-theme-light .onboarding-key-btn,
+html.theme-light body .recommend-guide-key-btn,
+body.theme-light .recommend-guide-key-btn,
+html.studio-theme-light body .recommend-guide-key-btn,
+body.studio-theme-light .recommend-guide-key-btn,
+html.theme-light body input,
+body.theme-light input,
+html.studio-theme-light body input,
+body.studio-theme-light input,
+html.theme-light body textarea,
+body.theme-light textarea,
+html.studio-theme-light body textarea,
+body.studio-theme-light textarea,
+html.theme-light body select,
+body.theme-light select,
+html.studio-theme-light body select,
+body.studio-theme-light select {
+    background:rgba(255,255,255,.76) !important;
+    border-color:var(--line) !important;
+    color:var(--text) !important;
+    box-shadow:none !important;
+}
+
+html.theme-light body .provider-card:hover,
+body.theme-light .provider-card:hover,
+html.studio-theme-light body .provider-card:hover,
+body.studio-theme-light .provider-card:hover,
+html.theme-light body .add-btn:hover,
+body.theme-light .add-btn:hover,
+html.studio-theme-light body .add-btn:hover,
+body.studio-theme-light .add-btn:hover,
+html.theme-light body .api-link-btn:hover,
+body.theme-light .api-link-btn:hover,
+html.studio-theme-light body .api-link-btn:hover,
+body.studio-theme-light .api-link-btn:hover,
+html.theme-light body .action-btn:hover,
+body.theme-light .action-btn:hover,
+html.studio-theme-light body .action-btn:hover,
+body.studio-theme-light .action-btn:hover,
+html.theme-light body .key-btn:hover,
+body.theme-light .key-btn:hover,
+html.studio-theme-light body .key-btn:hover,
+body.studio-theme-light .key-btn:hover {
+    border-color:var(--line-strong) !important;
+    background:rgba(255,255,255,.92) !important;
+    color:var(--text) !important;
+}
+
+html.theme-light body .action-btn.save-btn,
+body.theme-light .action-btn.save-btn,
+html.studio-theme-light body .action-btn.save-btn,
+body.studio-theme-light .action-btn.save-btn,
+html.theme-light body .api-page-save-btn,
+body.theme-light .api-page-save-btn,
+html.studio-theme-light body .api-page-save-btn,
+body.studio-theme-light .api-page-save-btn,
+html.theme-light body .api-link-btn.active,
+body.theme-light .api-link-btn.active,
+html.studio-theme-light body .api-link-btn.active,
+body.studio-theme-light .api-link-btn.active {
+    background:linear-gradient(135deg,#ef4444,#fb6b3d) !important;
+    border-color:rgba(239,68,68,.28) !important;
+    color:#fff !important;
+}
+
+html.theme-light body .page-head .title,
+body.theme-light .page-head .title,
+html.studio-theme-light body .page-head .title,
+body.studio-theme-light .page-head .title,
+html.theme-light body .editor-title,
+body.theme-light .editor-title,
+html.studio-theme-light body .editor-title,
+body.studio-theme-light .editor-title,
+html.theme-light body .block-title,
+body.theme-light .block-title,
+html.studio-theme-light body .block-title,
+body.studio-theme-light .block-title,
+html.theme-light body .recommend-name,
+body.theme-light .recommend-name,
+html.studio-theme-light body .recommend-name,
+body.studio-theme-light .recommend-name {
+    color:var(--text) !important;
+}
+
+html.theme-light body .sub,
+body.theme-light .sub,
+html.studio-theme-light body .sub,
+body.studio-theme-light .sub,
+html.theme-light body .editor-sub,
+body.theme-light .editor-sub,
+html.studio-theme-light body .editor-sub,
+body.studio-theme-light .editor-sub,
+html.theme-light body .block-desc,
+body.theme-light .block-desc,
+html.studio-theme-light body .block-desc,
+body.studio-theme-light .block-desc,
+html.theme-light body .recommend-note,
+body.theme-light .recommend-note,
+html.studio-theme-light body .recommend-note,
+body.studio-theme-light .recommend-note {
+    color:var(--muted) !important;
+}
+
+html.theme-light body select,
+body.theme-light select,
+html.studio-theme-light body select,
+body.studio-theme-light select {
+    color-scheme:light;
+}
+
+html.theme-light body select option,
+body.theme-light select option,
+html.studio-theme-light body select option,
+body.studio-theme-light select option,
+html.theme-light body select optgroup,
+body.theme-light select optgroup,
+html.studio-theme-light body select optgroup,
+body.studio-theme-light select optgroup {
+    background:#fffaf4 !important;
+    color:#251612 !important;
+}
+
+/* Final light override for studio-scale-managed API settings. */
+html.studio-scale-managed.theme-light body,
+html.studio-scale-managed.studio-theme-light body,
+html.studio-scale-managed body.theme-light,
+html.studio-scale-managed body.studio-theme-light,
+html body.theme-light:not(.force-light-api),
+html body.studio-theme-light:not(.force-light-api) {
+    --bg:#fff7ef !important;
+    --panel:rgba(255,250,244,.88) !important;
+    --soft:rgba(127,59,38,.055) !important;
+    --line:rgba(127,59,38,.16) !important;
+    --line-strong:rgba(127,59,38,.28) !important;
+    --text:#251612 !important;
+    --muted:#735f55 !important;
+    --faint:#9c8a80 !important;
+    --accent:#ef4444 !important;
+    background:
+        radial-gradient(circle at 24% 14%, rgba(255,203,186,.56), transparent 26%),
+        radial-gradient(circle at 82% 8%, rgba(198,230,213,.5), transparent 28%),
+        linear-gradient(105deg, #fff0e8 0%, #fffaf4 50%, #eef8f2 100%) !important;
+    color:var(--text) !important;
+}
+
+html.studio-scale-managed.theme-light body .page-head,
+html.studio-scale-managed.theme-light body .content-head,
+html.studio-scale-managed.theme-light body .block,
+html.studio-scale-managed.theme-light body .sidebar,
+html.studio-scale-managed.theme-light body .recommend-card,
+html.studio-scale-managed.theme-light body .provider-card,
+html.studio-scale-managed.studio-theme-light body .page-head,
+html.studio-scale-managed.studio-theme-light body .content-head,
+html.studio-scale-managed.studio-theme-light body .block,
+html.studio-scale-managed.studio-theme-light body .sidebar,
+html.studio-scale-managed.studio-theme-light body .recommend-card,
+html.studio-scale-managed.studio-theme-light body .provider-card,
+html.studio-scale-managed body.theme-light .page-head,
+html.studio-scale-managed body.theme-light .content-head,
+html.studio-scale-managed body.theme-light .block,
+html.studio-scale-managed body.theme-light .sidebar,
+html.studio-scale-managed body.theme-light .recommend-card,
+html.studio-scale-managed body.theme-light .provider-card,
+html.studio-scale-managed body.studio-theme-light .page-head,
+html.studio-scale-managed body.studio-theme-light .content-head,
+html.studio-scale-managed body.studio-theme-light .block,
+html.studio-scale-managed body.studio-theme-light .sidebar,
+html.studio-scale-managed body.studio-theme-light .recommend-card,
+html.studio-scale-managed body.studio-theme-light .provider-card,
+html body.theme-light:not(.force-light-api) .page-head,
+html body.theme-light:not(.force-light-api) .content-head,
+html body.theme-light:not(.force-light-api) .block,
+html body.theme-light:not(.force-light-api) .sidebar,
+html body.theme-light:not(.force-light-api) .recommend-card,
+html body.theme-light:not(.force-light-api) .provider-card,
+html body.studio-theme-light:not(.force-light-api) .page-head,
+html body.studio-theme-light:not(.force-light-api) .content-head,
+html body.studio-theme-light:not(.force-light-api) .block,
+html body.studio-theme-light:not(.force-light-api) .sidebar,
+html body.studio-theme-light:not(.force-light-api) .recommend-card,
+html body.studio-theme-light:not(.force-light-api) .provider-card {
+    background:var(--panel) !important;
+    border-color:var(--line) !important;
+    color:var(--text) !important;
+    box-shadow:0 20px 58px rgba(104,63,40,.14) !important;
+}
+
+html.studio-scale-managed.theme-light body .layout > .content .content-head,
+html.studio-scale-managed.theme-light body .wrap .content-head,
+html.studio-scale-managed.studio-theme-light body .layout > .content .content-head,
+html.studio-scale-managed.studio-theme-light body .wrap .content-head,
+html.studio-scale-managed body.theme-light .layout > .content .content-head,
+html.studio-scale-managed body.theme-light .wrap .content-head,
+html.studio-scale-managed body.studio-theme-light .layout > .content .content-head,
+html.studio-scale-managed body.studio-theme-light .wrap .content-head,
+html body.theme-light:not(.force-light-api) .layout > .content .content-head,
+html body.theme-light:not(.force-light-api) .wrap .content-head,
+html body.studio-theme-light:not(.force-light-api) .layout > .content .content-head,
+html body.studio-theme-light:not(.force-light-api) .wrap .content-head,
+html.studio-scale-managed.theme-light body.show-recommend-mode .provider-onboarding-card.recommend-inline-card,
+html.studio-scale-managed.theme-light body.show-recommend-mode .recommend-inline-card,
+html.studio-scale-managed.theme-light body.show-recommend-mode .recommend-group,
+html.studio-scale-managed.theme-light body.show-recommend-mode .recommend-card.recommend-platform-card,
+html.studio-scale-managed.theme-light body.show-recommend-mode .recommend-platform-card,
+html.studio-scale-managed.theme-light body.show-recommend-mode .recommend-platform-info,
+html.studio-scale-managed.theme-light body.show-recommend-mode .recommend-platform-setup,
+html.studio-scale-managed.theme-light body.show-recommend-mode .recommend-guide-source,
+html.studio-scale-managed.theme-light body.show-recommend-mode .recommend-guide-save,
+html.studio-scale-managed.theme-light body.show-recommend-mode .onboarding-rh-source-group,
+html.studio-scale-managed.theme-light body.show-recommend-mode .onboarding-key-field,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .provider-onboarding-card.recommend-inline-card,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .recommend-inline-card,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .recommend-group,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .recommend-card.recommend-platform-card,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .recommend-platform-card,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .recommend-platform-info,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .recommend-platform-setup,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .recommend-guide-source,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .recommend-guide-save,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .onboarding-rh-source-group,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .onboarding-key-field,
+html.studio-scale-managed body.theme-light.show-recommend-mode .provider-onboarding-card.recommend-inline-card,
+html.studio-scale-managed body.theme-light.show-recommend-mode .recommend-inline-card,
+html.studio-scale-managed body.theme-light.show-recommend-mode .recommend-group,
+html.studio-scale-managed body.theme-light.show-recommend-mode .recommend-card.recommend-platform-card,
+html.studio-scale-managed body.theme-light.show-recommend-mode .recommend-platform-card,
+html.studio-scale-managed body.theme-light.show-recommend-mode .recommend-platform-info,
+html.studio-scale-managed body.theme-light.show-recommend-mode .recommend-platform-setup,
+html.studio-scale-managed body.theme-light.show-recommend-mode .recommend-guide-source,
+html.studio-scale-managed body.theme-light.show-recommend-mode .recommend-guide-save,
+html.studio-scale-managed body.theme-light.show-recommend-mode .onboarding-rh-source-group,
+html.studio-scale-managed body.theme-light.show-recommend-mode .onboarding-key-field,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .provider-onboarding-card.recommend-inline-card,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .recommend-inline-card,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .recommend-group,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .recommend-card.recommend-platform-card,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .recommend-platform-card,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .recommend-platform-info,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .recommend-platform-setup,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .recommend-guide-source,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .recommend-guide-save,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .onboarding-rh-source-group,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .onboarding-key-field {
+    background:var(--panel) !important;
+    border-color:var(--line) !important;
+    color:var(--text) !important;
+    box-shadow:0 20px 58px rgba(104,63,40,.14) !important;
+}
+
+/* Final light override for regular API editor blocks and model lists. */
+html.studio-scale-managed.theme-light body .layout > .content .block,
+html.studio-scale-managed.theme-light body .layout > .content .models-toolbar,
+html.studio-scale-managed.theme-light body .layout > .content .model-grid .block,
+html.studio-scale-managed.theme-light body .wrap .block,
+html.studio-scale-managed.theme-light body .wrap .models-toolbar,
+html.studio-scale-managed.theme-light body .wrap .model-grid .block,
+html.studio-scale-managed.studio-theme-light body .layout > .content .block,
+html.studio-scale-managed.studio-theme-light body .layout > .content .models-toolbar,
+html.studio-scale-managed.studio-theme-light body .layout > .content .model-grid .block,
+html.studio-scale-managed.studio-theme-light body .wrap .block,
+html.studio-scale-managed.studio-theme-light body .wrap .models-toolbar,
+html.studio-scale-managed.studio-theme-light body .wrap .model-grid .block,
+html.studio-scale-managed body.theme-light .layout > .content .block,
+html.studio-scale-managed body.theme-light .layout > .content .models-toolbar,
+html.studio-scale-managed body.theme-light .layout > .content .model-grid .block,
+html.studio-scale-managed body.theme-light .wrap .block,
+html.studio-scale-managed body.theme-light .wrap .models-toolbar,
+html.studio-scale-managed body.theme-light .wrap .model-grid .block,
+html.studio-scale-managed body.studio-theme-light .layout > .content .block,
+html.studio-scale-managed body.studio-theme-light .layout > .content .models-toolbar,
+html.studio-scale-managed body.studio-theme-light .layout > .content .model-grid .block,
+html.studio-scale-managed body.studio-theme-light .wrap .block,
+html.studio-scale-managed body.studio-theme-light .wrap .models-toolbar,
+html.studio-scale-managed body.studio-theme-light .wrap .model-grid .block,
+html body.theme-light:not(.force-light-api) .layout > .content .block,
+html body.theme-light:not(.force-light-api) .layout > .content .models-toolbar,
+html body.theme-light:not(.force-light-api) .layout > .content .model-grid .block,
+html body.theme-light:not(.force-light-api) .wrap .block,
+html body.theme-light:not(.force-light-api) .wrap .models-toolbar,
+html body.theme-light:not(.force-light-api) .wrap .model-grid .block,
+html body.studio-theme-light:not(.force-light-api) .layout > .content .block,
+html body.studio-theme-light:not(.force-light-api) .layout > .content .models-toolbar,
+html body.studio-theme-light:not(.force-light-api) .layout > .content .model-grid .block,
+html body.studio-theme-light:not(.force-light-api) .wrap .block,
+html body.studio-theme-light:not(.force-light-api) .wrap .models-toolbar,
+html body.studio-theme-light:not(.force-light-api) .wrap .model-grid .block {
+    background:rgba(255,250,244,.88) !important;
+    border-color:rgba(127,59,38,.16) !important;
+    color:#251612 !important;
+    box-shadow:0 20px 58px rgba(104,63,40,.14) !important;
+}
+
+html.studio-scale-managed.theme-light body .layout > .content .block-head,
+html.studio-scale-managed.studio-theme-light body .layout > .content .block-head,
+html.studio-scale-managed body.theme-light .layout > .content .block-head,
+html.studio-scale-managed body.studio-theme-light .layout > .content .block-head,
+html body.theme-light:not(.force-light-api) .layout > .content .block-head,
+html body.studio-theme-light:not(.force-light-api) .layout > .content .block-head {
+    border-color:rgba(127,59,38,.16) !important;
+}
+
+html.studio-scale-managed.theme-light body .layout > .content .field-frame,
+html.studio-scale-managed.theme-light body .layout > .content .key-panel,
+html.studio-scale-managed.theme-light body .layout > .content .model-row,
+html.studio-scale-managed.theme-light body .layout > .content .model-protocol-select,
+html.studio-scale-managed.studio-theme-light body .layout > .content .field-frame,
+html.studio-scale-managed.studio-theme-light body .layout > .content .key-panel,
+html.studio-scale-managed.studio-theme-light body .layout > .content .model-row,
+html.studio-scale-managed.studio-theme-light body .layout > .content .model-protocol-select,
+html.studio-scale-managed body.theme-light .layout > .content .field-frame,
+html.studio-scale-managed body.theme-light .layout > .content .key-panel,
+html.studio-scale-managed body.theme-light .layout > .content .model-row,
+html.studio-scale-managed body.theme-light .layout > .content .model-protocol-select,
+html.studio-scale-managed body.studio-theme-light .layout > .content .field-frame,
+html.studio-scale-managed body.studio-theme-light .layout > .content .key-panel,
+html.studio-scale-managed body.studio-theme-light .layout > .content .model-row,
+html.studio-scale-managed body.studio-theme-light .layout > .content .model-protocol-select,
+html body.theme-light:not(.force-light-api) .layout > .content .field-frame,
+html body.theme-light:not(.force-light-api) .layout > .content .key-panel,
+html body.theme-light:not(.force-light-api) .layout > .content .model-row,
+html body.theme-light:not(.force-light-api) .layout > .content .model-protocol-select,
+html body.studio-theme-light:not(.force-light-api) .layout > .content .field-frame,
+html body.studio-theme-light:not(.force-light-api) .layout > .content .key-panel,
+html body.studio-theme-light:not(.force-light-api) .layout > .content .model-row,
+html body.studio-theme-light:not(.force-light-api) .layout > .content .model-protocol-select {
+    background:rgba(255,255,255,.76) !important;
+    border-color:rgba(127,59,38,.16) !important;
+    color:#251612 !important;
+    box-shadow:none !important;
+}
+
+/* Final light polish for API onboarding and branded provider rows. */
+html.theme-light body,
+body.theme-light,
+html.studio-theme-light body,
+body.studio-theme-light,
+html.studio-scale-managed.theme-light body,
+html.studio-scale-managed.studio-theme-light body,
+html.studio-scale-managed body.theme-light,
+html.studio-scale-managed body.studio-theme-light {
+    --api-warm-panel:rgba(255,250,244,.9);
+    --api-warm-surface:rgba(255,255,255,.76);
+    --api-warm-soft:rgba(127,59,38,.06);
+    --api-warm-line:rgba(127,59,38,.16);
+    --api-warm-line-strong:rgba(127,59,38,.28);
+    --api-warm-text:#251612;
+    --api-warm-muted:#735f55;
+    --api-warm-faint:#9c8a80;
+}
+
+html.theme-light body .provider-card.provider-card-banner,
+body.theme-light .provider-card.provider-card-banner,
+html.studio-theme-light body .provider-card.provider-card-banner,
+body.studio-theme-light .provider-card.provider-card-banner,
+html.studio-scale-managed.theme-light body .provider-card.provider-card-banner,
+html.studio-scale-managed.studio-theme-light body .provider-card.provider-card-banner,
+html.studio-scale-managed body.theme-light .provider-card.provider-card-banner,
+html.studio-scale-managed body.studio-theme-light .provider-card.provider-card-banner {
+    background:transparent !important;
+    border-color:transparent !important;
+    color:var(--api-warm-muted) !important;
+    box-shadow:none !important;
+}
+
+html.theme-light body .provider-card.provider-card-banner:hover,
+body.theme-light .provider-card.provider-card-banner:hover,
+html.studio-theme-light body .provider-card.provider-card-banner:hover,
+body.studio-theme-light .provider-card.provider-card-banner:hover,
+html.theme-light body .provider-card.provider-card-banner.active,
+body.theme-light .provider-card.provider-card-banner.active,
+html.studio-theme-light body .provider-card.provider-card-banner.active,
+body.studio-theme-light .provider-card.provider-card-banner.active,
+html.theme-light body.show-recommend-mode .provider-card.provider-card-banner.active,
+body.theme-light.show-recommend-mode .provider-card.provider-card-banner.active,
+html.studio-theme-light body.show-recommend-mode .provider-card.provider-card-banner.active,
+body.studio-theme-light.show-recommend-mode .provider-card.provider-card-banner.active,
+html.studio-scale-managed.theme-light body .provider-card.provider-card-banner:hover,
+html.studio-scale-managed.studio-theme-light body .provider-card.provider-card-banner:hover,
+html.studio-scale-managed body.theme-light .provider-card.provider-card-banner:hover,
+html.studio-scale-managed body.studio-theme-light .provider-card.provider-card-banner:hover,
+html.studio-scale-managed.theme-light body .provider-card.provider-card-banner.active,
+html.studio-scale-managed.studio-theme-light body .provider-card.provider-card-banner.active,
+html.studio-scale-managed body.theme-light .provider-card.provider-card-banner.active,
+html.studio-scale-managed body.studio-theme-light .provider-card.provider-card-banner.active,
+html.studio-scale-managed.theme-light body.show-recommend-mode .provider-card.provider-card-banner.active,
+html.studio-scale-managed.studio-theme-light body.show-recommend-mode .provider-card.provider-card-banner.active,
+html.studio-scale-managed body.theme-light.show-recommend-mode .provider-card.provider-card-banner.active,
+html.studio-scale-managed body.studio-theme-light.show-recommend-mode .provider-card.provider-card-banner.active {
+    background:var(--api-warm-surface) !important;
+    border-color:var(--api-warm-line) !important;
+    color:var(--api-warm-text) !important;
+    box-shadow:0 12px 28px rgba(104,63,40,.1) !important;
+}
+
+html.theme-light body .provider-card.provider-card-banner.active::before,
+body.theme-light .provider-card.provider-card-banner.active::before,
+html.studio-theme-light body .provider-card.provider-card-banner.active::before,
+body.studio-theme-light .provider-card.provider-card-banner.active::before,
+html.studio-scale-managed.theme-light body .provider-card.provider-card-banner.active::before,
+html.studio-scale-managed.studio-theme-light body .provider-card.provider-card-banner.active::before,
+html.studio-scale-managed body.theme-light .provider-card.provider-card-banner.active::before,
+html.studio-scale-managed body.studio-theme-light .provider-card.provider-card-banner.active::before {
+    background:#ef4444 !important;
+}
+
+html.theme-light body .provider-card.provider-card-banner .provider-protocol-pill,
+body.theme-light .provider-card.provider-card-banner .provider-protocol-pill,
+html.studio-theme-light body .provider-card.provider-card-banner .provider-protocol-pill,
+body.studio-theme-light .provider-card.provider-card-banner .provider-protocol-pill,
+html.studio-scale-managed.theme-light body .provider-card.provider-card-banner .provider-protocol-pill,
+html.studio-scale-managed.studio-theme-light body .provider-card.provider-card-banner .provider-protocol-pill,
+html.studio-scale-managed body.theme-light .provider-card.provider-card-banner .provider-protocol-pill,
+html.studio-scale-managed body.studio-theme-light .provider-card.provider-card-banner .provider-protocol-pill {
+    background:rgba(255,250,244,.78) !important;
+    border:1px solid var(--api-warm-line) !important;
+    color:var(--api-warm-muted) !important;
+}
+
+html.theme-light body .provider-onboarding-card,
+body.theme-light .provider-onboarding-card,
+html.studio-theme-light body .provider-onboarding-card,
+body.studio-theme-light .provider-onboarding-card,
+html.theme-light body .recommend-inline-card,
+body.theme-light .recommend-inline-card,
+html.studio-theme-light body .recommend-inline-card,
+body.studio-theme-light .recommend-inline-card,
+html.studio-scale-managed.theme-light body .provider-onboarding-card,
+html.studio-scale-managed.studio-theme-light body .provider-onboarding-card,
+html.studio-scale-managed body.theme-light .provider-onboarding-card,
+html.studio-scale-managed body.studio-theme-light .provider-onboarding-card,
+html.studio-scale-managed.theme-light body .recommend-inline-card,
+html.studio-scale-managed.studio-theme-light body .recommend-inline-card,
+html.studio-scale-managed body.theme-light .recommend-inline-card,
+html.studio-scale-managed body.studio-theme-light .recommend-inline-card {
+    background:var(--api-warm-panel) !important;
+    border-color:var(--api-warm-line) !important;
+    color:var(--api-warm-text) !important;
+    box-shadow:0 20px 58px rgba(104,63,40,.14) !important;
+}
+
+html.theme-light body .recommend-inline-card .recommend-card,
+body.theme-light .recommend-inline-card .recommend-card,
+html.studio-theme-light body .recommend-inline-card .recommend-card,
+body.studio-theme-light .recommend-inline-card .recommend-card,
+html.theme-light body .recommend-platform-card,
+body.theme-light .recommend-platform-card,
+html.studio-theme-light body .recommend-platform-card,
+body.studio-theme-light .recommend-platform-card,
+html.theme-light body .recommend-platform-info,
+body.theme-light .recommend-platform-info,
+html.studio-theme-light body .recommend-platform-info,
+body.studio-theme-light .recommend-platform-info,
+html.theme-light body .recommend-platform-setup,
+body.theme-light .recommend-platform-setup,
+html.studio-theme-light body .recommend-platform-setup,
+body.studio-theme-light .recommend-platform-setup,
+html.theme-light body .onboarding-step-panel,
+body.theme-light .onboarding-step-panel,
+html.studio-theme-light body .onboarding-step-panel,
+body.studio-theme-light .onboarding-step-panel,
+html.theme-light body .onboarding-rh-source-group,
+body.theme-light .onboarding-rh-source-group,
+html.studio-theme-light body .onboarding-rh-source-group,
+body.studio-theme-light .onboarding-rh-source-group,
+html.theme-light body .onboarding-key-field,
+body.theme-light .onboarding-key-field,
+html.studio-theme-light body .onboarding-key-field,
+body.studio-theme-light .onboarding-key-field,
+html.studio-scale-managed.theme-light body .recommend-inline-card .recommend-card,
+html.studio-scale-managed.studio-theme-light body .recommend-inline-card .recommend-card,
+html.studio-scale-managed body.theme-light .recommend-inline-card .recommend-card,
+html.studio-scale-managed body.studio-theme-light .recommend-inline-card .recommend-card,
+html.studio-scale-managed.theme-light body .recommend-platform-card,
+html.studio-scale-managed.studio-theme-light body .recommend-platform-card,
+html.studio-scale-managed body.theme-light .recommend-platform-card,
+html.studio-scale-managed body.studio-theme-light .recommend-platform-card,
+html.studio-scale-managed.theme-light body .recommend-platform-info,
+html.studio-scale-managed.studio-theme-light body .recommend-platform-info,
+html.studio-scale-managed body.theme-light .recommend-platform-info,
+html.studio-scale-managed body.studio-theme-light .recommend-platform-info,
+html.studio-scale-managed.theme-light body .recommend-platform-setup,
+html.studio-scale-managed.studio-theme-light body .recommend-platform-setup,
+html.studio-scale-managed body.theme-light .recommend-platform-setup,
+html.studio-scale-managed body.studio-theme-light .recommend-platform-setup,
+html.studio-scale-managed.theme-light body .onboarding-step-panel,
+html.studio-scale-managed.studio-theme-light body .onboarding-step-panel,
+html.studio-scale-managed body.theme-light .onboarding-step-panel,
+html.studio-scale-managed body.studio-theme-light .onboarding-step-panel,
+html.studio-scale-managed.theme-light body .onboarding-rh-source-group,
+html.studio-scale-managed.studio-theme-light body .onboarding-rh-source-group,
+html.studio-scale-managed body.theme-light .onboarding-rh-source-group,
+html.studio-scale-managed body.studio-theme-light .onboarding-rh-source-group,
+html.studio-scale-managed.theme-light body .onboarding-key-field,
+html.studio-scale-managed.studio-theme-light body .onboarding-key-field,
+html.studio-scale-managed body.theme-light .onboarding-key-field,
+html.studio-scale-managed body.studio-theme-light .onboarding-key-field {
+    background:var(--api-warm-surface) !important;
+    border-color:var(--api-warm-line) !important;
+    color:var(--api-warm-text) !important;
+    box-shadow:none !important;
+}
+
+html.theme-light body .onboarding-key-field input,
+body.theme-light .onboarding-key-field input,
+html.studio-theme-light body .onboarding-key-field input,
+body.studio-theme-light .onboarding-key-field input,
+html.studio-scale-managed.theme-light body .onboarding-key-field input,
+html.studio-scale-managed.studio-theme-light body .onboarding-key-field input,
+html.studio-scale-managed body.theme-light .onboarding-key-field input,
+html.studio-scale-managed body.studio-theme-light .onboarding-key-field input {
+    background:#fffaf4 !important;
+    border-color:var(--api-warm-line) !important;
+    color:var(--api-warm-text) !important;
+    box-shadow:none !important;
+}
+
+html.theme-light body .onboarding-key-btn,
+body.theme-light .onboarding-key-btn,
+html.studio-theme-light body .onboarding-key-btn,
+body.studio-theme-light .onboarding-key-btn,
+html.theme-light body .recommend-guide-key-btn,
+body.theme-light .recommend-guide-key-btn,
+html.studio-theme-light body .recommend-guide-key-btn,
+body.studio-theme-light .recommend-guide-key-btn,
+html.studio-scale-managed.theme-light body .onboarding-key-btn,
+html.studio-scale-managed.studio-theme-light body .onboarding-key-btn,
+html.studio-scale-managed body.theme-light .onboarding-key-btn,
+html.studio-scale-managed body.studio-theme-light .onboarding-key-btn,
+html.studio-scale-managed.theme-light body .recommend-guide-key-btn,
+html.studio-scale-managed.studio-theme-light body .recommend-guide-key-btn,
+html.studio-scale-managed body.theme-light .recommend-guide-key-btn,
+html.studio-scale-managed body.studio-theme-light .recommend-guide-key-btn {
+    background:#fffaf4 !important;
+    border-color:var(--api-warm-line) !important;
+    color:var(--api-warm-text) !important;
+    box-shadow:none !important;
+}
+
+html.theme-light body .onboarding-save-btn,
+body.theme-light .onboarding-save-btn,
+html.studio-theme-light body .onboarding-save-btn,
+body.studio-theme-light .onboarding-save-btn,
+html.studio-scale-managed.theme-light body .onboarding-save-btn,
+html.studio-scale-managed.studio-theme-light body .onboarding-save-btn,
+html.studio-scale-managed body.theme-light .onboarding-save-btn,
+html.studio-scale-managed body.studio-theme-light .onboarding-save-btn {
+    background:#334155 !important;
+    border-color:rgba(51,65,85,.18) !important;
+    color:#fffaf4 !important;
+    box-shadow:0 12px 24px rgba(51,65,85,.16) !important;
+}
+
+html.theme-light body .onboarding-badge,
+body.theme-light .onboarding-badge,
+html.studio-theme-light body .onboarding-badge,
+body.studio-theme-light .onboarding-badge,
+html.theme-light body .onboarding-step-label,
+body.theme-light .onboarding-step-label,
+html.studio-theme-light body .onboarding-step-label,
+body.studio-theme-light .onboarding-step-label,
+html.theme-light body .recommend-cap-icons span,
+body.theme-light .recommend-cap-icons span,
+html.studio-theme-light body .recommend-cap-icons span,
+body.studio-theme-light .recommend-cap-icons span,
+html.studio-scale-managed.theme-light body .onboarding-badge,
+html.studio-scale-managed.studio-theme-light body .onboarding-badge,
+html.studio-scale-managed body.theme-light .onboarding-badge,
+html.studio-scale-managed body.studio-theme-light .onboarding-badge,
+html.studio-scale-managed.theme-light body .onboarding-step-label,
+html.studio-scale-managed.studio-theme-light body .onboarding-step-label,
+html.studio-scale-managed body.theme-light .onboarding-step-label,
+html.studio-scale-managed body.studio-theme-light .onboarding-step-label,
+html.studio-scale-managed.theme-light body .recommend-cap-icons span,
+html.studio-scale-managed.studio-theme-light body .recommend-cap-icons span,
+html.studio-scale-managed body.theme-light .recommend-cap-icons span,
+html.studio-scale-managed body.studio-theme-light .recommend-cap-icons span {
+    background:rgba(239,68,68,.08) !important;
+    border-color:rgba(239,68,68,.18) !important;
+    color:#b42318 !important;
+}
+
+/* Last-mile light polish for the inline recommendation form cells. */
+html.theme-light body .recommend-guide-source.onboarding-rh-source-group,
+body.theme-light .recommend-guide-source.onboarding-rh-source-group,
+html.studio-theme-light body .recommend-guide-source.onboarding-rh-source-group,
+body.studio-theme-light .recommend-guide-source.onboarding-rh-source-group,
+html.theme-light body .recommend-guide-save,
+body.theme-light .recommend-guide-save,
+html.studio-theme-light body .recommend-guide-save,
+body.studio-theme-light .recommend-guide-save,
+html.theme-light body .onboarding-key-field.onboarding-rh-row-field,
+body.theme-light .onboarding-key-field.onboarding-rh-row-field,
+html.studio-theme-light body .onboarding-key-field.onboarding-rh-row-field,
+body.studio-theme-light .onboarding-key-field.onboarding-rh-row-field,
+html.studio-scale-managed.theme-light body .recommend-guide-source.onboarding-rh-source-group,
+html.studio-scale-managed.studio-theme-light body .recommend-guide-source.onboarding-rh-source-group,
+html.studio-scale-managed body.theme-light .recommend-guide-source.onboarding-rh-source-group,
+html.studio-scale-managed body.studio-theme-light .recommend-guide-source.onboarding-rh-source-group,
+html.studio-scale-managed.theme-light body .recommend-guide-save,
+html.studio-scale-managed.studio-theme-light body .recommend-guide-save,
+html.studio-scale-managed body.theme-light .recommend-guide-save,
+html.studio-scale-managed body.studio-theme-light .recommend-guide-save,
+html.studio-scale-managed.theme-light body .onboarding-key-field.onboarding-rh-row-field,
+html.studio-scale-managed.studio-theme-light body .onboarding-key-field.onboarding-rh-row-field,
+html.studio-scale-managed body.theme-light .onboarding-key-field.onboarding-rh-row-field,
+html.studio-scale-managed body.studio-theme-light .onboarding-key-field.onboarding-rh-row-field {
+    background:rgba(255,255,255,.76) !important;
+    border-color:rgba(127,59,38,.16) !important;
+    color:#251612 !important;
+    box-shadow:none !important;
+}

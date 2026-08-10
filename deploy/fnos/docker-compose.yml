@@ -14,6 +14,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./api-env:/app/API
+      - ./assets:/app/assets
       - ./team-assets:/app/assets/team-assets
       - ./output:/app/output
     ports:

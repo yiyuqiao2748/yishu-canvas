@@ -4,6 +4,7 @@
     const TEAM_CLOUD_TEAM_KEY = "teamCloudCurrentTeamId";
     const TEAM_CLOUD_PROJECT_KEY = "teamCloudCurrentProjectId";
     const TEAM_CLOUD_ACCESS_TOKEN_KEY = "teamCloudAccessToken";
+    const TEAM_CLOUD_SESSION_KEY = "teamCloudSessionId";
 
     const state = {
         mode: "login",
@@ -21,6 +22,9 @@
         selectedApiProviderId: "",
         canvasVersions: [],
         config: null,
+        awaitingSignupVerification: false,
+        pendingSignupEmail: "",
+        pendingSignupUsername: "",
     };
 
     const TEAM_API_PROVIDER_PRESETS = [
@@ -88,6 +92,19 @@
         } catch(e) {}
     }
 
+    function teamSessionId(){
+        try {
+            let id = sessionStorage.getItem(TEAM_CLOUD_SESSION_KEY);
+            if(!id){
+                id = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+                sessionStorage.setItem(TEAM_CLOUD_SESSION_KEY, id);
+            }
+            return id;
+        } catch(e) {
+            return `sess_${Date.now().toString(36)}`;
+        }
+    }
+
     async function api(path, options){
         const token = storedAccessToken();
         const headers = {
@@ -112,6 +129,20 @@
             throw new Error(apiErrorMessage(data));
         }
         return data;
+    }
+
+    async function sendHeartbeat(){
+        if(!state.user) return;
+        try {
+            await api("/sessions/heartbeat", {
+                method: "POST",
+                body: JSON.stringify({
+                    team_id: state.selectedTeamId || "",
+                    session_id: teamSessionId(),
+                    page: location.pathname,
+                }),
+            });
+        } catch(e) {}
     }
 
     function apiErrorMessage(data){
@@ -142,6 +173,8 @@
     function renderAuth(){
         const signedIn = !!state.user;
         const canManageApi = canManageTeamApi();
+        const signupMode = state.mode === "signup";
+        const verifyMode = signupMode && state.awaitingSignupVerification;
         $("signedOut").hidden = signedIn;
         $("signedIn").hidden = !signedIn;
         $("logoutBtn").hidden = !signedIn;
@@ -171,13 +204,19 @@
 
         const loginMode = state.mode === "login";
         $("usernameField").hidden = loginMode;
-        $("username").required = !loginMode;
+        $("username").required = signupMode && !verifyMode;
+        $("username").disabled = verifyMode;
         $("authIdentifierLabel").textContent = loginMode ? "账号 / 邮箱" : "邮箱";
         $("authIdentifier").type = loginMode ? "text" : "email";
         $("authIdentifier").name = loginMode ? "identifier" : "email";
         $("authIdentifier").autocomplete = loginMode ? "username" : "email";
         $("authIdentifier").placeholder = loginMode ? "输入账号名或邮箱" : "输入邮箱";
+        $("authIdentifier").disabled = verifyMode;
+        $("password").disabled = verifyMode;
+        $("verificationField").hidden = !verifyMode;
+        $("verificationToken").required = verifyMode;
         $("recoverPasswordBtn").hidden = !loginMode;
+        $("resendVerificationBtn").hidden = !verifyMode;
 
         $("loginTab").classList.toggle("active", state.mode === "login");
         $("signupTab").classList.toggle("active", state.mode === "signup");
@@ -185,7 +224,9 @@
         $("signupTab").setAttribute("aria-selected", state.mode === "signup" ? "true" : "false");
         $("authSubmit").innerHTML = state.mode === "login"
             ? '<i data-lucide="log-in" width="16" height="16"></i><span>登录</span>'
-            : '<i data-lucide="user-plus" width="16" height="16"></i><span>注册</span>';
+            : (verifyMode
+                ? '<i data-lucide="mail-check" width="16" height="16"></i><span>验证并注册</span>'
+                : '<i data-lucide="mail-plus" width="16" height="16"></i><span>发送邮箱验证码</span>');
         $("password").autocomplete = state.mode === "login" ? "current-password" : "new-password";
         iconRefresh();
     }
@@ -719,22 +760,35 @@
 
     async function loadMe(showAuthError){
         try {
-            const data = await api("/me");
+            const params = new URLSearchParams();
+            if(state.selectedTeamId) params.set("team_id", state.selectedTeamId);
+            if(state.selectedProjectId) params.set("project_id", state.selectedProjectId);
+            const data = await api(`/bootstrap${params.toString() ? `?${params.toString()}` : ""}`);
             state.user = data.user;
             state.teams = data.teams || [];
-            if(!state.selectedTeamId && state.teams[0]){
-                state.selectedTeamId = state.teams[0].id;
-            }
+            state.selectedTeamId = data.selected_team_id || state.selectedTeamId || (state.teams[0]?.id || "");
+            state.selectedProjectId = data.selected_project_id || state.selectedProjectId || "";
+            state.projects = data.projects || [];
+            state.canvases = data.canvases || [];
+            state.apiProviders = data.api_providers || [];
+            state.generationLogs = data.generation_logs || [];
+            state.generationSummary = data.generation_summary || null;
             renderAuth();
             renderTeams();
             if(state.selectedTeamId){
-                await selectTeam(state.selectedTeamId, true);
+                renderMembers(data.members || []);
+                renderProjects();
+                renderCanvases();
+                renderApiProviders();
+                renderGenerationLogs();
+                refreshSelectedTeamSections(state.selectedTeamId);
             } else {
                 renderMembers([]);
                 renderProjects();
                 renderCanvases();
                 renderGenerationLogs();
             }
+            sendHeartbeat();
         } catch(e) {
             state.user = null;
             state.teams = [];
@@ -760,6 +814,25 @@
         }
     }
 
+    async function refreshSelectedTeamSections(teamId){
+        if(!teamId) return;
+        const tasks = [
+            api(`/teams/${encodeURIComponent(teamId)}/members`)
+                .then((data) => renderMembers(data.members || []))
+                .catch((e) => setMessage($("teamMessage"), e.message, "error")),
+            loadProjects(teamId).catch((e) => setMessage($("projectMessage"), e.message, "error")),
+            loadGenerationLogs(teamId).catch((e) => setMessage($("teamMessage"), e.message, "error")),
+        ];
+        if(canManageTeamApi()){
+            tasks.push(loadApiProviders(teamId).catch((e) => setMessage($("apiMessage"), e.message, "error")));
+        } else {
+            state.apiProviders = [];
+            renderApiProviders();
+        }
+        await Promise.allSettled(tasks);
+        renderAuth();
+    }
+
     async function selectTeam(teamId, silent){
         state.selectedTeamId = teamId;
         state.selectedApiProviderId = "";
@@ -769,16 +842,15 @@
         } catch(e) {}
         renderTeams();
         try {
-            const data = await api(`/teams/${encodeURIComponent(teamId)}/members`);
-            renderMembers(data.members || []);
-            await loadProjects(teamId);
-            if(canManageTeamApi()){
-                await loadApiProviders(teamId);
-            } else {
-                state.apiProviders = [];
-                renderApiProviders();
-            }
-            await loadGenerationLogs(teamId);
+            renderMembers([]);
+            state.projects = [];
+            state.canvases = [];
+            state.generationLogs = [];
+            state.generationSummary = null;
+            renderProjects();
+            renderCanvases();
+            renderGenerationLogs();
+            await refreshSelectedTeamSections(teamId);
             setMessage($("teamMessage"), silent ? "" : "团队已选择", silent ? "" : "ok");
         } catch(e) {
             renderMembers([]);
@@ -905,29 +977,72 @@
         setMessage($("authMessage"), "", "");
         try {
             const isLogin = state.mode === "login";
-            const payload = isLogin
-                ? {
-                    identifier: $("authIdentifier").value.trim(),
-                    password: $("password").value,
-                }
-                : {
+            let path = "/auth/login";
+            let payload = {
+                identifier: $("authIdentifier").value.trim(),
+                password: $("password").value,
+            };
+            if(!isLogin && state.awaitingSignupVerification){
+                path = "/auth/signup/verify";
+                payload = {
+                    email: state.pendingSignupEmail || $("authIdentifier").value.trim(),
+                    token: $("verificationToken").value.trim(),
+                };
+            } else if(!isLogin) {
+                path = "/auth/signup/start";
+                payload = {
                     username: $("username").value.trim(),
                     email: $("authIdentifier").value.trim(),
                     password: $("password").value,
                 };
-            const path = state.mode === "login" ? "/auth/login" : "/auth/signup";
+            }
             const data = await api(path, {
                 method: "POST",
                 body: JSON.stringify(payload),
             });
+            if(!isLogin && data.verification_required){
+                state.awaitingSignupVerification = true;
+                state.pendingSignupEmail = data.email || payload.email || "";
+                state.pendingSignupUsername = data.username || payload.username || "";
+                $("verificationToken").value = "";
+                setMessage($("authMessage"), "验证码已发送，请查看邮箱并输入验证码完成注册。", "ok");
+                renderAuth();
+                $("verificationToken").focus();
+                return;
+            }
             if(data.session_ready){
                 storeAccessToken(data.access_token || "");
-                setMessage($("authMessage"), state.mode === "login" ? "已登录" : "已注册并登录", "ok");
+                state.awaitingSignupVerification = false;
+                state.pendingSignupEmail = "";
+                state.pendingSignupUsername = "";
+                setMessage($("authMessage"), state.mode === "login" ? "已登录" : "邮箱已验证，注册成功", "ok");
                 await loadMe(true);
             } else {
                 storeAccessToken("");
-                setMessage($("authMessage"), "注册已提交，请检查邮箱验证", "ok");
+                setMessage($("authMessage"), "请检查邮箱验证码。", "ok");
             }
+        } catch(e) {
+            setMessage($("authMessage"), e.message, "error");
+        } finally {
+            setBusy(button, false);
+        }
+    }
+
+    async function resendVerification(){
+        const button = $("resendVerificationBtn");
+        const email = state.pendingSignupEmail || $("authIdentifier").value.trim();
+        if(!email){
+            setMessage($("authMessage"), "请先填写邮箱。", "error");
+            return;
+        }
+        setBusy(button, true);
+        setMessage($("authMessage"), "", "");
+        try {
+            await api("/auth/verification/resend", {
+                method: "POST",
+                body: JSON.stringify({ email }),
+            });
+            setMessage($("authMessage"), "验证码已重新发送，请查看邮箱。", "ok");
         } catch(e) {
             setMessage($("authMessage"), e.message, "error");
         } finally {
@@ -1289,14 +1404,17 @@
     async function init(){
         $("loginTab").addEventListener("click", () => {
             state.mode = "login";
+            state.awaitingSignupVerification = false;
             renderAuth();
         });
         $("signupTab").addEventListener("click", () => {
             state.mode = "signup";
+            state.awaitingSignupVerification = false;
             renderAuth();
         });
         $("authForm").addEventListener("submit", submitAuth);
         $("recoverPasswordBtn").addEventListener("click", recoverPassword);
+        $("resendVerificationBtn").addEventListener("click", resendVerification);
         $("teamForm").addEventListener("submit", submitTeam);
         $("inviteForm").addEventListener("submit", submitInvite);
         $("projectForm").addEventListener("submit", submitProject);
@@ -1366,16 +1484,6 @@
         $("logoutBtn").addEventListener("click", logout);
         $("homeBtn")?.addEventListener("click", goHome);
 
-        try {
-            state.config = await api("/config");
-            updateStatus();
-        } catch(e) {
-            state.config = {};
-            $("systemStatus").classList.add("warn");
-            $("systemStatus").innerHTML = '<i data-lucide="badge-alert" width="16" height="16"></i><span>连接失败</span>';
-            iconRefresh();
-        }
-        await loadApiCatalogProviders();
         renderAuth();
         renderTeams();
         renderMembers([]);
@@ -1383,7 +1491,22 @@
         renderCanvases();
         renderApiProviders();
         renderGenerationLogs();
-        await loadMe();
+        const configTask = api("/config")
+            .then((data) => {
+                state.config = data;
+                updateStatus();
+            })
+            .catch(() => {
+                state.config = {};
+                $("systemStatus").classList.add("warn");
+                $("systemStatus").innerHTML = '<i data-lucide="badge-alert" width="16" height="16"></i><span>连接失败</span>';
+                iconRefresh();
+            });
+        await Promise.allSettled([configTask, loadApiCatalogProviders(), loadMe()]);
+        window.setInterval(sendHeartbeat, 60000);
+        document.addEventListener("visibilitychange", () => {
+            if(document.visibilityState === "visible") sendHeartbeat();
+        });
         iconRefresh();
     }
 

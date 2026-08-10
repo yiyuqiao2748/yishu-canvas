@@ -950,12 +950,17 @@
                                 <label for="password">密码</label>
                                 <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" aria-label="密码" required>
                             </div>
+                            <div class="field" id="verificationField" hidden>
+                                <label for="verificationToken">邮箱验证码</label>
+                                <input id="verificationToken" name="verificationToken" type="text" inputmode="numeric" autocomplete="one-time-code" minlength="4" maxlength="16" placeholder="输入邮箱收到的验证码">
+                            </div>
                             <button class="btn primary" id="authSubmit" type="submit">
                                 <i data-lucide="log-in" width="16" height="16"></i>
                                 <span>登录</span>
                             </button>
                             <div class="auth-actions">
                                 <button class="link-btn" id="recoverPasswordBtn" type="button">忘记密码？</button>
+                                <button class="link-btn" id="resendVerificationBtn" type="button" hidden>重发验证码</button>
                             </div>
                         </form>
                     </div>
@@ -1106,6 +1111,6 @@
         </div>
     </div>
 
-    <script src="/static/js/team-cloud.js?v=2026.07.29.4.1785516065"></script>
+    <script src="/static/js/team-cloud.js?v=2026.08.09.1"></script>
 </body>
 </html>

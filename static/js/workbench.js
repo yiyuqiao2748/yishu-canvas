@@ -6,6 +6,8 @@
     let currentWorkbenchUser = null;
     let currentWorkbenchTeams = [];
     let authModalMode = 'user';
+    let authSignupAwaitingVerification = false;
+    let authPendingSignupEmail = '';
     const PROMPT_PLACEHOLDERS = [
         '例如：为城市展厅设计一张建筑概念图，玻璃幕墙、金红色灯带、入口有水景和人流，高级夜景摄影质感。',
         '例如：设计一家现代中餐厅室内效果图，暖金灯光、深色木饰面、开放式吧台、圆桌包间、空间层次丰富。',
@@ -22,6 +24,7 @@
         'gpt-chat',
         'canvas',
         'team-cloud',
+        'admin-preview',
         'asset-manager',
         'api-settings',
         'comfyui-settings',
@@ -32,6 +35,7 @@
             workbench: '/static/workbench.html',
             canvas: '/static/canvas-list.html',
             'team-cloud': '/static/team-cloud.html',
+            'admin-preview': '/static/admin-preview.html',
             'asset-manager': '/static/asset-manager.html',
             'gpt-chat': '/static/gpt-chat.html',
         };
@@ -282,8 +286,16 @@
         if(type) el.classList.add(type);
     }
 
-    function setAuthMode(mode) {
-        authModalMode = mode === 'admin' ? 'admin' : 'user';
+    function setAuthMode(mode, options = {}) {
+        authModalMode = mode === 'admin' ? 'admin' : (mode === 'signup' ? 'signup' : (mode === 'recover' ? 'recover' : 'user'));
+        if(authModalMode !== 'signup' || options.resetSignup) {
+            authSignupAwaitingVerification = false;
+            authPendingSignupEmail = '';
+        }
+        const isSignup = authModalMode === 'signup';
+        const isAdmin = authModalMode === 'admin';
+        const isRecover = authModalMode === 'recover';
+        const verifyMode = isSignup && authSignupAwaitingVerification;
         document.querySelectorAll('[data-auth-mode]').forEach(button => {
             const active = button.dataset.authMode === authModalMode;
             button.classList.toggle('active', active);
@@ -291,9 +303,50 @@
         });
         const kicker = document.getElementById('authModalKicker');
         const title = document.getElementById('authModalTitle');
-        if(kicker) kicker.textContent = authModalMode === 'admin' ? '管理员入口' : '账户登录';
-        if(title) title.textContent = authModalMode === 'admin' ? '管理员登录' : '登录到 AI设计师';
-        setAuthMessage(authModalMode === 'admin' ? '管理员登录成功后会直接进入 API 设置。' : '登录后可使用团队资源；管理员可进入 API 设置。');
+        const usernameField = document.getElementById('authUsernameField');
+        const usernameInput = document.getElementById('authUsernameInput');
+        const identifierLabel = document.getElementById('authIdentifierLabel');
+        const identifierInput = document.getElementById('authIdentifierInput');
+        const passwordInput = document.getElementById('authPasswordInput');
+        const verificationField = document.getElementById('authVerificationField');
+        const verificationInput = document.getElementById('authVerificationInput');
+        const resendButton = document.querySelector('[data-auth-resend]');
+        const recoverButton = document.querySelector('[data-auth-recover]');
+        const backLoginButton = document.querySelector('[data-auth-back-login]');
+        const submitButton = document.querySelector('[data-auth-submit]');
+        if(kicker) kicker.textContent = isAdmin ? '管理员入口' : (isSignup ? '邮箱验证注册' : (isRecover ? '找回密码' : '账户登录'));
+        if(title) title.textContent = isAdmin ? '管理员登录' : (isSignup ? '注册 AI设计师账号' : (isRecover ? '找回 AI设计师账号' : '登录到 AI设计师'));
+        if(usernameField) usernameField.hidden = !isSignup || verifyMode;
+        if(usernameInput) {
+            usernameInput.required = isSignup && !verifyMode;
+            usernameInput.disabled = verifyMode;
+        }
+        if(identifierLabel) identifierLabel.textContent = isSignup ? '邮箱' : (isRecover ? '邮箱 / 账号' : '邮箱 / 账号');
+        if(identifierInput) {
+            identifierInput.type = isSignup ? 'email' : 'text';
+            identifierInput.name = isSignup ? 'email' : 'identifier';
+            identifierInput.autocomplete = isSignup ? 'email' : 'username';
+            identifierInput.placeholder = isSignup ? '输入邮箱接收验证码' : (isRecover ? '输入邮箱或账号找回密码' : '输入邮箱或账号');
+            identifierInput.disabled = verifyMode;
+        }
+        const passwordField = passwordInput?.closest?.('.auth-field');
+        if(passwordField) passwordField.hidden = isRecover || verifyMode;
+        if(passwordInput) {
+            passwordInput.autocomplete = isSignup ? 'new-password' : 'current-password';
+            passwordInput.disabled = isRecover || verifyMode;
+            passwordInput.required = !isRecover && !verifyMode;
+        }
+        if(verificationField) verificationField.hidden = !verifyMode;
+        if(verificationInput) verificationInput.required = verifyMode;
+        if(resendButton) resendButton.hidden = !verifyMode;
+        if(recoverButton) recoverButton.hidden = authModalMode !== 'user';
+        if(backLoginButton) backLoginButton.hidden = authModalMode !== 'recover';
+        if(submitButton) {
+            submitButton.textContent = isAdmin ? '管理员登录' : (verifyMode ? '验证并注册' : (isSignup ? '发送验证码' : (isRecover ? '发送找回邮件' : '登录')));
+        }
+        setAuthMessage(isAdmin
+            ? '管理员登录成功后会直接进入 API 设置。'
+            : (isSignup ? '注册需要邮箱验证码，邮箱之后用于找回和修改密码。' : (isRecover ? '输入邮箱或账号后，我们会发送重置密码邮件。' : '登录后可使用团队资源；管理员可进入 API 设置。')));
     }
 
     function openAuthModal(mode = 'user') {
@@ -320,21 +373,65 @@
         event?.preventDefault?.();
         const identifier = String(document.getElementById('authIdentifierInput')?.value || '').trim();
         const password = String(document.getElementById('authPasswordInput')?.value || '');
+        const username = String(document.getElementById('authUsernameInput')?.value || '').trim();
+        const verification = String(document.getElementById('authVerificationInput')?.value || '').trim();
         const button = document.querySelector('[data-auth-submit]');
-        if(!identifier || !password) {
-            setAuthMessage('请输入邮箱/账号和密码。', 'error');
+        const isSignup = authModalMode === 'signup';
+        const isRecover = authModalMode === 'recover';
+        const verifyMode = isSignup && authSignupAwaitingVerification;
+        if(!identifier || (!verifyMode && !isRecover && !password) || (isSignup && !verifyMode && !username)) {
+            setAuthMessage(isSignup ? '请输入账号名、邮箱和密码。' : (isRecover ? '请输入邮箱或账号。' : '请输入邮箱/账号和密码。'), 'error');
+            return;
+        }
+        if(verifyMode && !verification) {
+            setAuthMessage('请输入邮箱验证码。', 'error');
             return;
         }
         if(button) button.disabled = true;
-        setAuthMessage('正在登录...');
+        setAuthMessage(verifyMode ? '正在验证邮箱...' : (isSignup ? '正在发送验证码...' : (isRecover ? '正在发送找回邮件...' : '正在登录...')));
         try {
-            const data = await fetchJson('/api/team-cloud/auth/login', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ identifier, password }),
-            });
+            let data;
+            if(isRecover) {
+                await fetchJson('/api/team-cloud/auth/recover', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ identifier }),
+                });
+                setAuthMessage('如果账号存在，找回密码邮件会发送到对应邮箱。', 'ok');
+                return;
+            }
+            if(verifyMode) {
+                data = await fetchJson('/api/team-cloud/auth/signup/verify', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ email: authPendingSignupEmail || identifier, token: verification }),
+                });
+            } else if(isSignup) {
+                data = await fetchJson('/api/team-cloud/auth/signup/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username, email: identifier, password }),
+                });
+                if(data.verification_required) {
+                    authSignupAwaitingVerification = true;
+                    authPendingSignupEmail = data.email || identifier;
+                    setAuthMode('signup');
+                    document.getElementById('authVerificationInput').value = '';
+                    document.getElementById('authVerificationInput')?.focus?.({ preventScroll: true });
+                    setAuthMessage('验证码已发送，请查看邮箱并输入验证码完成注册。', 'ok');
+                    return;
+                }
+            } else {
+                data = await fetchJson('/api/team-cloud/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ identifier, password }),
+                });
+            }
             if(!data.session_ready) throw new Error('登录未成功，请检查账号状态。');
             storeTeamAccessToken(data.access_token || '');
+            authSignupAwaitingVerification = false;
+            authPendingSignupEmail = '';
             await loadCurrentUser();
             if(authModalMode === 'admin') {
                 if(!hasApiSettingsAccess()) {
@@ -346,9 +443,32 @@
                 return;
             }
             closeAuthModal();
-            setStatus('登录成功');
+            setStatus(isSignup ? '注册成功' : '登录成功');
         } catch(e) {
-            setAuthMessage(e.message || '账号或密码不正确。', 'error');
+            setAuthMessage(e.message || (isSignup ? '注册失败，请检查邮箱验证码。' : '账号或密码不正确。'), 'error');
+        } finally {
+            if(button) button.disabled = false;
+        }
+    }
+
+    async function resendAuthVerification() {
+        const button = document.querySelector('[data-auth-resend]');
+        const email = authPendingSignupEmail || String(document.getElementById('authIdentifierInput')?.value || '').trim();
+        if(!email) {
+            setAuthMessage('请先填写邮箱。', 'error');
+            return;
+        }
+        if(button) button.disabled = true;
+        setAuthMessage('正在重发验证码...');
+        try {
+            await fetchJson('/api/team-cloud/auth/verification/resend', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ email }),
+            });
+            setAuthMessage('验证码已重新发送，请查看邮箱。', 'ok');
+        } catch(e) {
+            setAuthMessage(e.message || '验证码重发失败。', 'error');
         } finally {
             if(button) button.disabled = false;
         }
@@ -878,7 +998,10 @@
         document.querySelector('[data-feedback-submit]')?.addEventListener('click', submitFeedback);
         document.getElementById('authModalForm')?.addEventListener('submit', submitAuthModal);
         document.querySelectorAll('[data-auth-close]').forEach(button => button.addEventListener('click', closeAuthModal));
-        document.querySelectorAll('[data-auth-mode]').forEach(button => button.addEventListener('click', () => setAuthMode(button.dataset.authMode)));
+        document.querySelectorAll('[data-auth-mode]').forEach(button => button.addEventListener('click', () => setAuthMode(button.dataset.authMode, { resetSignup: true })));
+        document.querySelector('[data-auth-recover]')?.addEventListener('click', () => setAuthMode('recover'));
+        document.querySelector('[data-auth-back-login]')?.addEventListener('click', () => setAuthMode('user'));
+        document.querySelector('[data-auth-resend]')?.addEventListener('click', resendAuthVerification);
         document.getElementById('authModal')?.addEventListener('click', event => {
             if(event.target?.id === 'authModal') closeAuthModal();
         });

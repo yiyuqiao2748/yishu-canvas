@@ -802,3 +802,271 @@ body.studio-theme-dark #agentPanel {
         height:min(430px, calc(100vh - 96px));
     }
 }
+
+/* 2026-08-09 embedded light theme sync */
+html.theme-light body #agentPanel,
+html.studio-theme-light body #agentPanel,
+body.theme-light #agentPanel,
+body.studio-theme-light #agentPanel,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel {
+    --agent-bg:rgba(255,250,244,.94);
+    --agent-chat-bg:rgba(255,255,255,.72);
+    --agent-card:rgba(255,255,255,.82);
+    --agent-hover:rgba(239,68,68,.08);
+    --agent-input-bg:rgba(255,255,255,.86);
+    --agent-border:rgba(127,79,58,.18);
+    background:
+        radial-gradient(circle at 8% 0%, rgba(255,210,190,.52), transparent 34%),
+        linear-gradient(135deg, rgba(255,250,244,.94), rgba(249,244,236,.92) 50%, rgba(240,249,244,.9)) !important;
+    border-color:rgba(127,79,58,.2) !important;
+    box-shadow:0 26px 72px rgba(104,63,40,.18), inset 0 1px 0 rgba(255,255,255,.76) !important;
+    color:#251612 !important;
+}
+
+html.theme-light body #agentPanel .agent-chat-header,
+html.theme-light body #agentPanel .agent-skills-header,
+html.studio-theme-light body #agentPanel .agent-chat-header,
+html.studio-theme-light body #agentPanel .agent-skills-header,
+body.theme-light #agentPanel .agent-chat-header,
+body.theme-light #agentPanel .agent-skills-header,
+body.studio-theme-light #agentPanel .agent-chat-header,
+body.studio-theme-light #agentPanel .agent-skills-header,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-chat-header,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-skills-header {
+    border-color:rgba(127,79,58,.18) !important;
+}
+
+html.theme-light body #agentPanel .agent-skills-area,
+html.studio-theme-light body #agentPanel .agent-skills-area,
+body.theme-light #agentPanel .agent-skills-area,
+body.studio-theme-light #agentPanel .agent-skills-area,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-skills-area {
+    background:rgba(255,255,255,.32) !important;
+    border-color:rgba(127,79,58,.16) !important;
+}
+
+html.theme-light body #agentPanel .agent-chat-title,
+html.theme-light body #agentPanel .agent-skills-header span,
+html.theme-light body #agentPanel .agent-level-title,
+html.theme-light body #agentPanel .agent-stat-value,
+html.theme-light body #agentPanel .agent-success-item,
+html.theme-light body #agentPanel .agent-empty-title,
+html.theme-light body #agentPanel .agent-plan-head,
+html.theme-light body #agentPanel .agent-plan-step span,
+html.studio-theme-light body #agentPanel .agent-chat-title,
+html.studio-theme-light body #agentPanel .agent-skills-header span,
+html.studio-theme-light body #agentPanel .agent-level-title,
+html.studio-theme-light body #agentPanel .agent-stat-value,
+html.studio-theme-light body #agentPanel .agent-success-item,
+html.studio-theme-light body #agentPanel .agent-empty-title,
+html.studio-theme-light body #agentPanel .agent-plan-head,
+html.studio-theme-light body #agentPanel .agent-plan-step span,
+body.theme-light #agentPanel .agent-chat-title,
+body.theme-light #agentPanel .agent-skills-header span,
+body.theme-light #agentPanel .agent-level-title,
+body.theme-light #agentPanel .agent-stat-value,
+body.theme-light #agentPanel .agent-success-item,
+body.theme-light #agentPanel .agent-empty-title,
+body.theme-light #agentPanel .agent-plan-head,
+body.theme-light #agentPanel .agent-plan-step span,
+body.studio-theme-light #agentPanel .agent-chat-title,
+body.studio-theme-light #agentPanel .agent-skills-header span,
+body.studio-theme-light #agentPanel .agent-level-title,
+body.studio-theme-light #agentPanel .agent-stat-value,
+body.studio-theme-light #agentPanel .agent-success-item,
+body.studio-theme-light #agentPanel .agent-empty-title,
+body.studio-theme-light #agentPanel .agent-plan-head,
+body.studio-theme-light #agentPanel .agent-plan-step span,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-chat-title,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-skills-header span,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-level-title,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-stat-value,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-success-item,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-empty-title,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-plan-head,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-plan-step span {
+    color:#251612 !important;
+}
+
+html.theme-light body #agentPanel .agent-model-label,
+html.theme-light body #agentPanel .agent-quick-chip,
+html.theme-light body #agentPanel .agent-chat-actions button,
+html.theme-light body #agentPanel .agent-level-xp,
+html.theme-light body #agentPanel .agent-radar-title,
+html.theme-light body #agentPanel .agent-stats-title,
+html.theme-light body #agentPanel .agent-stat-label,
+html.theme-light body #agentPanel .agent-rating-label,
+html.theme-light body #agentPanel .agent-plan-head em,
+html.theme-light body #agentPanel .agent-plan-step small,
+html.theme-light body #agentPanel .agent-success-title,
+html.theme-light body #agentPanel .agent-success-date,
+html.theme-light body #agentPanel .agent-empty,
+html.studio-theme-light body #agentPanel .agent-model-label,
+html.studio-theme-light body #agentPanel .agent-quick-chip,
+html.studio-theme-light body #agentPanel .agent-chat-actions button,
+html.studio-theme-light body #agentPanel .agent-level-xp,
+html.studio-theme-light body #agentPanel .agent-radar-title,
+html.studio-theme-light body #agentPanel .agent-stats-title,
+html.studio-theme-light body #agentPanel .agent-stat-label,
+html.studio-theme-light body #agentPanel .agent-rating-label,
+html.studio-theme-light body #agentPanel .agent-plan-head em,
+html.studio-theme-light body #agentPanel .agent-plan-step small,
+html.studio-theme-light body #agentPanel .agent-success-title,
+html.studio-theme-light body #agentPanel .agent-success-date,
+html.studio-theme-light body #agentPanel .agent-empty,
+body.theme-light #agentPanel .agent-model-label,
+body.theme-light #agentPanel .agent-quick-chip,
+body.theme-light #agentPanel .agent-chat-actions button,
+body.theme-light #agentPanel .agent-level-xp,
+body.theme-light #agentPanel .agent-radar-title,
+body.theme-light #agentPanel .agent-stats-title,
+body.theme-light #agentPanel .agent-stat-label,
+body.theme-light #agentPanel .agent-rating-label,
+body.theme-light #agentPanel .agent-plan-head em,
+body.theme-light #agentPanel .agent-plan-step small,
+body.theme-light #agentPanel .agent-success-title,
+body.theme-light #agentPanel .agent-success-date,
+body.theme-light #agentPanel .agent-empty,
+body.studio-theme-light #agentPanel .agent-model-label,
+body.studio-theme-light #agentPanel .agent-quick-chip,
+body.studio-theme-light #agentPanel .agent-chat-actions button,
+body.studio-theme-light #agentPanel .agent-level-xp,
+body.studio-theme-light #agentPanel .agent-radar-title,
+body.studio-theme-light #agentPanel .agent-stats-title,
+body.studio-theme-light #agentPanel .agent-stat-label,
+body.studio-theme-light #agentPanel .agent-rating-label,
+body.studio-theme-light #agentPanel .agent-plan-head em,
+body.studio-theme-light #agentPanel .agent-plan-step small,
+body.studio-theme-light #agentPanel .agent-success-title,
+body.studio-theme-light #agentPanel .agent-success-date,
+body.studio-theme-light #agentPanel .agent-empty,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-model-label,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-quick-chip,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-chat-actions button,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-level-xp,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-radar-title,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-stats-title,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-stat-label,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-rating-label,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-plan-head em,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-plan-step small,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-success-title,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-success-date,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-empty {
+    color:rgba(55,37,30,.72) !important;
+}
+
+html.theme-light body #agentPanel .agent-model-label,
+html.theme-light body #agentPanel .agent-quick-chip,
+html.theme-light body #agentPanel .agent-msg.assistant .agent-msg-bubble,
+html.theme-light body #agentPanel .agent-level-card,
+html.theme-light body #agentPanel .agent-radar-card,
+html.theme-light body #agentPanel .agent-stats-card,
+html.theme-light body #agentPanel .agent-success-card,
+html.theme-light body #agentPanel .agent-plan-card,
+html.theme-light body #agentPanel .agent-plan-step,
+html.theme-light body #agentPanel .agent-fb-btn,
+html.theme-light body #agentPanel .agent-feedback-sync,
+html.studio-theme-light body #agentPanel .agent-model-label,
+html.studio-theme-light body #agentPanel .agent-quick-chip,
+html.studio-theme-light body #agentPanel .agent-msg.assistant .agent-msg-bubble,
+html.studio-theme-light body #agentPanel .agent-level-card,
+html.studio-theme-light body #agentPanel .agent-radar-card,
+html.studio-theme-light body #agentPanel .agent-stats-card,
+html.studio-theme-light body #agentPanel .agent-success-card,
+html.studio-theme-light body #agentPanel .agent-plan-card,
+html.studio-theme-light body #agentPanel .agent-plan-step,
+html.studio-theme-light body #agentPanel .agent-fb-btn,
+html.studio-theme-light body #agentPanel .agent-feedback-sync,
+body.theme-light #agentPanel .agent-model-label,
+body.theme-light #agentPanel .agent-quick-chip,
+body.theme-light #agentPanel .agent-msg.assistant .agent-msg-bubble,
+body.theme-light #agentPanel .agent-level-card,
+body.theme-light #agentPanel .agent-radar-card,
+body.theme-light #agentPanel .agent-stats-card,
+body.theme-light #agentPanel .agent-success-card,
+body.theme-light #agentPanel .agent-plan-card,
+body.theme-light #agentPanel .agent-plan-step,
+body.theme-light #agentPanel .agent-fb-btn,
+body.theme-light #agentPanel .agent-feedback-sync,
+body.studio-theme-light #agentPanel .agent-model-label,
+body.studio-theme-light #agentPanel .agent-quick-chip,
+body.studio-theme-light #agentPanel .agent-msg.assistant .agent-msg-bubble,
+body.studio-theme-light #agentPanel .agent-level-card,
+body.studio-theme-light #agentPanel .agent-radar-card,
+body.studio-theme-light #agentPanel .agent-stats-card,
+body.studio-theme-light #agentPanel .agent-success-card,
+body.studio-theme-light #agentPanel .agent-plan-card,
+body.studio-theme-light #agentPanel .agent-plan-step,
+body.studio-theme-light #agentPanel .agent-fb-btn,
+body.studio-theme-light #agentPanel .agent-feedback-sync,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-model-label,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-quick-chip,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-msg.assistant .agent-msg-bubble,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-level-card,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-radar-card,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-stats-card,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-success-card,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-plan-card,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-plan-step,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-fb-btn,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-feedback-sync {
+    background:var(--agent-card) !important;
+    border-color:var(--agent-border) !important;
+    color:#251612 !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.72);
+}
+
+html.theme-light body #agentPanel .agent-input-area textarea,
+html.studio-theme-light body #agentPanel .agent-input-area textarea,
+body.theme-light #agentPanel .agent-input-area textarea,
+body.studio-theme-light #agentPanel .agent-input-area textarea,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-input-area textarea {
+    background:var(--agent-input-bg) !important;
+    border-color:var(--agent-border) !important;
+    color:#251612 !important;
+}
+
+html.theme-light body #agentPanel .agent-input-area textarea::placeholder,
+html.studio-theme-light body #agentPanel .agent-input-area textarea::placeholder,
+body.theme-light #agentPanel .agent-input-area textarea::placeholder,
+body.studio-theme-light #agentPanel .agent-input-area textarea::placeholder,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-input-area textarea::placeholder {
+    color:rgba(55,37,30,.46) !important;
+}
+
+html.theme-light body #agentPanel .agent-quick-chip:hover,
+html.theme-light body #agentPanel .agent-chat-actions button:hover,
+html.theme-light body #agentPanel .agent-fb-btn:hover,
+html.studio-theme-light body #agentPanel .agent-quick-chip:hover,
+html.studio-theme-light body #agentPanel .agent-chat-actions button:hover,
+html.studio-theme-light body #agentPanel .agent-fb-btn:hover,
+body.theme-light #agentPanel .agent-quick-chip:hover,
+body.theme-light #agentPanel .agent-chat-actions button:hover,
+body.theme-light #agentPanel .agent-fb-btn:hover,
+body.studio-theme-light #agentPanel .agent-quick-chip:hover,
+body.studio-theme-light #agentPanel .agent-chat-actions button:hover,
+body.studio-theme-light #agentPanel .agent-fb-btn:hover,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-quick-chip:hover,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-chat-actions button:hover,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-fb-btn:hover {
+    background:rgba(239,68,68,.1) !important;
+    border-color:rgba(239,68,68,.28) !important;
+    color:#8f2f24 !important;
+}
+
+html.theme-light body #agentPanel .agent-level-badge,
+html.studio-theme-light body #agentPanel .agent-level-badge,
+body.theme-light #agentPanel .agent-level-badge,
+body.studio-theme-light #agentPanel .agent-level-badge,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel .agent-level-badge {
+    color:#3b241b !important;
+}
+
+html.theme-light body #agentPanel #agentRadarSvg text,
+html.studio-theme-light body #agentPanel #agentRadarSvg text,
+body.theme-light #agentPanel #agentRadarSvg text,
+body.studio-theme-light #agentPanel #agentRadarSvg text,
+body:not(.theme-dark):not(.studio-theme-dark) #agentPanel #agentRadarSvg text {
+    fill:rgba(55,37,30,.62) !important;
+}

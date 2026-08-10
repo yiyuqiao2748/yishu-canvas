@@ -301,6 +301,7 @@ async function refreshCanvasConfigFromSettings(){
 }
 window.addEventListener('message', event => {
     if(event.origin && event.origin !== location.origin) return;
+    if(event.data?.type === 'studio-theme') applyTheme(event.data.theme || 'light');
     if(event.data?.type === 'studio-lang') applyLanguage(event.data.lang);
     if(event.data?.type === 'canvas_updated') handleCanvasUpdatedMessage(event.data);
     scheduleCanvasConfigRefreshFromEvent(event.data);
@@ -701,11 +702,19 @@ function saveLocalViewport(){
 }
 function applyTheme(theme){
     const dark = theme === 'dark';
+    const light = !dark;
     document.documentElement.classList.toggle('studio-theme-dark', dark);
     document.documentElement.classList.toggle('theme-dark', dark);
+    document.documentElement.classList.toggle('studio-theme-light', light);
+    document.documentElement.classList.toggle('theme-light', light);
     document.body.classList.toggle('studio-theme-dark', dark);
     document.body.classList.toggle('theme-dark', dark);
+    document.body.classList.toggle('studio-theme-light', light);
+    document.body.classList.toggle('theme-light', light);
+    shell.classList.toggle('studio-theme-dark', dark);
     shell.classList.toggle('theme-dark', dark);
+    shell.classList.toggle('studio-theme-light', light);
+    shell.classList.toggle('theme-light', light);
 }
 function applyQuickToolbarState(){
     const toolbar = document.getElementById('quickToolbar');
@@ -13433,8 +13442,8 @@ function bindAssetItemDragGuard(root, selector, readPayload){
         if(guarded) guarded.draggable = false;
     }, true);
 }
-async function uploadDropToActiveTeamAssets(dataTransfer){
-    if(!canvasAssetLibraryIsTeam()) return false;
+    async function uploadDropToActiveTeamAssets(dataTransfer){
+        if(!canvasAssetLibraryIsTeam()) return false;
     if(hasOutputImageDrag(dataTransfer)){
         await uploadUrlsToTeamCanvasAssets([{url:dataTransfer.getData('application/x-canvas-output-image'), name:'output'}]);
         return true;
@@ -13447,23 +13456,56 @@ async function uploadDropToActiveTeamAssets(dataTransfer){
     if(payload.type === 'url') {
         await uploadUrlsToTeamCanvasAssets([{url:payload.url, name:outputImageName(payload.url)}]);
         return true;
+        }
+        throw new Error('团队素材只支持文件或图片地址');
     }
-    throw new Error('团队素材只支持文件或图片地址');
-}
-canvasAssetDropZone?.addEventListener('dragover', event => {
-    if(!hasCanvasAssetSaveDrop(event.dataTransfer)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
-    canvasAssetDropZone.classList.add('drag-over');
-});
-canvasAssetDropZone?.addEventListener('dragleave', () => canvasAssetDropZone.classList.remove('drag-over'));
-canvasAssetDropZone?.addEventListener('drop', async event => {
-    if(!hasCanvasAssetSaveDrop(event.dataTransfer)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    canvasAssetDropZone.classList.remove('drag-over');
-    try {
-        if(await uploadDropToActiveTeamAssets(event.dataTransfer)) return;
+    function canvasAssetSaveDropBlockReason(){
+        if(canvasAssetLibraryIsLocal()) return '本地素材请在素材库管理中上传';
+        if(canvasAssetLibraryIsTeam()) return '';
+        const cat = activeCanvasAssetCategory();
+        if(!cat) return '请先创建资产分组';
+        if(cat.readonly) return '当前分组不能保存资产';
+        const catType = String(cat.type || 'image').toLowerCase();
+        if(catType !== 'image' && catType !== 'media') return '当前是工作流分组，请切换到图片分组保存媒体';
+        return '';
+    }
+    function canSaveDropToActiveCanvasAssetTarget(dataTransfer){
+        if(!canvasAssetLibraryOpen || !hasCanvasAssetSaveDrop(dataTransfer)) return false;
+        return !canvasAssetSaveDropBlockReason();
+    }
+    function setCanvasAssetSaveDropState(active){
+        canvasAssetDropZone?.classList.toggle('drag-over', !!active);
+        canvasAssetGrid?.classList.toggle('drag-over', !!active);
+        canvasAssetPanel?.classList.toggle('drag-over', !!active);
+    }
+    function handleCanvasAssetSaveDragOver(event){
+        if(!canvasAssetLibraryOpen || !hasCanvasAssetSaveDrop(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if(!canSaveDropToActiveCanvasAssetTarget(event.dataTransfer)){
+            event.dataTransfer.dropEffect = 'none';
+            setCanvasAssetSaveDropState(false);
+            return;
+        }
+        event.dataTransfer.dropEffect = 'copy';
+        setCanvasAssetSaveDropState(true);
+    }
+    function handleCanvasAssetSaveDragLeave(event){
+        if(canvasAssetPanel?.contains(event.relatedTarget)) return;
+        setCanvasAssetSaveDropState(false);
+    }
+    async function handleCanvasAssetSaveDrop(event){
+        if(!canvasAssetLibraryOpen || !hasCanvasAssetSaveDrop(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setCanvasAssetSaveDropState(false);
+        const reason = canvasAssetSaveDropBlockReason();
+        if(reason){
+            setStatus(reason);
+            return;
+        }
+        try {
+            if(await uploadDropToActiveTeamAssets(event.dataTransfer)) return;
         if(hasOutputImageDrag(event.dataTransfer)){
             await addUrlToCanvasAssetLibrary(event.dataTransfer.getData('application/x-canvas-output-image'), 'output');
             return;
@@ -13480,10 +13522,15 @@ canvasAssetDropZone?.addEventListener('drop', async event => {
         } else if(payload.type === 'url') {
             await addUrlToCanvasAssetLibrary(payload.url, outputImageName(payload.url));
         }
-    } catch(err) {
-        showErrorModal(err.message || '保存资产失败', '保存资产失败');
+        } catch(err) {
+            showErrorModal(err.message || '保存资产失败', '保存资产失败');
+        }
     }
-});
+    [canvasAssetDropZone, canvasAssetGrid, canvasAssetPanel].forEach(target => {
+        target?.addEventListener('dragover', handleCanvasAssetSaveDragOver);
+        target?.addEventListener('dragleave', handleCanvasAssetSaveDragLeave);
+        target?.addEventListener('drop', handleCanvasAssetSaveDrop);
+    });
 gateAssetManagerBtn?.addEventListener('click', openAssetManager);
 document.querySelectorAll('[data-manager-tab]').forEach(btn => {
     btn.addEventListener('click', () => {

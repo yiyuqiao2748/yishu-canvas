@@ -6,7 +6,7 @@
     <title>AI设计师工作台</title>
     <link rel="icon" href="/static/images/logo.png" type="image/png">
     <script src="/static/vendor/js/lucide.js?v=2026.07.29.4.1784893025"></script>
-    <link rel="stylesheet" href="/static/css/workbench.css?v=2026.07.30.5">
+    <link rel="stylesheet" href="/static/css/workbench.css?v=2026.08.10.3">
 </head>
 <body>
     <div class="preview-shell">
@@ -27,26 +27,21 @@
                     <span id="workbenchUserLabel">未登录</span>
                     <i data-lucide="sliders-horizontal" class="icon"></i>
                 </button>
-                <button class="nav-chip" type="button" data-open-page="team-cloud">
+                <div class="nav-chip points-chip status-chip" role="status" aria-live="polite" title="当前账户余额状态">
                     <span>灵感点</span>
                     <strong id="workbenchInspirationPoints">0</strong>
-                    <i data-lucide="refresh-cw" class="icon"></i>
-                </button>
-                <button class="nav-chip compact" type="button" aria-label="积分">
-                    <i data-lucide="gem" class="icon"></i>
-                    <span>0</span>
-                </button>
+                </div>
                 <button class="nav-chip primary" type="button" data-open-page="workbench">
                     <i data-lucide="home" class="icon"></i>
-                    <span>用户主页</span>
+                    <span>主页</span>
                 </button>
                 <button class="nav-chip" type="button" data-open-page="canvas">
                     <i data-lucide="layout-grid" class="icon"></i>
-                    <span>AI画布</span>
+                    <span>画布</span>
                 </button>
-                <button class="nav-chip" type="button" data-open-page="team-cloud">
-                    <i data-lucide="users" class="icon"></i>
-                    <span>团队</span>
+                <button class="nav-chip" type="button" data-open-page="admin-preview">
+                    <i data-lucide="shield-check" class="icon"></i>
+                    <span>后台预览</span>
                 </button>
                 <button class="nav-chip" type="button" data-open-page="asset-manager">
                     <i data-lucide="folder-open" class="icon"></i>
@@ -76,7 +71,7 @@
             </button>
             <button type="button" data-open-page="canvas" title="AI画布">
                 <i data-lucide="layout-grid" class="icon"></i>
-                <span>AI画布</span>
+                <span>画布</span>
             </button>
             <button type="button" data-open-page="canvas" data-recent-history-target title="历史创作">
                 <i data-lucide="history" class="icon"></i>
@@ -247,9 +242,9 @@
                         <span>Assets</span>
                         <strong>参考图与素材库</strong>
                     </button>
-                    <button class="library-card green" type="button" data-open-page="team-cloud">
-                        <span>Team</span>
-                        <strong>成员与历史版本</strong>
+                    <button class="library-card green" type="button" data-open-page="admin-preview">
+                        <span>Admin</span>
+                        <strong>后台预览与用户数据</strong>
                     </button>
                 </div>
             </section>
@@ -301,27 +296,41 @@
                         <i data-lucide="x" class="icon"></i>
                     </button>
                 </div>
-                <div class="auth-mode-row" role="tablist" aria-label="登录类型">
-                    <button class="auth-mode active" type="button" data-auth-mode="user" aria-selected="true">普通登录</button>
-                    <button class="auth-mode" type="button" data-auth-mode="admin" aria-selected="false">管理员入口</button>
+                <div class="auth-mode-row" role="tablist" aria-label="账户操作">
+                    <button class="auth-mode active" type="button" data-auth-mode="user" aria-selected="true">登录</button>
+                    <button class="auth-mode" type="button" data-auth-mode="signup" aria-selected="false">注册</button>
+                    <button class="auth-mode" type="button" data-auth-mode="admin" aria-selected="false">管理员</button>
                 </div>
+                <label class="auth-field signup-only" for="authUsernameInput" id="authUsernameField" hidden>
+                    <span>账号名</span>
+                    <input id="authUsernameInput" name="username" type="text" autocomplete="username" minlength="3" maxlength="32" placeholder="例如 yiwei">
+                </label>
                 <label class="auth-field" for="authIdentifierInput">
-                    <span>邮箱 / 账号</span>
+                    <span id="authIdentifierLabel">邮箱 / 账号</span>
                     <input id="authIdentifierInput" name="identifier" type="text" autocomplete="username" placeholder="输入邮箱或账号" required>
                 </label>
                 <label class="auth-field" for="authPasswordInput">
                     <span>密码</span>
                     <input id="authPasswordInput" name="password" type="password" autocomplete="current-password" placeholder="输入密码" required>
                 </label>
+                <label class="auth-field verify-only" for="authVerificationInput" id="authVerificationField" hidden>
+                    <span>邮箱验证码</span>
+                    <input id="authVerificationInput" name="verification" type="text" inputmode="numeric" autocomplete="one-time-code" minlength="4" maxlength="16" placeholder="输入邮箱收到的验证码">
+                </label>
                 <p class="auth-message" id="authModalMessage">登录后可使用团队资源；管理员可进入 API 设置。</p>
+                <div class="auth-secondary" id="authSecondaryActions">
+                    <button class="text-link-btn" type="button" data-auth-recover>忘记密码？</button>
+                    <button class="text-link-btn" type="button" data-auth-back-login hidden>返回登录</button>
+                </div>
                 <div class="auth-actions">
                     <button class="action-pill ghost" type="button" data-auth-close>取消</button>
+                    <button class="action-pill ghost" type="button" data-auth-resend hidden>重发验证码</button>
                     <button class="action-pill hot" type="submit" data-auth-submit>登录</button>
                 </div>
             </form>
         </div>
         <input id="referenceFileInput" type="file" accept="image/*" multiple hidden>
     </div>
-    <script src="/static/js/workbench.js?v=2026.07.30.4"></script>
+    <script src="/static/js/workbench.js?v=2026.08.10.3"></script>
 </body>
 </html>

@@ -112,6 +112,8 @@ let teamAssetsLoaded = false;
 let teamAssetsBusy = false;
 let teamAssetQuery = '';
 let selectedTeamAssetId = '';
+let selectedTeamAssetIds = new Set();
+let teamAssetManageMode = false;
 let pendingDeleteTeamAssetId = '';
 let searchCompositionActive = false;
 let searchRenderTimer = null;
@@ -1247,6 +1249,12 @@ function managedSelectionTarget(target){
         const id = check?.dataset.canvasAssetCheck || card?.dataset.canvasAssetCard || '';
         if(id) return {kind:'canvasAsset', id};
     }
+    if(activeTab === 'team-assets' && teamAssetManageMode){
+        const check = target.closest?.('[data-team-asset-check]');
+        const card = target.closest?.('[data-team-asset-card]');
+        const id = check?.dataset.teamAssetCheck || card?.dataset.teamAssetCard || '';
+        if(id) return {kind:'teamAsset', id};
+    }
     return null;
 }
 function applyManagedSelection(kind, id){
@@ -1270,6 +1278,9 @@ function applyManagedSelection(kind, id){
     } else if(kind === 'canvasAsset'){
         const selected = toggleSelectionSet(selectedCanvasAssetIds, id);
         selectedCanvasAssetId = selected ? id : (selectedCanvasAssetId === id ? '' : selectedCanvasAssetId);
+    } else if(kind === 'teamAsset'){
+        const selected = toggleSelectionSet(selectedTeamAssetIds, id);
+        selectedTeamAssetId = selected ? id : (selectedTeamAssetId === id ? '' : selectedTeamAssetId);
     }
     pendingBatchDelete = '';
 }
@@ -1424,7 +1435,10 @@ function clearSearchSelection(id){
     else if(id === 'localSearch') selectedLocalId = '';
     else if(id === 'localUploadSearch') selectedLocalUploadId = '';
     else if(id === 'canvasAssetSearch') selectedCanvasAssetId = '';
-    else if(id === 'teamAssetSearch') selectedTeamAssetId = '';
+    else if(id === 'teamAssetSearch') {
+        selectedTeamAssetId = '';
+        selectedTeamAssetIds.clear();
+    }
 }
 function scheduleSearchRender(id, pos=0, delay=140){
     clearTimeout(searchRenderTimer);
@@ -1456,6 +1470,7 @@ function normalizeTeamAssetState(){
     const items = currentTeamAssetItems();
     if(selectedTeamAssetId && !items.some(item => item.id === selectedTeamAssetId)) selectedTeamAssetId = '';
     if(!selectedTeamAssetId && items.length) selectedTeamAssetId = items[0].id;
+    selectedTeamAssetIds = new Set([...selectedTeamAssetIds].filter(id => teamAssets.some(item => item.id === id)));
 }
 async function refreshTeamAssets(options={}){
     const silent = Boolean(options.silent);
@@ -1464,6 +1479,7 @@ async function refreshTeamAssets(options={}){
         teamAssets = [];
         teamAssetsLoaded = true;
         selectedTeamAssetId = '';
+        selectedTeamAssetIds.clear();
         if(activeTab === 'team-assets') render();
         if(!silent) setStatus('请先在团队云端选择团队');
         return [];
@@ -1501,7 +1517,7 @@ function renderTeamAssetsManager(){
                 <div class="nav-hint">素材上传会保存到团队云存储，本地素材库不受影响。</div>
             </div>
         </aside>
-        <section class="asset-panel asset-content">
+        <section class="asset-panel asset-content ${teamAssetManageMode ? 'manage-on' : ''}">
             <div class="content-toolbar">
                 <div class="content-heading">
                     <strong>团队素材库</strong>
@@ -1511,6 +1527,15 @@ function renderTeamAssetsManager(){
                     <button class="asset-btn" type="button" data-team-asset-refresh ${teamAssetsBusy || !teamId ? 'disabled' : ''}><i data-lucide="refresh-cw"></i><span>刷新</span></button>
                     <label class="asset-search-wrap"><i data-lucide="search"></i><input id="teamAssetSearch" class="asset-search" type="search" value="${escapeAttr(teamAssetQuery)}" placeholder="搜索团队素材"></label>
                     <button class="asset-btn primary" type="button" data-team-asset-upload ${teamAssetsBusy || !teamId ? 'disabled' : ''}><i data-lucide="upload-cloud"></i><span>上传</span></button>
+                    <button class="asset-btn ${teamAssetManageMode ? 'primary' : ''}" type="button" data-team-asset-manage ${items.length ? '' : 'disabled'}><i data-lucide="list-checks"></i><span>${teamAssetManageMode ? '完成管理' : '批量管理'}</span></button>
+                </div>
+            </div>
+            <div class="manage-tools">
+                <span>已选择 ${selectedTeamAssetIds.size} 个团队素材，支持拖拽框选或逐个勾选。</span>
+                <div class="asset-tools">
+                    <button class="asset-btn" type="button" data-team-asset-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
+                    <button class="asset-btn" type="button" data-team-asset-clear-selection ${selectedTeamAssetIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
+                    <button class="asset-btn danger ${pendingBatchDelete === 'team-asset' ? 'detail-confirm' : ''}" type="button" data-team-asset-delete-selected ${selectedTeamAssetIds.size ? '' : 'disabled'}><i data-lucide="trash-2"></i><span>${pendingBatchDelete === 'team-asset' ? '确认删除' : '删除所选'}</span></button>
                 </div>
             </div>
             <div class="content-scroll">
@@ -1537,11 +1562,14 @@ function renderTeamAssetUploadCard(teamId){
 }
 function renderTeamAssetCard(item){
     const active = item.id === selectedTeamAssetId;
-    return `<button class="asset-card ${active ? 'selected' : ''}" type="button" data-team-asset-card="${escapeAttr(item.id)}">
-        <span class="asset-thumb">${assetThumb(item)}</span>
-        <span class="asset-name">${escapeHtml(item.name || 'asset')}</span>
-        <span class="asset-meta">${escapeHtml(item.providerLabel || '')} · ${escapeHtml(item.sizeLabel || '')}</span>
-    </button>`;
+    return `<article class="asset-card ${active ? 'active' : ''}" data-team-asset-card="${escapeAttr(item.id)}">
+        <input class="asset-card-check" type="checkbox" data-team-asset-check="${escapeAttr(item.id)}" ${selectedTeamAssetIds.has(item.id) ? 'checked' : ''}>
+        <div class="asset-thumb">${assetThumb(item)}</div>
+        <div class="asset-card-body">
+            <div class="asset-card-name" title="${escapeAttr(item.name || '')}">${escapeHtml(item.name || 'asset')}</div>
+            <div class="asset-card-meta">${escapeHtml(item.providerLabel || '')} · ${escapeHtml(item.sizeLabel || '')}</div>
+        </div>
+    </article>`;
 }
 function renderTeamAssetDetail(item, teamId){
     if(!teamId) return `<div class="panel-head"><div class="panel-title"><strong>团队素材详情</strong><span>等待选择团队</span></div></div><div class="detail-scroll"><div class="detail-empty"><i data-lucide="cloud"></i><span>请先登录并选择团队</span></div></div>`;
@@ -1625,6 +1653,41 @@ async function deleteTeamAssetItem(id){
         render();
     }
 }
+async function deleteSelectedTeamAssets(){
+    const teamId = currentTeamId();
+    const ids = [...selectedTeamAssetIds].filter(Boolean);
+    if(!teamId || !ids.length) return;
+    if(pendingBatchDelete !== 'team-asset'){
+        pendingBatchDelete = 'team-asset';
+        pendingDeleteTeamAssetId = '';
+        render();
+        setStatus('再次点击确认删除所选团队素材');
+        return;
+    }
+    teamAssetsBusy = true;
+    render();
+    let removed = 0;
+    let failed = 0;
+    try {
+        for(const id of ids){
+            try {
+                await apiJson(`/api/team-cloud/teams/${encodeURIComponent(teamId)}/assets/${encodeURIComponent(id)}`, {method:'DELETE'});
+                removed += 1;
+            } catch(err) {
+                failed += 1;
+            }
+        }
+        pendingBatchDelete = '';
+        pendingDeleteTeamAssetId = '';
+        selectedTeamAssetIds.clear();
+        if(ids.includes(selectedTeamAssetId)) selectedTeamAssetId = '';
+        await refreshTeamAssets({silent:true});
+        setStatus(failed ? `已删除 ${removed} 个团队素材，${failed} 个失败` : `已删除 ${removed} 个团队素材`);
+    } finally {
+        teamAssetsBusy = false;
+        render();
+    }
+}
 function renderCanvasAssetsManager(){
     normalizeCanvasAssetState();
     const items = currentCanvasAssetItems();
@@ -1666,6 +1729,7 @@ function renderCanvasAssetsManager(){
                     <button class="asset-btn" type="button" data-canvas-asset-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
                     <button class="asset-btn" type="button" data-canvas-asset-clear-selection ${selectedCanvasAssetIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
                     <button class="asset-btn primary" type="button" data-canvas-asset-download-selected ${selectedCanvasAssetIds.size ? '' : 'disabled'}><i data-lucide="download"></i><span>下载所选</span></button>
+                    <button class="asset-btn danger ${pendingBatchDelete === 'canvas-asset' ? 'detail-confirm' : ''}" type="button" data-canvas-asset-delete-selected ${selectedCanvasAssetIds.size ? '' : 'disabled'}><i data-lucide="trash-2"></i><span>${pendingBatchDelete === 'canvas-asset' ? '确认删除' : '删除所选'}</span></button>
                 </div>
             </div>
             <div class="content-scroll">
@@ -1699,9 +1763,16 @@ function renderCanvasAssetTreeBranch(cat){
                     <span class="tree-row-icon"><i data-lucide="${canvas.kind === 'smart' ? 'sparkles' : 'file-image'}"></i></span>
                     <span class="tree-row-name" title="${escapeAttr(canvas.title || '未命名画布')}">${escapeHtml(canvas.title || '未命名画布')}</span>
                     <span class="tree-row-count">${count}</span>
-                </button>`;
+                </button>${active ? renderCanvasAssetCanvasActionBar(canvas, count) : ''}`;
             }).join('') : '<div class="tree-empty">暂无画布</div>'}
         </div>
+    </div>`;
+}
+function renderCanvasAssetCanvasActionBar(canvas, count){
+    const key = `canvas-assets:${canvas?.id || ''}`;
+    return `<div class="tree-action-bar child-actions">
+        <button type="button" data-canvas-asset-select-canvas ${count ? '' : 'disabled'}><i data-lucide="check-square"></i><span>选择全部</span></button>
+        <button type="button" class="danger ${pendingTreeDelete === key ? 'detail-confirm' : ''}" data-canvas-asset-clear-canvas ${count ? '' : 'disabled'}><i data-lucide="trash-2"></i><span>${pendingTreeDelete === key ? '确认清空' : '清空资产'}</span></button>
     </div>`;
 }
 function renderCanvasAssetGroup(group){
@@ -1745,6 +1816,7 @@ function renderCanvasAssetDetail(item){
                 ${canPreview ? `<button class="asset-icon-btn" type="button" data-canvas-asset-preview="${escapeAttr(item.id)}" title="${kind === 'video' ? '预览视频' : '放大预览'}"><i data-lucide="${kind === 'video' ? 'play' : 'maximize-2'}"></i></button>` : ''}
                 <button class="asset-icon-btn" type="button" data-canvas-asset-open="${escapeAttr(item.id)}" title="打开链接"><i data-lucide="external-link"></i></button>
                 <button class="asset-icon-btn" type="button" data-canvas-asset-copy="${escapeAttr(item.id)}" title="复制链接"><i data-lucide="copy"></i></button>
+                <button class="asset-icon-btn danger ${pendingDeleteAssetId === item.id ? 'detail-confirm' : ''}" type="button" data-canvas-asset-delete="${escapeAttr(item.id)}" title="${pendingDeleteAssetId === item.id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
                 <button class="asset-btn primary" type="button" data-canvas-asset-download="${escapeAttr(item.id)}"><i data-lucide="download"></i><span>下载</span></button>
             </div>
         </div>
@@ -2861,6 +2933,68 @@ async function downloadCanvasAssetItems(ids){
     setTimeout(() => URL.revokeObjectURL(link.href), 1200);
     setStatus(`已下载 ${items.length} 个画布资产`);
 }
+async function deleteCanvasAssetItems(ids, options={}){
+    const cleanIds = [...new Set((ids || []).filter(Boolean))];
+    if(!cleanIds.length) return;
+    const skipConfirm = Boolean(options.skipConfirm);
+    const confirmKey = cleanIds.length === 1 ? `canvas-asset:${cleanIds[0]}` : 'canvas-asset';
+    if(!skipConfirm && cleanIds.length === 1 && pendingDeleteAssetId !== cleanIds[0]){
+        pendingDeleteAssetId = cleanIds[0];
+        pendingBatchDelete = '';
+        render();
+        setStatus('再次点击删除按钮确认删除当前画布资产');
+        return;
+    }
+    if(!skipConfirm && cleanIds.length > 1 && pendingBatchDelete !== confirmKey){
+        pendingBatchDelete = confirmKey;
+        pendingDeleteAssetId = '';
+        render();
+        setStatus('再次点击确认删除所选画布资产');
+        return;
+    }
+    setStatus(`正在删除 ${cleanIds.length} 个画布资产...`);
+    try {
+        const data = await apiJson('/api/canvas-assets/delete', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ids:cleanIds, delete_unreferenced_media:true})
+        });
+        selectedCanvasAssetIds = new Set([...selectedCanvasAssetIds].filter(id => !cleanIds.includes(id)));
+        if(cleanIds.includes(selectedCanvasAssetId)) selectedCanvasAssetId = '';
+        pendingDeleteAssetId = '';
+        pendingBatchDelete = '';
+        pendingTreeDelete = '';
+        await refreshCanvasAssets();
+        const fileText = data.removed_files?.length ? `，清理文件 ${data.removed_files.length} 个` : '';
+        const keptText = data.skipped_referenced?.length ? `，${data.skipped_referenced.length} 个文件仍被引用已保留` : '';
+        setStatus(`已删除 ${data.removed || cleanIds.length} 个画布资产${fileText}${keptText}`);
+    } catch(err) {
+        pendingDeleteAssetId = '';
+        pendingBatchDelete = '';
+        render();
+        setStatus(err.message || '删除画布资产失败');
+    }
+}
+async function deleteActiveCanvasAssetCanvasAssets(){
+    const canvasId = activeCanvasAssetCanvasId || '';
+    if(!canvasId) return;
+    const ids = (canvasAssetsData.items || [])
+        .filter(item => item.canvas_id === canvasId)
+        .map(item => item.id)
+        .filter(Boolean);
+    if(!ids.length) return;
+    const key = `canvas-assets:${canvasId}`;
+    if(pendingTreeDelete !== key){
+        pendingTreeDelete = key;
+        pendingBatchDelete = '';
+        pendingDeleteAssetId = '';
+        render();
+        setStatus('再次点击确认清空该画布资产');
+        return;
+    }
+    pendingTreeDelete = '';
+    await deleteCanvasAssetItems(ids, {skipConfirm:true});
+}
 function assetDownloadName(item){
     let name = String(item?.name || 'asset');
     const urlPath = String(item?.url || '').split('?')[0];
@@ -3525,7 +3659,7 @@ async function handleClick(event){
         }
     }
     const tabBtn = target.closest?.('[data-tab]');
-    if(tabBtn){ activeTab = tabBtn.dataset.tab || 'assets'; selectedAssetIds.clear(); selectedWorkflowIds.clear(); selectedPromptIds.clear(); selectedLocalIds.clear(); selectedLocalUploadIds.clear(); selectedCanvasAssetIds.clear(); selectedTeamAssetId = ''; pendingDeleteTeamAssetId = ''; render(); return; }
+    if(tabBtn){ activeTab = tabBtn.dataset.tab || 'assets'; selectedAssetIds.clear(); selectedWorkflowIds.clear(); selectedPromptIds.clear(); selectedLocalIds.clear(); selectedLocalUploadIds.clear(); selectedCanvasAssetIds.clear(); selectedTeamAssetIds.clear(); selectedTeamAssetId = ''; pendingDeleteTeamAssetId = ''; pendingBatchDelete = ''; render(); return; }
     if(target.closest?.('#refreshBtn')){ await loadAll(); return; }
     const assetPreview = target.closest?.('[data-asset-preview]');
     if(assetPreview){ showDetailPreview('asset', assetPreview.dataset.assetPreview || ''); return; }
@@ -3551,10 +3685,35 @@ async function handleClick(event){
     }
     const teamAssetDelete = target.closest?.('[data-team-asset-delete]');
     if(teamAssetDelete){ await deleteTeamAssetItem(teamAssetDelete.dataset.teamAssetDelete || ''); return; }
+    if(target.closest?.('[data-team-asset-manage]')){
+        teamAssetManageMode = !teamAssetManageMode;
+        pendingBatchDelete = '';
+        if(!teamAssetManageMode) selectedTeamAssetIds.clear();
+        render();
+        return;
+    }
+    if(target.closest?.('[data-team-asset-select-all]')){ currentTeamAssetItems().forEach(item => selectedTeamAssetIds.add(item.id)); render(); return; }
+    if(target.closest?.('[data-team-asset-clear-selection]')){ selectedTeamAssetIds.clear(); pendingBatchDelete = ''; render(); return; }
+    if(target.closest?.('[data-team-asset-delete-selected]')){ await deleteSelectedTeamAssets(); return; }
+    if(activeTab === 'team-assets' && teamAssetManageMode){
+        const teamCheck = target.closest?.('[data-team-asset-check]');
+        const teamCardForSelect = target.closest?.('[data-team-asset-card]');
+        if(teamCheck || teamCardForSelect){
+            event.preventDefault();
+            event.stopPropagation();
+            const id = teamCheck?.dataset.teamAssetCheck || teamCardForSelect?.dataset.teamAssetCard || '';
+            const selected = toggleSelectionSet(selectedTeamAssetIds, id);
+            selectedTeamAssetId = selected ? id : (selectedTeamAssetId === id ? '' : selectedTeamAssetId);
+            pendingBatchDelete = '';
+            render();
+            return;
+        }
+    }
     const teamAssetCard = target.closest?.('[data-team-asset-card]');
     if(teamAssetCard){
         selectedTeamAssetId = teamAssetCard.dataset.teamAssetCard || '';
         pendingDeleteTeamAssetId = '';
+        pendingBatchDelete = '';
         render();
         return;
     }
@@ -3657,6 +3816,7 @@ async function handleClick(event){
         activeCanvasAssetCanvasId = '';
         selectedCanvasAssetId = '';
         selectedCanvasAssetIds.clear();
+        pendingTreeDelete = '';
         render();
         return;
     }
@@ -3666,6 +3826,7 @@ async function handleClick(event){
         activeCanvasAssetCanvasId = canvasAssetCanvas.dataset.canvasAssetCanvas || '';
         selectedCanvasAssetId = '';
         selectedCanvasAssetIds.clear();
+        pendingTreeDelete = '';
         render();
         return;
     }
@@ -3676,11 +3837,23 @@ async function handleClick(event){
         return;
     }
     if(target.closest?.('[data-canvas-asset-refresh]')){ await refreshCanvasAssets(); return; }
+    if(target.closest?.('[data-canvas-asset-select-canvas]')){
+        const ids = (canvasAssetsData.items || []).filter(item => item.canvas_id === activeCanvasAssetCanvasId).map(item => item.id).filter(Boolean);
+        ids.forEach(id => selectedCanvasAssetIds.add(id));
+        canvasAssetManageMode = true;
+        pendingTreeDelete = '';
+        render();
+        return;
+    }
+    if(target.closest?.('[data-canvas-asset-clear-canvas]')){ await deleteActiveCanvasAssetCanvasAssets(); return; }
     if(target.closest?.('[data-canvas-asset-select-all]')){ currentCanvasAssetItems().forEach(item => selectedCanvasAssetIds.add(item.id)); render(); return; }
     if(target.closest?.('[data-canvas-asset-clear-selection]')){ selectedCanvasAssetIds.clear(); render(); return; }
     if(target.closest?.('[data-canvas-asset-download-selected]')){ await downloadCanvasAssetItems([...selectedCanvasAssetIds]); return; }
+    if(target.closest?.('[data-canvas-asset-delete-selected]')){ await deleteCanvasAssetItems([...selectedCanvasAssetIds]); return; }
     const canvasAssetDownload = target.closest?.('[data-canvas-asset-download]');
     if(canvasAssetDownload){ await downloadCanvasAssetItems([canvasAssetDownload.dataset.canvasAssetDownload || '']); return; }
+    const canvasAssetDelete = target.closest?.('[data-canvas-asset-delete]');
+    if(canvasAssetDelete){ await deleteCanvasAssetItems([canvasAssetDelete.dataset.canvasAssetDelete || '']); return; }
     const canvasAssetOpen = target.closest?.('[data-canvas-asset-open]');
     if(canvasAssetOpen){ const it = findCanvasAssetItem(canvasAssetOpen.dataset.canvasAssetOpen || ''); if(it?.url) window.open(it.url, '_blank', 'noopener'); return; }
     const canvasAssetCopy = target.closest?.('[data-canvas-asset-copy]');
@@ -4155,6 +4328,7 @@ function marqueeTargetSelector(){
     if(activeTab === 'prompts' && promptManageMode) return '[data-prompt-row]';
     if(activeTab === 'local' && localUploadManageMode) return '[data-localup-card]';
     if(activeTab === 'canvas-assets' && canvasAssetManageMode) return '[data-canvas-asset-card]';
+    if(activeTab === 'team-assets' && teamAssetManageMode) return '[data-team-asset-card]';
     return '';
 }
 function beginMarqueeSelection(event){
@@ -4177,7 +4351,8 @@ function beginMarqueeSelection(event){
         baseAsset:new Set(selectedAssetIds),
         basePrompt:new Set(selectedPromptIds),
         baseLocal:new Set(selectedLocalUploadIds),
-        baseCanvasAsset:new Set(selectedCanvasAssetIds)
+        baseCanvasAsset:new Set(selectedCanvasAssetIds),
+        baseTeamAsset:new Set(selectedTeamAssetIds)
     };
     updateMarqueeSelection(event);
 }
@@ -4217,11 +4392,17 @@ function updateMarqueeSelection(event){
         document.querySelectorAll(marqueeState.selector).forEach(el => {
             if(rectsIntersect(rect, el.getBoundingClientRect())) selectedCanvasAssetIds.add(el.dataset.canvasAssetCard);
         });
+    } else if(activeTab === 'team-assets') {
+        selectedTeamAssetIds = new Set(marqueeState.baseTeamAsset);
+        document.querySelectorAll(marqueeState.selector).forEach(el => {
+            if(rectsIntersect(rect, el.getBoundingClientRect())) selectedTeamAssetIds.add(el.dataset.teamAssetCard);
+        });
     }
     document.querySelectorAll('[data-asset-check]').forEach(input => { input.checked = selectedAssetIds.has(input.dataset.assetCheck); });
     document.querySelectorAll('[data-prompt-check]').forEach(input => { input.checked = selectedPromptIds.has(input.dataset.promptCheck); });
     document.querySelectorAll('[data-localup-check]').forEach(input => { input.checked = selectedLocalUploadIds.has(input.dataset.localupCheck); });
     document.querySelectorAll('[data-canvas-asset-check]').forEach(input => { input.checked = selectedCanvasAssetIds.has(input.dataset.canvasAssetCheck); });
+    document.querySelectorAll('[data-team-asset-check]').forEach(input => { input.checked = selectedTeamAssetIds.has(input.dataset.teamAssetCheck); });
 }
 function endMarqueeSelection(){
     if(!marqueeState) return;
