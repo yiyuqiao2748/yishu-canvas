@@ -844,6 +844,14 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("data-workflow-delete-selected", script)
         self.assertIn("data-prompt-delete-selected", script)
         self.assertIn("data-localup-delete-selected", script)
+        self.assertIn("data-localup-delete-one", script)
+        self.assertIn("确认删除这个本地素材", script)
+
+        canvas_script = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+        self.assertIn("canvasAssetLibraryIsLocal()", canvas_script)
+        self.assertIn("canvasAssetLibraryIsTeam()", canvas_script)
+        self.assertIn("/api/local-assets/delete", canvas_script)
+        self.assertIn("data-canvas-asset-delete", canvas_script)
 
     def test_dark_native_select_menus_stay_readable(self):
         root = Path(__file__).resolve().parents[1]
@@ -1136,7 +1144,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("/admin/feedback", admin_script)
         self.assertIn("function renderFeedback", admin_script)
         self.assertIn(".feedback-item", admin_css)
-        self.assertIn('/static/asset-manager.html?v=2026.08.09.8', index_html)
+        self.assertIn('/static/asset-manager.html?v=2026.08.10.1', index_html)
         self.assertIn('/static/admin-preview.html?v=2026.08.09.6', index_html)
         self.assertIn('/static/api-settings.html?v=2026.08.09.12', index_html)
         self.assertIn('/static/comfyui-settings.html?v=2026.08.09.8', index_html)
@@ -1176,8 +1184,8 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         smart_css = (root / "static" / "css" / "smart-canvas.css").read_text(encoding="utf-8")
 
         agent_css = (root / "static" / "css" / "agent-panel.css").read_text(encoding="utf-8")
-        self.assertIn("canvas.css?v=2026.08.09.8", canvas_html)
-        self.assertIn("canvas.js?v=2026.08.09.8", canvas_html)
+        self.assertIn("canvas.css?v=2026.08.10.1", canvas_html)
+        self.assertIn("canvas.js?v=2026.08.10.1", canvas_html)
         self.assertIn("agent-panel.css?v=2026.08.09.8", canvas_html)
         self.assertIn("smart-canvas.css?v=2026.07.30.3", smart_html)
         self.assertIn("smart-canvas.js?v=2026.08.05.1", smart_html)

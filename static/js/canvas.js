@@ -7207,14 +7207,47 @@ async function renameCanvasAssetItem(itemId){
 }
 async function deleteCanvasAssetItem(itemId){
     const item = currentCanvasAssetItem(itemId);
-    if(!item || !window.confirm(`删除资产「${item.name || 'asset'}」？`)) return;
-    const data = await fetch(`/api/asset-library/items/${encodeURIComponent(item.id)}`, {method:'DELETE'}).then(r => r.json());
-    canvasAssetLibrary = data.library || canvasAssetLibrary;
-    managerSelectedAssetIds.delete(item.id);
-    managerSelectedWorkflowIds.delete(item.id);
-    hideCanvasAssetHoverPreview();
-    renderCanvasAssetLibrary();
-    if(assetManagerModal?.classList.contains('open')) renderAssetManager();
+    if(!item) return;
+    const localMode = canvasAssetLibraryIsLocal();
+    const teamMode = canvasAssetLibraryIsTeam();
+    const message = localMode
+        ? `确认删除本地素材「${item.name || 'asset'}」？文件会从 NAS 磁盘移除，已引用它的画布可能显示文件缺失。`
+        : teamMode
+        ? `确认删除团队素材「${item.name || 'asset'}」？正在被画布使用的团队素材不会被删除。`
+        : `删除资产「${item.name || 'asset'}」？`;
+    if(!window.confirm(message)) return;
+    try {
+        if(localMode){
+            const res = await fetch('/api/local-assets/delete', {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({names:[item.file || item.id]})
+            });
+            if(!res.ok) throw new Error(await responseErrorMessage(res, '本地素材删除失败'));
+            await loadCanvasAssetLibrary({renderPanel:false});
+        } else if(teamMode){
+            const teamId = currentTeamCloudTeamId();
+            if(!teamId) throw new Error('请先登录并进入当前团队');
+            const res = await teamCloudFetch(`/api/team-cloud/teams/${encodeURIComponent(teamId)}/assets/${encodeURIComponent(item.id)}`, {method:'DELETE'});
+            if(!res.ok) throw new Error(await responseErrorMessage(res, '团队素材删除失败'));
+            await loadTeamCanvasAssets();
+        } else {
+            const res = await fetch(`/api/asset-library/items/${encodeURIComponent(item.id)}`, {method:'DELETE'});
+            if(!res.ok) throw new Error(await responseErrorMessage(res, '素材删除失败'));
+            const data = await res.json();
+            canvasAssetLibrary = data.library || canvasAssetLibrary;
+            managerSelectedAssetIds.delete(item.id);
+            managerSelectedWorkflowIds.delete(item.id);
+        }
+        hideCanvasAssetHoverPreview();
+        renderCanvasAssetLibrary();
+        if(assetManagerModal?.classList.contains('open')) renderAssetManager();
+        setStatus(`已删除素材：${item.name || 'asset'}`);
+    } catch(err) {
+        const message = err.message || '素材删除失败';
+        setStatus(message);
+        window.alert(message);
+    }
 }
 async function loadTeamCanvasAssets(){
     const teamId = currentTeamCloudTeamId();
@@ -7287,13 +7320,11 @@ function renderCanvasAssetLibrary(){
             ${canvasAssetThumbHtml(item)}
             <div class="canvas-asset-meta">
                 <span class="canvas-asset-name" title="${escapeAttr(item.name || '')}">${escapeHtml(item.name || 'asset')}</span>
-                ${localMode
-                    ? `<span class="canvas-asset-local-tag">本地</span>`
-                    : teamMode
-                    ? `<span class="canvas-asset-local-tag">团队</span>`
-                    : item.kind === 'builtin-workflow'
+                ${localMode ? `<span class="canvas-asset-local-tag">本地</span>` : ''}
+                ${teamMode ? `<span class="canvas-asset-local-tag">团队</span>` : ''}
+                ${item.kind === 'builtin-workflow'
                     ? `<span class="canvas-asset-local-tag">${escapeHtml(item.model || 'template')}</span>`
-                    : `<button class="canvas-asset-action" type="button" data-canvas-asset-rename="${escapeAttr(item.id || '')}" title="重命名" aria-label="重命名"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                    : `${localMode || teamMode ? '' : `<button class="canvas-asset-action" type="button" data-canvas-asset-rename="${escapeAttr(item.id || '')}" title="重命名" aria-label="重命名"><i data-lucide="pencil" class="w-4 h-4"></i></button>`}
                        <button class="canvas-asset-action danger" type="button" data-canvas-asset-delete="${escapeAttr(item.id || '')}" title="删除" aria-label="删除"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`}
             </div>
         </div>

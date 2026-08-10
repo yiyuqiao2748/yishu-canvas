@@ -7389,12 +7389,23 @@ def origin_from_url(value):
     return f"{parsed.scheme}://{parsed.netloc}".lower()
 
 def ensure_same_origin_request(request: Request):
-    host = str(request.headers.get("host") or "").lower()
-    expected = f"{request.url.scheme}://{host}".lower() if host else ""
     origin = origin_from_url(request.headers.get("origin", ""))
     referer = origin_from_url(request.headers.get("referer", ""))
     actual = origin or referer
-    if expected and actual != expected:
+    forwarded_host = str(request.headers.get("x-forwarded-host") or "").split(",", 1)[0].strip().lower()
+    allowed_hosts = {
+        value
+        for value in (
+            str(request.headers.get("host") or "").strip().lower(),
+            forwarded_host,
+            str(request.url.netloc or "").strip().lower(),
+        )
+        if value
+    }
+    actual_host = str(urllib.parse.urlparse(actual).netloc or "").strip().lower() if actual else ""
+    # Cloudflare Tunnel terminates HTTPS before forwarding to the app over HTTP.
+    # Compare hosts instead of schemes so legitimate proxied requests remain usable.
+    if not actual_host or (allowed_hosts and actual_host not in allowed_hosts):
         raise HTTPException(status_code=403, detail="只允许从当前页面导入本地图片")
 
 def normalize_local_image_path(value):
@@ -12663,13 +12674,15 @@ async def rename_local_asset_item(payload: LocalAssetRenameRequest, request: Req
 async def delete_local_assets(payload: dict, request: Request):
     ensure_same_origin_request(request)
     names = payload.get("names") if isinstance(payload, dict) else None
-    if not isinstance(names, list):
-        names = []
+    if not isinstance(names, list) or not names:
+        raise HTTPException(status_code=400, detail="请选择要删除的本地素材")
     deleted = []
+    failed = []
     for name in names:
         try:
             rel, path = _local_upload_safe_path(name)
         except HTTPException:
+            failed.append(str(name or ""))
             continue
         if os.path.isfile(path):
             try:
@@ -12682,8 +12695,17 @@ async def delete_local_assets(payload: dict, request: Request):
                     os.remove(cls_path)
                 deleted.append(rel)
             except OSError:
-                pass
-    return {"deleted": deleted}
+                failed.append(rel)
+        else:
+            failed.append(rel)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="本地素材不存在、已删除或当前没有删除权限")
+    return {
+        "deleted": deleted,
+        "removed": len(deleted),
+        "failed": failed,
+        "failed_count": len(failed),
+    }
 
 @app.post("/api/local-assets/move")
 async def move_local_assets(payload: dict, request: Request):

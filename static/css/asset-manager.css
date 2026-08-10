@@ -225,6 +225,7 @@ body.theme-dark .asset-card.active { border-color:rgba(248,250,252,.86); box-sha
 .asset-card:hover .asset-card-quick { opacity:1; pointer-events:auto; }
 .asset-card-quick svg { width:13px; height:13px; }
 .asset-card-quick:hover { color:var(--text); border-color:var(--line-2); background:var(--card); }
+.asset-card-quick.danger:hover { color:var(--danger); border-color:rgba(220,38,38,.34); background:rgba(220,38,38,.1); }
 .prompt-list { display:flex; flex-direction:column; gap:8px; }
 .prompt-row { width:100%; min-height:104px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--text); display:grid; grid-template-columns:20px minmax(0,1fr); gap:10px; align-items:start; padding:10px; text-align:left; transition:border-color .14s ease, box-shadow .14s ease, transform .14s ease; }
 .asset-content:not(.manage-on) .prompt-row { grid-template-columns:minmax(0,1fr); }

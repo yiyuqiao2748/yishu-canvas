@@ -1213,6 +1213,7 @@ function toggleSelectionSet(set, id){
     return true;
 }
 function managedSelectionTarget(target){
+    if(target.closest?.('button,a,[role="button"],input:not([type="checkbox"]),textarea,select')) return null;
     if(activeTab === 'assets' && assetManageMode){
         const check = target.closest?.('[data-asset-check]');
         const card = target.closest?.('[data-asset-card]');
@@ -2064,6 +2065,7 @@ function renderLocalUploadCard(item){
     const hasCaption = assetKind(item) === 'image' && String(item.caption || '').trim();
     return `<article class="asset-card ${item.id === selectedLocalUploadId ? 'active' : ''}" data-localup-card="${escapeAttr(item.id)}">
         <input class="asset-card-check" type="checkbox" data-localup-check="${escapeAttr(item.id)}" ${selectedLocalUploadIds.has(item.id) ? 'checked' : ''}>
+        <button class="asset-card-quick danger" type="button" data-localup-delete-one="${escapeAttr(item.id)}" title="删除素材" aria-label="删除素材"><i data-lucide="trash-2"></i></button>
         <div class="asset-thumb">${assetThumb(item)}</div>
         <div class="asset-card-body">
             <div class="asset-card-name" data-localup-rename="${escapeAttr(item.id)}" title="${escapeAttr(item.name || '')}">${escapeHtml(item.name || '本地素材')}</div>
@@ -3201,19 +3203,26 @@ async function uploadLocalAssets(files){
 async function deleteLocalAssets(ids){
     const names = (ids || []).map(id => findLocalUpload(id)?.file).filter(Boolean);
     if(!names.length) return;
+    const warning = names.length === 1
+        ? '确认删除这个本地素材？文件会从 NAS 磁盘移除，已引用它的画布可能显示文件缺失。'
+        : `确认删除选中的 ${names.length} 个本地素材？文件会从 NAS 磁盘移除，已引用它们的画布可能显示文件缺失。`;
+    if(!window.confirm(warning)) return;
     setStatus('正在删除...');
     try {
-        await apiJson('/api/local-assets/delete', {
+        const data = await apiJson('/api/local-assets/delete', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({names})
         });
+        const removed = Number(data.removed ?? data.deleted?.length ?? 0);
+        if(!removed) throw new Error('没有删除任何素材，请刷新后重试');
         await loadLocalAssets();
         if(activeLocalUploadClassFilter && !activeLocalUploadClassEntry()) activeLocalUploadClassFilter = '';
         selectedLocalUploadIds.clear();
         if(selectedLocalUploadId && !findLocalUpload(selectedLocalUploadId)) selectedLocalUploadId = '';
         render();
-        setStatus(`已删除 ${names.length} 个素材`);
+        const failed = Number(data.failed_count || 0);
+        setStatus(failed ? `已删除 ${removed} 个素材，${failed} 个删除失败` : `已删除 ${removed} 个素材`);
     } catch(err) {
         setStatus(err.message || '删除失败');
     }

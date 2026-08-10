@@ -18,12 +18,13 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assets = self.root / "assets"
         self.generated = self.assets / "output"
         self.inputs = self.assets / "input"
+        self.local_uploads = self.assets / "uploads"
         self.legacy = self.root / "output"
         self.data = self.root / "data"
         self.canvases = self.data / "canvases"
         self.conversations = self.data / "conversations"
         self.previews = self.data / "media_previews"
-        for path in (self.generated, self.inputs, self.legacy, self.canvases, self.conversations, self.previews):
+        for path in (self.generated, self.inputs, self.local_uploads, self.legacy, self.canvases, self.conversations, self.previews):
             path.mkdir(parents=True, exist_ok=True)
         self.history = self.root / "history.json"
         self.global_config = self.root / "global_config.json"
@@ -34,6 +35,7 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
             patch.object(main, "ASSETS_DIR", str(self.assets)),
             patch.object(main, "OUTPUT_INPUT_DIR", str(self.inputs)),
             patch.object(main, "OUTPUT_OUTPUT_DIR", str(self.generated)),
+            patch.object(main, "LOCAL_UPLOAD_DIR", str(self.local_uploads)),
             patch.object(main, "OUTPUT_DIR", str(self.legacy)),
             patch.object(main, "DATA_DIR", str(self.data)),
             patch.object(main, "CANVAS_DIR", str(self.canvases)),
@@ -67,6 +69,65 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         path = self.generated / name
         path.write_bytes(content)
         return path, f"/assets/output/{name}"
+
+    @staticmethod
+    def request(headers, scheme="http"):
+        encoded_headers = [(key.lower().encode(), value.encode()) for key, value in headers.items()]
+        return main.Request({
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": scheme,
+            "path": "/api/local-assets/delete",
+            "raw_path": b"/api/local-assets/delete",
+            "query_string": b"",
+            "headers": encoded_headers,
+            "server": ("canvas.example", 80),
+            "client": ("127.0.0.1", 12345),
+        })
+
+    def test_same_origin_accepts_https_origin_behind_http_proxy(self):
+        request = self.request({
+            "host": "canvas.example",
+            "origin": "https://canvas.example",
+            "x-forwarded-proto": "https",
+        })
+
+        main.ensure_same_origin_request(request)
+
+    def test_same_origin_rejects_different_host(self):
+        request = self.request({"host": "canvas.example", "origin": "https://attacker.example"})
+
+        with self.assertRaises(HTTPException) as error:
+            main.ensure_same_origin_request(request)
+
+        self.assertEqual(error.exception.status_code, 403)
+
+    async def test_delete_local_asset_removes_file_and_sidecars(self):
+        filename = "up_123456789abc_portrait.png"
+        image = self.local_uploads / filename
+        caption = self.local_uploads / "up_123456789abc_portrait.txt"
+        classification = self.local_uploads / "up_123456789abc_portrait.classification.json"
+        image.write_bytes(b"image")
+        caption.write_text("caption", encoding="utf-8")
+        classification.write_text("{}", encoding="utf-8")
+        request = self.request({"host": "canvas.example", "origin": "https://canvas.example"})
+
+        result = await main.delete_local_assets({"names": [filename]}, request)
+
+        self.assertEqual(result["removed"], 1)
+        self.assertEqual(result["failed_count"], 0)
+        self.assertFalse(image.exists())
+        self.assertFalse(caption.exists())
+        self.assertFalse(classification.exists())
+
+    async def test_delete_missing_local_asset_returns_not_found(self):
+        request = self.request({"host": "canvas.example", "origin": "https://canvas.example"})
+
+        with self.assertRaises(HTTPException) as error:
+            await main.delete_local_assets({"names": ["missing.png"]}, request)
+
+        self.assertEqual(error.exception.status_code, 404)
 
     def test_healthz_reports_deployment_readiness_without_secrets(self):
         with patch.object(main.team_cloud_settings, "supabase_url", "https://supabase.example"), \
