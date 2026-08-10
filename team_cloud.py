@@ -2682,6 +2682,24 @@ async def resolve_auth_identifier_email(identifier: str) -> str:
     return normalize_email(profile["email"])
 
 
+async def legacy_admin_login_without_email_verification(user_id: str, email: str, profile: Optional[Dict[str, Any]]) -> bool:
+    """Allow existing owner/admin accounts through after the email OTP rollout."""
+    if not user_id or not profile:
+        return False
+    current = CurrentUser(
+        id=str(user_id),
+        email=normalize_email(email),
+        username=str(profile.get("username") or ""),
+        display_name=str(profile.get("display_name") or profile.get("username") or ""),
+        provider="supabase",
+    )
+    try:
+        teams = await maybe_await(active_store().list_user_teams(current))
+    except Exception:
+        return False
+    return any(str(team.get("role") or "").lower() in {"owner", "admin"} for team in teams or [])
+
+
 async def enrich_user_profile(user: CurrentUser) -> CurrentUser:
     try:
         profile = await get_user_profile_by_user_id(user.id)
@@ -3003,6 +3021,19 @@ async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[s
     if not data.get("access_token"):
         raise HTTPException(status_code=401, detail="登录失败")
     user = data.get("user") or {}
+    user_id = str(user.get("id") or "")
+    profile = await get_user_profile_by_user_id(user_id)
+    if (
+        profile
+        and not supabase_user_email_confirmed(user)
+        and await legacy_admin_login_without_email_verification(user_id, email, profile)
+    ):
+        set_auth_cookie(response, data["access_token"])
+        payload_out = sanitize_auth_payload(data)
+        payload_out["legacy_email_verification_bypassed"] = True
+        payload_out["user"]["username"] = profile.get("username") or ""
+        payload_out["user"]["display_name"] = profile.get("display_name") or profile.get("username") or ""
+        return payload_out
     if not supabase_user_email_confirmed(user):
         clear_auth_cookie(response)
         raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")

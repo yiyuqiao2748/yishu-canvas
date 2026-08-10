@@ -609,6 +609,41 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(error.exception.status_code, 403)
         self.assertIn("邮箱验证码", error.exception.detail)
 
+    async def test_login_allows_legacy_unverified_admin_profile(self):
+        response = Response()
+        auth_mock = AsyncMock(return_value={
+            "access_token": "session-token",
+            "user": {
+                "id": "owner-1",
+                "email": "owner@example.com",
+                "email_confirmed_at": None,
+                "confirmed_at": None,
+                "confirmation_sent_at": "2026-08-09T00:00:00Z",
+            },
+        })
+        profile = {
+            "user_id": "owner-1",
+            "email": "owner@example.com",
+            "username": "owner",
+            "display_name": "Owner",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            store = LocalTeamStore(str(Path(tmp) / "team_cloud.json"))
+            store.create_team(CurrentUser(id="owner-1", email="owner@example.com"), "Design Lab")
+
+            with patch.object(team_cloud, "resolve_auth_identifier_email", AsyncMock(return_value="owner@example.com")), \
+                 patch.object(team_cloud, "supabase_auth_request", auth_mock), \
+                 patch.object(team_cloud, "get_user_profile_by_user_id", AsyncMock(return_value=profile)), \
+                 patch.object(team_cloud, "active_store", return_value=store):
+                payload = await team_cloud.login(
+                    team_cloud.AuthEmailPasswordRequest(identifier="owner@example.com", password="secret-123"),
+                    response,
+                )
+
+        self.assertTrue(payload["legacy_email_verification_bypassed"])
+        self.assertEqual(payload["user"]["username"], "owner")
+        self.assertIn("team_cloud_access_token=session-token", response.headers["set-cookie"])
+
     async def test_recover_password_does_not_reveal_missing_account(self):
         with patch.object(team_cloud, "resolve_auth_identifier_email", AsyncMock(side_effect=HTTPException(status_code=401, detail="missing"))):
             payload = await team_cloud.recover_password(team_cloud.AuthRecoverRequest(identifier="missing-user"))
