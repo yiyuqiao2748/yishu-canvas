@@ -156,6 +156,25 @@ class SupabasePrivacyQueryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([project["id"] for project in projects], ["own-project", "shared-project"])
 
+    async def test_admin_overview_tolerates_missing_telemetry_tables(self):
+        store = SupabaseTeamStore("https://example.supabase.co", "service-key")
+        store._require_member = AsyncMock(return_value={"role": "owner"})
+
+        async def fake_request(method, path, **kwargs):
+            table = path.strip("/").split("?", 1)[0]
+            raise HTTPException(
+                status_code=502,
+                detail=f'Supabase 请求失败：{{"code":"PGRST205","message":"Could not find the table \'public.{table}\' in the schema cache"}}',
+            )
+
+        store._request = AsyncMock(side_effect=fake_request)
+        user = CurrentUser(id="owner-1", email="owner@example.com")
+
+        overview = await store.admin_overview(user, "team-1")
+
+        self.assertEqual(overview["today"]["total"], 0)
+        self.assertEqual(overview["active_users"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

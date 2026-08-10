@@ -306,8 +306,16 @@
         $("refreshBtn").disabled = true;
         try {
             await loadOverview();
-            await Promise.all([loadUsers(), loadLogs(), loadFeedback()]);
-            await loadDetail();
+            const results = await Promise.allSettled([loadUsers(), loadLogs(), loadFeedback()]);
+            const failures = results.filter((item) => item.status === "rejected").map((item) => item.reason?.message || "请求失败");
+            try {
+                await loadDetail();
+            } catch(e) {
+                failures.push(e.message || "用户详情请求失败");
+            }
+            if(failures.length){
+                showMessage(`部分数据暂不可用：${failures.join("；")}`);
+            }
             await sendHeartbeat();
         } catch(e) {
             renderTeams();

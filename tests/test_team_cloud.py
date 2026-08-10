@@ -1148,7 +1148,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function renderFeedback", admin_script)
         self.assertIn(".feedback-item", admin_css)
         self.assertIn('/static/asset-manager.html?v=2026.08.10.1', index_html)
-        self.assertIn('/static/admin-preview.html?v=2026.08.09.6', index_html)
+        self.assertIn('/static/admin-preview.html?v=2026.08.10.6', index_html)
         self.assertIn('/static/api-settings.html?v=2026.08.09.12', index_html)
         self.assertIn('/static/comfyui-settings.html?v=2026.08.09.8', index_html)
 

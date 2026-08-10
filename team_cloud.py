@@ -1821,6 +1821,23 @@ class SupabaseTeamStore:
             return None
         return response.json()
 
+    @staticmethod
+    def _is_missing_table_error(exc: HTTPException, table: str) -> bool:
+        detail = str(getattr(exc, "detail", "") or "")
+        return (
+            getattr(exc, "status_code", None) == 502
+            and "PGRST205" in detail
+            and f"public.{table}" in detail
+        )
+
+    async def _optional_table_request(self, table: str, method: str, path: str, *, json_body: Any = None, fallback: Any = None) -> Any:
+        try:
+            return await self._request(method, path, json_body=json_body)
+        except HTTPException as exc:
+            if self._is_missing_table_error(exc, table):
+                return [] if fallback is None else fallback
+            raise
+
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client and not self._client.is_closed:
             return self._client
@@ -2370,17 +2387,18 @@ class SupabaseTeamStore:
             "error": str(payload.get("error") or "")[:1000],
             "finished_at": utc_now_iso() if status in {"succeeded", "failed"} else None,
         }
-        created = await self._request("POST", "/api_usage_logs", json_body=[body])
+        created = await self._optional_table_request("api_usage_logs", "POST", "/api_usage_logs", json_body=[body], fallback=[body])
         record = created[0] if created else body
         if points:
             point_record = await self._ensure_points_record(team_id, user.id)
             next_balance = max(0, int(point_record.get("balance") or 0) - points)
-            await self._request(
+            await self._optional_table_request(
+                "user_points",
                 "PATCH",
                 f"/user_points?team_id=eq.{team_id}&user_id=eq.{user.id}",
                 json_body={"balance": next_balance, "updated_at": utc_now_iso()},
             )
-            await self._request("POST", "/point_ledger", json_body=[{
+            await self._optional_table_request("point_ledger", "POST", "/point_ledger", json_body=[{
                 "team_id": team_id,
                 "user_id": user.id,
                 "delta": -points,
@@ -2400,7 +2418,8 @@ class SupabaseTeamStore:
         if request:
             ua = request.headers.get("user-agent", "")
             user_agent_hash = hashlib.sha1(ua.encode("utf-8")).hexdigest()[:16] if ua else ""
-        rows = await self._request(
+        rows = await self._optional_table_request(
+            "user_sessions",
             "GET",
             f"/user_sessions?session_id=eq.{quote(session_id, safe='')}&user_id=eq.{quote(user.id, safe='')}&select=*",
         )
@@ -2411,14 +2430,15 @@ class SupabaseTeamStore:
             "user_agent_hash": user_agent_hash,
         }
         if rows:
-            updated = await self._request(
+            updated = await self._optional_table_request(
+                "user_sessions",
                 "PATCH",
                 f"/user_sessions?session_id=eq.{quote(session_id, safe='')}&user_id=eq.{quote(user.id, safe='')}",
                 json_body=body,
             )
             session = updated[0] if updated else {**rows[0], **body}
         else:
-            created = await self._request("POST", "/user_sessions", json_body=[{
+            created = await self._optional_table_request("user_sessions", "POST", "/user_sessions", json_body=[{
                 "session_id": session_id,
                 "team_id": team_id or None,
                 "user_id": user.id,
@@ -2443,12 +2463,14 @@ class SupabaseTeamStore:
             delta = int(payload.delta or 0)
             new_balance = max(0, old_balance + delta)
             delta = new_balance - old_balance
-        updated = await self._request(
+        updated = await self._optional_table_request(
+            "user_points",
             "PATCH",
             f"/user_points?team_id=eq.{team_id}&user_id=eq.{target_user_id}",
             json_body={"balance": new_balance, "updated_at": utc_now_iso()},
+            fallback=[{**points, "balance": new_balance}],
         )
-        await self._request("POST", "/point_ledger", json_body=[{
+        await self._optional_table_request("point_ledger", "POST", "/point_ledger", json_body=[{
             "team_id": team_id,
             "user_id": target_user_id,
             "delta": delta,
@@ -2463,8 +2485,8 @@ class SupabaseTeamStore:
         member = await self._require_member(user.id, team_id)
         require_team_admin(member)
         logs, sessions = await asyncio.gather(
-            self._request("GET", f"/api_usage_logs?team_id=eq.{team_id}&order=created_at.desc&limit={TEAM_ADMIN_USAGE_LIMIT}&select=*"),
-            self._request("GET", f"/user_sessions?team_id=eq.{team_id}&order=last_seen_at.desc&limit=1000&select=*"),
+            self._optional_table_request("api_usage_logs", "GET", f"/api_usage_logs?team_id=eq.{team_id}&order=created_at.desc&limit={TEAM_ADMIN_USAGE_LIMIT}&select=*"),
+            self._optional_table_request("user_sessions", "GET", f"/user_sessions?team_id=eq.{team_id}&order=last_seen_at.desc&limit=1000&select=*"),
         )
         return build_admin_overview(team_id, logs or [], sessions or [])
 
@@ -2473,9 +2495,9 @@ class SupabaseTeamStore:
         require_team_admin(member)
         members, points, logs, sessions = await asyncio.gather(
             self._request("GET", f"/team_members?team_id=eq.{team_id}&select=*"),
-            self._request("GET", f"/user_points?team_id=eq.{team_id}&select=*"),
-            self._request("GET", f"/api_usage_logs?team_id=eq.{team_id}&order=created_at.desc&limit={TEAM_ADMIN_USAGE_LIMIT}&select=*"),
-            self._request("GET", f"/user_sessions?team_id=eq.{team_id}&order=last_seen_at.desc&limit=1000&select=*"),
+            self._optional_table_request("user_points", "GET", f"/user_points?team_id=eq.{team_id}&select=*"),
+            self._optional_table_request("api_usage_logs", "GET", f"/api_usage_logs?team_id=eq.{team_id}&order=created_at.desc&limit={TEAM_ADMIN_USAGE_LIMIT}&select=*"),
+            self._optional_table_request("user_sessions", "GET", f"/user_sessions?team_id=eq.{team_id}&order=last_seen_at.desc&limit=1000&select=*"),
         )
         user_ids = [str(item.get("user_id") or "") for item in members or [] if item.get("user_id")]
         profiles = await self._profiles_for_user_ids(user_ids)
@@ -2487,39 +2509,42 @@ class SupabaseTeamStore:
         await self._require_member(target_user_id, team_id)
         points, logs, sessions = await asyncio.gather(
             self._ensure_points_record(team_id, target_user_id),
-            self._request("GET", f"/api_usage_logs?team_id=eq.{team_id}&user_id=eq.{target_user_id}&order=created_at.desc&limit=500&select=*"),
-            self._request("GET", f"/user_sessions?team_id=eq.{team_id}&user_id=eq.{target_user_id}&order=last_seen_at.desc&limit=100&select=*"),
+            self._optional_table_request("api_usage_logs", "GET", f"/api_usage_logs?team_id=eq.{team_id}&user_id=eq.{target_user_id}&order=created_at.desc&limit=500&select=*"),
+            self._optional_table_request("user_sessions", "GET", f"/user_sessions?team_id=eq.{team_id}&user_id=eq.{target_user_id}&order=last_seen_at.desc&limit=100&select=*"),
         )
         return build_admin_user_detail(target_user_id, points, logs or [], sessions or [])
 
     async def admin_usage_logs(self, user: CurrentUser, team_id: str, filters: Dict[str, Any]) -> Dict[str, Any]:
         member = await self._require_member(user.id, team_id)
         require_team_admin(member)
-        logs = await self._request(
+        logs = await self._optional_table_request(
+            "api_usage_logs",
             "GET",
             f"/api_usage_logs?team_id=eq.{team_id}&order=created_at.desc&limit={TEAM_ADMIN_USAGE_LIMIT}&select=*",
         )
         return filter_usage_logs(logs or [], filters)
 
     async def _ensure_points_record(self, team_id: str, user_id: str) -> Dict[str, Any]:
-        rows = await self._request(
-            "GET",
-            f"/user_points?team_id=eq.{team_id}&user_id=eq.{user_id}&select=*",
-        )
-        if rows:
-            return rows[0]
-        created = await self._request("POST", "/user_points", json_body=[{
-            "team_id": team_id,
-            "user_id": user_id,
-            "balance": TEAM_POINTS_DEFAULT_BALANCE,
-            "monthly_quota": TEAM_POINTS_DEFAULT_BALANCE,
-        }])
-        return created[0] if created else {
+        fallback = {
             "team_id": team_id,
             "user_id": user_id,
             "balance": TEAM_POINTS_DEFAULT_BALANCE,
             "monthly_quota": TEAM_POINTS_DEFAULT_BALANCE,
         }
+        rows = await self._optional_table_request(
+            "user_points",
+            "GET",
+            f"/user_points?team_id=eq.{team_id}&user_id=eq.{user_id}&select=*",
+        )
+        if rows:
+            return rows[0]
+        created = await self._optional_table_request("user_points", "POST", "/user_points", json_body=[{
+            "team_id": team_id,
+            "user_id": user_id,
+            "balance": TEAM_POINTS_DEFAULT_BALANCE,
+            "monthly_quota": TEAM_POINTS_DEFAULT_BALANCE,
+        }], fallback=[fallback])
+        return created[0] if created else fallback
 
     async def _profiles_for_user_ids(self, user_ids: List[str]) -> List[Dict[str, Any]]:
         ids = [quote(str(item), safe="") for item in user_ids if str(item or "").strip()]
