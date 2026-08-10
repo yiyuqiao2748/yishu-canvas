@@ -2671,6 +2671,19 @@ async def ensure_user_profile(user_id: str, email: str, username: str) -> Dict[s
     return await create_user_profile(user_id, email, username)
 
 
+async def ensure_confirmed_auth_profile(user_id: str, email: str) -> Dict[str, Any]:
+    username = normalize_username(str(email or "").split("@", 1)[0])
+    if not username:
+        username = f"user-{str(user_id or '')[:8]}"
+    try:
+        return await ensure_user_profile(user_id, email, username)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        fallback = normalize_username(f"{username}-{str(user_id or '')[:8]}")
+        return await ensure_user_profile(user_id, email, fallback)
+
+
 async def resolve_auth_identifier_email(identifier: str) -> str:
     identifier = str(identifier or "").strip()
     if looks_like_email(identifier):
@@ -3037,6 +3050,8 @@ async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[s
     if not supabase_user_email_confirmed(user):
         clear_auth_cookie(response)
         raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")
+    if not profile:
+        profile = await ensure_confirmed_auth_profile(user_id, email)
     if not await get_user_profile_by_user_id(str(user.get("id") or "")):
         clear_auth_cookie(response)
         raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")

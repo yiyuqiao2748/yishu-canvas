@@ -586,7 +586,7 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(payload["verification_required"])
         self.assertIn("team_cloud_access_token=verified-token", response.headers["set-cookie"])
 
-    async def test_login_requires_verified_profile(self):
+    async def test_login_creates_profile_for_confirmed_auth_user(self):
         response = Response()
         auth_mock = AsyncMock(return_value={
             "access_token": "session-token",
@@ -596,18 +596,22 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
                 "email_confirmed_at": "2026-08-09T00:00:00Z",
             },
         })
+        profile = {"user_id": "user-1", "email": "person@example.com", "username": "person", "display_name": "person"}
+        ensure_profile = AsyncMock(return_value=profile)
+        get_profile = AsyncMock(side_effect=[None, profile, profile])
 
         with patch.object(team_cloud, "resolve_auth_identifier_email", AsyncMock(return_value="person@example.com")), \
              patch.object(team_cloud, "supabase_auth_request", auth_mock), \
-             patch.object(team_cloud, "get_user_profile_by_user_id", AsyncMock(return_value=None)):
-            with self.assertRaises(HTTPException) as error:
-                await team_cloud.login(
-                    team_cloud.AuthEmailPasswordRequest(identifier="person@example.com", password="secret-123"),
-                    response,
-                )
+             patch.object(team_cloud, "get_user_profile_by_user_id", get_profile), \
+             patch.object(team_cloud, "ensure_confirmed_auth_profile", ensure_profile):
+            payload = await team_cloud.login(
+                team_cloud.AuthEmailPasswordRequest(identifier="person@example.com", password="secret-123"),
+                response,
+            )
 
-        self.assertEqual(error.exception.status_code, 403)
-        self.assertIn("邮箱验证码", error.exception.detail)
+        ensure_profile.assert_awaited_once_with("user-1", "person@example.com")
+        self.assertEqual(payload["user"]["username"], "person")
+        self.assertIn("team_cloud_access_token=session-token", response.headers["set-cookie"])
 
     async def test_login_allows_legacy_unverified_admin_profile(self):
         response = Response()
