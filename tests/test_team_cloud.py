@@ -1113,7 +1113,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn('class="nav-chip points-chip status-chip"', html)
         self.assertNotIn('class="nav-chip points-chip" type="button" data-open-page="team-cloud"', html)
         self.assertIn('data-open-page="admin-preview">\n                        <span>Admin</span>', html)
-        self.assertIn("workbench.css?v=2026.08.10.5", html)
+        self.assertIn("workbench.css?v=2026.08.12.1", html)
         self.assertIn('id="workbenchVersionLabel"', html)
         self.assertIn('data-open-page="asset-manager"', html)
         self.assertIn('data-open-page="comfyui-settings"', html)
@@ -1223,8 +1223,8 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("border-radius: 16px;", workbench_css)
         self.assertIn("box-shadow:\n        inset 0 1px 0 rgba(255, 255, 255, .16),\n        inset 0 -18px 38px rgba(255, 255, 255, .035),\n        0 12px 30px rgba(0, 0, 0, .16);", workbench_css)
         self.assertEqual(html.count('data-custom-select'), 3)
-        self.assertIn("workbench.css?v=2026.08.10.5", html)
-        self.assertIn("workbench.js?v=2026.08.10.5", html)
+        self.assertIn("workbench.css?v=2026.08.12.1", html)
+        self.assertIn("workbench.js?v=2026.08.12.1", html)
         self.assertIn('class="select-display"', html)
         self.assertIn('class="select-menu"', html)
         self.assertIn("function initCustomSelects", workbench_script)
@@ -1245,8 +1245,8 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         smart_css = (root / "static" / "css" / "smart-canvas.css").read_text(encoding="utf-8")
 
         agent_css = (root / "static" / "css" / "agent-panel.css").read_text(encoding="utf-8")
-        self.assertIn("canvas.css?v=2026.08.10.1", canvas_html)
-        self.assertIn("canvas.js?v=2026.08.10.1", canvas_html)
+        self.assertIn("canvas.css?v=2026.08.12.1", canvas_html)
+        self.assertIn("canvas.js?v=2026.08.12.1", canvas_html)
         self.assertIn("agent-panel.css?v=2026.08.09.8", canvas_html)
         self.assertIn("smart-canvas.css?v=2026.07.30.3", smart_html)
         self.assertIn("smart-canvas.js?v=2026.08.05.1", smart_html)
@@ -1337,6 +1337,25 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("initialCanvasVisibilityFilter", list_script)
         self.assertIn("params.get('visibility')", list_script)
         self.assertIn("function recentModeRequested", list_script)
+
+    def test_public_performance_paths_use_non_blocking_auth_and_thumbnails(self):
+        root = Path(__file__).resolve().parents[1]
+        workbench_script = (root / "static" / "js" / "workbench.js").read_text(encoding="utf-8")
+        canvas_script = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+        main_py = (root / "main.py").read_text(encoding="utf-8")
+        team_cloud_py = (root / "team_cloud.py").read_text(encoding="utf-8")
+
+        self.assertIn("function workbenchMediaPreviewUrl", workbench_script)
+        self.assertIn("/api/media-preview?w=", workbench_script)
+        self.assertIn("void loadCurrentUser();", workbench_script)
+        self.assertNotIn("await loadCurrentUser();\n            if(authModalMode === 'admin')", workbench_script)
+        self.assertIn("Promise.all", workbench_script)
+        self.assertIn("const preview = workbenchMediaPreviewUrl(url, 512);", workbench_script)
+        self.assertIn("canvasPreviewImgHtml(node.url, 512", canvas_script)
+        self.assertIn('"Cache-Control": "public, max-age=86400, immutable"', main_py)
+
+        login_source = team_cloud_py.split('@router.post("/auth/login")', 1)[1].split('@router.post("/auth/recover")', 1)[0]
+        self.assertEqual(login_source.count("get_user_profile_by_user_id(str(user.get(\"id\") or \"\"))"), 0)
 
     def test_canvas_agent_api_is_auth_gated_and_validates_plans(self):
         root = Path(__file__).resolve().parents[1]

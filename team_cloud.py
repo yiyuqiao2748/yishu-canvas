@@ -3603,12 +3603,11 @@ async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[s
         raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")
     if not profile:
         profile = await ensure_confirmed_auth_profile(user_id, email)
-    if not await get_user_profile_by_user_id(str(user.get("id") or "")):
+    if not profile:
         clear_auth_cookie(response)
         raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")
     set_auth_cookie(response, data["access_token"])
     payload_out = sanitize_auth_payload(data)
-    profile = await get_user_profile_by_user_id(str(user.get("id") or ""))
     if profile:
         payload_out["user"]["username"] = profile.get("username") or ""
         payload_out["user"]["display_name"] = profile.get("display_name") or profile.get("username") or ""

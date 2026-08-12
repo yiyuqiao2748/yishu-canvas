@@ -317,6 +317,7 @@ DATA_DIR = os.getenv("YISHU_DATA_DIR", os.path.join(BASE_DIR, "data"))
 CONVERSATION_DIR = os.path.join(DATA_DIR, "conversations")
 CANVAS_DIR = os.path.join(DATA_DIR, "canvases")
 MEDIA_PREVIEW_DIR = os.path.join(DATA_DIR, "media_previews")
+MEDIA_PREVIEW_CACHE_HEADERS = {"Cache-Control": "public, max-age=86400, immutable"}
 WORKBENCH_FEEDBACK_FILE = os.path.join(DATA_DIR, "workbench_feedback.jsonl")
 ASSET_LIBRARY_PATH = os.path.join(DATA_DIR, "asset_library.json")
 PROMPT_LIBRARY_PATH = os.path.join(DATA_DIR, "prompt_libraries.json")
@@ -7277,9 +7278,9 @@ async def media_preview(url: str, w: int = 512):
     webp_path, png_path = media_preview_cache_paths(path, width)
 
     if os.path.exists(webp_path):
-        return FileResponse(webp_path, media_type="image/webp")
+        return FileResponse(webp_path, media_type="image/webp", headers=MEDIA_PREVIEW_CACHE_HEADERS)
     if os.path.exists(png_path):
-        return FileResponse(png_path, media_type="image/png")
+        return FileResponse(png_path, media_type="image/png", headers=MEDIA_PREVIEW_CACHE_HEADERS)
 
     def _build_preview():
         # 同步 PIL 处理 + 落盘，放到线程里执行，避免阻塞事件循环（几十张首次生成会卡死整个 loop → 缩略图全空白）
@@ -7300,7 +7301,7 @@ async def media_preview(url: str, w: int = 512):
 
     try:
         out_path, media_type = await asyncio.to_thread(_build_preview)
-        return FileResponse(out_path, media_type=media_type)
+        return FileResponse(out_path, media_type=media_type, headers=MEDIA_PREVIEW_CACHE_HEADERS)
     except Exception as exc:
         raise HTTPException(status_code=415, detail=f"无法生成预览图：{exc}") from exc
 
@@ -7316,7 +7317,7 @@ async def image_jpeg(url: str, w: int = 0):
     key = hashlib.sha1(f"{os.path.realpath(path)}|{stat.st_mtime_ns}|{stat.st_size}|{width}|jpg".encode("utf-8", "ignore")).hexdigest()
     cache_path = os.path.join(MEDIA_PREVIEW_DIR, f"{key}.jpg")
     if os.path.exists(cache_path):
-        return FileResponse(cache_path, media_type="image/jpeg")
+        return FileResponse(cache_path, media_type="image/jpeg", headers=MEDIA_PREVIEW_CACHE_HEADERS)
 
     def _build():
         os.makedirs(MEDIA_PREVIEW_DIR, exist_ok=True)
@@ -7336,7 +7337,7 @@ async def image_jpeg(url: str, w: int = 0):
 
     try:
         out_path = await asyncio.to_thread(_build)
-        return FileResponse(out_path, media_type="image/jpeg")
+        return FileResponse(out_path, media_type="image/jpeg", headers=MEDIA_PREVIEW_CACHE_HEADERS)
     except Exception as exc:
         raise HTTPException(status_code=415, detail=f"无法转换图片：{exc}") from exc
 

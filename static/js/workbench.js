@@ -466,8 +466,8 @@
             storeTeamAccessToken(data.access_token || '');
             authSignupAwaitingVerification = false;
             authPendingSignupEmail = '';
-            await loadCurrentUser();
             if(authModalMode === 'admin') {
+                await loadCurrentUser();
                 if(!hasApiSettingsAccess()) {
                     setAuthMessage('当前账户不是管理员，不能进入 API 设置。', 'error');
                     return;
@@ -478,6 +478,7 @@
             }
             closeAuthModal();
             setStatus(isSignup ? '注册成功' : '登录成功');
+            void loadCurrentUser();
         } catch(e) {
             setAuthMessage(e.message || (isSignup ? '注册失败，请检查邮箱验证码。' : '账号或密码不正确。'), 'error');
         } finally {
@@ -861,9 +862,19 @@
 
     function applyCardBackground(card, url) {
         if(!card || !url) return false;
-        card.style.setProperty('--library-card-bg', `url("${String(url).replace(/"/g, '%22')}")`);
+        const preview = workbenchMediaPreviewUrl(url, 512);
+        card.style.setProperty('--library-card-bg', `url("${String(preview).replace(/"/g, '%22')}")`);
         card.classList.add('has-bg');
         return true;
+    }
+
+    function workbenchMediaPreviewUrl(url, size = 512) {
+        const raw = String(url || '').trim();
+        if(!raw || raw.startsWith('data:') || raw.startsWith('blob:') || raw.startsWith('/api/media-preview')) return raw;
+        if(!raw.startsWith('/assets/') && !raw.startsWith('/output/') && !raw.startsWith('/api/storage-files/')) return raw;
+        if(!/\.(png|jpe?g|webp|gif|bmp|avif|tiff?)(\?|#|$)/i.test(raw)) return raw;
+        const width = Math.max(64, Math.min(2048, Math.round(Number(size) || 512)));
+        return `/api/media-preview?w=${width}&url=${encodeURIComponent(raw)}`;
     }
 
     async function loadRecentCanvasBackground() {
@@ -874,13 +885,13 @@
             const canvases = (data.canvases || [])
                 .slice()
                 .sort((a, b) => Number(b.updated_at || b.created_at || 0) - Number(a.updated_at || a.created_at || 0))
-                .slice(0, 6);
-            for(const canvas of canvases) {
-                try {
-                    const detail = await fetchJson(`/api/canvases/${encodeURIComponent(canvas.id)}`);
-                    const urls = collectImageUrls(detail.canvas || detail);
-                    if(applyCardBackground(card, urls[0])) return;
-                } catch(e) {}
+                .slice(0, 3);
+            const details = await Promise.all(canvases.map(canvas => fetchJson(`/api/canvases/${encodeURIComponent(canvas.id)}`)
+                .catch(() => null)));
+            for(const detail of details) {
+                if(!detail) continue;
+                const urls = collectImageUrls(detail.canvas || detail);
+                if(applyCardBackground(card, urls[0])) return;
             }
         } catch(e) {}
     }
@@ -1063,7 +1074,7 @@
 
         if(window.lucide) window.lucide.createIcons();
         loadWorkbenchVersion();
-        loadCurrentUser();
+        void loadCurrentUser();
         updateReferenceCount();
         startPromptTyping();
         loadRecentCanvasBackground();
