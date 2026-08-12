@@ -1538,6 +1538,19 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertNotIn("preloadSmartSelectedHighRes(item.target)", smart_script)
         self.assertIn("if(!imgEl || imgEl.dataset?.previewSrc", smart_script)
 
+    def test_smart_image_preview_does_not_replace_preview_with_delayed_original(self):
+        root = Path(__file__).resolve().parents[1]
+        smart_script = (root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+        smart_bundle = (root / "static" / "dist" / "js" / "smart-canvas.min.js").read_text(encoding="utf-8")
+
+        self.assertNotIn("setTimeout(loadFullPreview, 120)", smart_script)
+        self.assertNotIn("setTimeout(loadFullEditorImage, 120)", smart_script)
+        self.assertIn("function requestSmartEditorOriginal", smart_script)
+        self.assertIn("if(!isPreview) requestSmartEditorOriginal();", smart_script)
+        self.assertNotIn("loadFullPreview", smart_bundle)
+        self.assertNotIn("loadFullEditorImage", smart_bundle)
+        self.assertIn("requestSmartEditorOriginal", smart_bundle)
+
     def test_large_canvas_renderers_virtualize_with_legacy_rollback(self):
         root = Path(__file__).resolve().parents[1]
         canvas_script = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")

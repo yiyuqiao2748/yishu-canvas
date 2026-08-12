@@ -9724,6 +9724,7 @@ function setImageEditMode(mode, userTouched=false){
     const zoomLabel = document.getElementById('imageEditZoomLabel');
     const cancelBtn = document.getElementById('imageEditCancelBtn');
     const isPreview = imageEditMode === 'preview';
+    if(!isPreview) requestSmartEditorOriginal();
     if(!isPreview && panoramaState.enabled) disposePanoramaPreview();
     cropCanvasEl.style.display = isPreview ? 'none' : '';
     previewStageEl.style.display = isPreview ? 'inline-flex' : 'none';
@@ -10340,17 +10341,10 @@ function refreshComparePanel(){
     const quickPreviewSrc = smartMediaPreviewUrl(editing.image || curUrl, 1536);
     const previewToken = `${editing.node?.id || ''}:${editing.index ?? 0}:${Date.now()}`;
     currentImg.dataset.previewSrcToken = previewToken;
-    const loadFullPreview = () => {
-        if(imageEditMode !== 'preview' || !imageEditModal.classList.contains('open')) return;
-        if(currentImg.dataset.previewSrcToken !== previewToken) return;
-        currentImg.dataset.previewQuick = '';
-        if(currentImg.getAttribute('src') !== previewSrc) currentImg.src = previewSrc;
-    };
     if(quickPreviewSrc && quickPreviewSrc !== previewSrc){
         currentImg.dataset.proxyFallbackTried = '';
         currentImg.dataset.previewQuick = '1';
         if(currentImg.getAttribute('src') !== quickPreviewSrc) currentImg.src = quickPreviewSrc;
-        requestAnimationFrame(() => setTimeout(loadFullPreview, 120));
     } else if(currentImg.getAttribute('src') !== previewSrc) {
         currentImg.dataset.proxyFallbackTried = '';
         currentImg.dataset.previewQuick = '';
@@ -11511,6 +11505,15 @@ function openGroupImagePreview(group, startNodeId, startIndex=0){
     // 恢复分组上下文后重算导航/下载全部按钮（openImageEditor 已把 previewNavState 重置成单节点态）。
     setImageEditMode('preview');
 }
+function requestSmartEditorOriginal(){
+    const editing = currentEditImage();
+    const img = document.getElementById('cropImage');
+    if(!editing.image?.url || !img || imageEditMode === 'preview') return;
+    const original = displayMediaUrl(editing.image);
+    if(!original) return;
+    img.dataset.editorQuick = '';
+    if(img.getAttribute('src') !== original) img.src = original;
+}
 function openImageEditor(nodeId, imageIndex=0){
     const node = nodes.find(n => n.id === nodeId);
     const image = imageForDisplay(node?.images?.[imageIndex]);
@@ -11591,16 +11594,9 @@ function openImageEditor(nodeId, imageIndex=0){
     // CORS 请求并失败——表现就是预览先闪一下（命中缓存）随即变成破损图。
     img.removeAttribute('crossorigin');
     const quickEditorSrc = smartMediaPreviewUrl(image, 2048);
-    const loadFullEditorImage = () => {
-        if(!cropState || cropState.nodeId !== nodeId || cropState.imageIndex !== imageIndex) return;
-        if(!imageEditModal.classList.contains('open') || img.dataset.editorSrcToken !== editorSrcToken) return;
-        img.dataset.editorQuick = '';
-        if(img.getAttribute('src') !== primaryEditorSrc) img.src = primaryEditorSrc;
-    };
     if(quickEditorSrc && quickEditorSrc !== primaryEditorSrc){
         img.dataset.editorQuick = '1';
         img.src = quickEditorSrc;
-        requestAnimationFrame(() => setTimeout(loadFullEditorImage, 120));
     } else {
         img.src = primaryEditorSrc;
     }
