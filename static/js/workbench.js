@@ -253,19 +253,38 @@
         return text;
     }
 
+    function applyWorkbenchAuthState(data) {
+        const label = document.getElementById('workbenchUserLabel');
+        const points = document.getElementById('workbenchInspirationPoints');
+        currentWorkbenchUser = data?.user || null;
+        currentWorkbenchTeams = Array.isArray(data?.teams) ? data.teams : [];
+        if(label) label.textContent = shortUserName(currentWorkbenchUser);
+        if(points && !currentWorkbenchUser) points.textContent = '0';
+        try {
+            const teamId = data?.selected_team_id || data?.team_id || data?.teams?.[0]?.id || '';
+            if(teamId) localStorage.setItem(TEAM_CLOUD_TEAM_KEY, teamId);
+        } catch(e) {}
+        window.__workbenchCurrentUser = currentWorkbenchUser;
+        return data;
+    }
+
     async function loadCurrentUser() {
         const label = document.getElementById('workbenchUserLabel');
         const points = document.getElementById('workbenchInspirationPoints');
         if(!label) return null;
         try {
-            const data = await fetchJson('/api/team-cloud/bootstrap');
-            label.textContent = shortUserName(data.user);
-            if(points) points.textContent = (data.user && Array.isArray(data.teams) && data.teams.length) ? new Intl.NumberFormat('zh-CN').format(Number(data.points?.balance || 0)) : '0';
-            currentWorkbenchUser = data.user || null;
-            currentWorkbenchTeams = Array.isArray(data.teams) ? data.teams : [];
-            try { if(data.team_id) localStorage.setItem(TEAM_CLOUD_TEAM_KEY, data.team_id); } catch(e) {}
-            window.__workbenchCurrentUser = currentWorkbenchUser;
-            return data;
+            // Keep the auth gate independent from optional bootstrap data.
+            const auth = applyWorkbenchAuthState(await fetchJson('/api/team-cloud/me'));
+            try {
+                const data = await fetchJson('/api/team-cloud/bootstrap');
+                if(points) points.textContent = auth.user && auth.teams.length
+                    ? new Intl.NumberFormat('zh-CN').format(Number(data.points?.balance || 0))
+                    : '0';
+                return { ...data, user: auth.user, teams: auth.teams };
+            } catch(e) {
+                if(points) points.textContent = auth.user && auth.teams.length ? points.textContent : '0';
+                return auth;
+            }
         } catch(e) {
             label.textContent = '未登录';
             if(points) points.textContent = '0';
@@ -498,7 +517,7 @@
     }
 
     async function openApiSettingsEntry() {
-        if(!currentWorkbenchUser) await loadCurrentUser();
+        await loadCurrentUser();
         if(!currentWorkbenchUser) {
             openAuthModal('admin');
             return;
