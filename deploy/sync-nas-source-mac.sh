@@ -54,6 +54,7 @@ fi
 COPYFILE_DISABLE=1 rsync "${rsync_args[@]}" \
   --exclude '.git/' \
   --exclude '.venv/' \
+  --exclude 'node_modules/' \
   --exclude '.DS_Store' \
   --exclude '._*' \
   --exclude '.codex-speedtest-current/' \

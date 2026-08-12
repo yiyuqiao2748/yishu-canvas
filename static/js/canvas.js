@@ -53,10 +53,27 @@ function canvasDisplayMediaUrl(url, name=''){
     if(raw.startsWith('/api/team-cloud/')) return canvasTeamAssetAuthedUrl(raw);
     return /^https?:\/\//i.test(raw) ? canvasProxiedMediaUrl(raw, name) : raw;
 }
+let configuredR2MediaPreviewBaseUrl = '';
+function configuredR2MediaPreviewUrl(url, size=512){
+    if(!configuredR2MediaPreviewBaseUrl || !/^https?:\/\//i.test(String(url || ''))) return '';
+    try {
+        const base = new URL(configuredR2MediaPreviewBaseUrl);
+        const parsed = new URL(String(url));
+        const prefix = `${base.pathname.replace(/\/$/, '')}/generated/`;
+        if(parsed.origin !== base.origin || !parsed.pathname.startsWith(prefix)) return '';
+        const width = Math.max(64, Math.min(1024, Math.round(Number(size) || 512)));
+        return `/api/media-preview?w=${width}&url=${encodeURIComponent(parsed.href)}`;
+    } catch(e) {
+        return '';
+    }
+}
 function canvasMediaPreviewUrl(url, size=512){
-    const raw = canvasOriginalMediaUrl(url);
+    if(url && typeof url === 'object' && url.preview_url) return String(url.preview_url);
+    const raw = canvasOriginalMediaUrl(outputUrlValue(url));
     if(!raw || raw.startsWith('data:') || raw.startsWith('blob:')) return raw;
     if(raw.startsWith('/api/team-cloud/')) return canvasTeamAssetAuthedUrl(raw);
+    const remotePreview = configuredR2MediaPreviewUrl(raw, size);
+    if(remotePreview) return remotePreview;
     if(!raw.startsWith('/output/') && !raw.startsWith('/assets/')) return canvasDisplayMediaUrl(raw);
     if(!/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|mp4|webm|mov|m4v|avi|mkv|flv)(\?|#|$)/i.test(raw)) return raw;
     const width = Math.max(64, Math.min(2048, Math.round(Number(size) || 512)));
@@ -87,8 +104,8 @@ function mediaFallbackUrlsForItem(item){
     return fallbacks.filter(url => url !== outputUrlValue(item));
 }
 function canvasPreviewImgHtml(url, size=512, attrs='', fallbackUrls=[]){
-    const original = canvasOriginalMediaUrl(url);
-    const preview = canvasMediaPreviewUrl(original, size);
+    const original = canvasOriginalMediaUrl(outputUrlValue(url));
+    const preview = canvasMediaPreviewUrl(url, size);
     const fallbacks = (fallbackUrls || []).map(canvasOriginalMediaUrl).filter((item, index, arr) => item && item !== original && arr.indexOf(item) === index);
     const fallbackAttr = fallbacks.length ? ` data-fallback-srcs="${escapeAttr(JSON.stringify(fallbacks))}"` : '';
     // loading=lazy：画布内容多时，视口外的缩略图不加载/不解码，避免一次性解码上百张图卡顿；
@@ -162,16 +179,13 @@ function bindCanvasPreviewImageFallbacks(root=document){
                 img.replaceWith(video.content.firstElementChild);
                 return;
             }
+            const current = img.getAttribute('src') || '';
             let extra = [];
             try { extra = JSON.parse(img.dataset.fallbackSrcs || '[]'); } catch(e) { extra = []; }
-            const candidates = [original, ...extra]
-                .map(canvasOriginalMediaUrl)
-                .filter((url, index, arr) => url && arr.indexOf(url) === index);
-            const index = Number(img.dataset.fallbackIndex || 0);
-            const current = img.getAttribute('src') || '';
-            const next = candidates.slice(index).find(url => url !== current);
+            const candidates = extra.map(item => canvasMediaPreviewUrl(item, 512)).filter((url, index, arr) => url && url !== current && arr.indexOf(url) === index);
+            const next = candidates[Number(img.dataset.fallbackIndex || 0)] || '';
             if(next){
-                img.dataset.fallbackIndex = String(candidates.indexOf(next) + 1);
+                img.dataset.fallbackIndex = String(Number(img.dataset.fallbackIndex || 0) + 1);
                 img.src = next;
                 return;
             }
@@ -238,14 +252,7 @@ function syncCanvasSelectedImageResolution(root=nodesEl){
     canvasSelectedHighResTimer = setTimeout(async () => {
         canvasSelectedHighResTimer = 0;
         if(seq !== canvasSelectedHighResSeq || canvasImageEditorIsOpen()) return;
-        await Promise.all(selectedImages.map(item => preloadCanvasSelectedHighRes(item.target)));
         if(seq !== canvasSelectedHighResSeq || canvasImageEditorIsOpen()) return;
-        selectedImages.forEach(({img, target}) => {
-            if(!img.isConnected || img.dataset.selectedHighResTarget !== target) return;
-            const nodeEl = img.closest('.node');
-            if(!nodeEl?.dataset?.id || !selected.has(nodeEl.dataset.id)) return;
-            if(canvasSelectedHighResLoaded.has(target) && img.getAttribute('src') !== target) img.src = target;
-        });
     }, CANVAS_SELECTED_HIGH_RES_DELAY);
 }
 function applyLanguage(lang){
@@ -458,6 +465,11 @@ const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
 const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
 const CANVAS_URL_PARAMS = new URLSearchParams(window.location.search);
 const TEAM_CLOUD_CANVAS = CANVAS_URL_PARAMS.get('cloud') === '1';
+const CANVAS_LEGACY_RENDERER = CANVAS_URL_PARAMS.get('renderer') === 'legacy';
+const VIRTUAL_RENDER_THRESHOLD = 50;
+const VIRTUAL_RENDER_OVERSCAN = 640;
+let canvasVirtualRenderRaf = 0;
+let canvasVirtualRenderSignature = '';
 const WORKBENCH_DRAFTS_KEY = 'workbenchCanvasDrafts:v1';
 const CANVAS_COLOR_OPTIONS = ['red','orange','amber','green','teal','blue','violet','pink','slate'];
 function teamCloudFetch(url, options={}){
@@ -1371,6 +1383,7 @@ function canvasWheelZoomFactor(event, pageSize){
 function applyViewport(){
     world.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`;
     scheduleMinimapRender();
+    scheduleCanvasVirtualRender();
 }
 function estimatedNodeRect(n){
     const el = nodesEl?.querySelector?.(`.node[data-id="${CSS.escape(n.id)}"]`);
@@ -1388,6 +1401,62 @@ function currentWorldViewRect(){
         w:rect.width / scale,
         h:rect.height / scale
     };
+}
+function canvasVirtualRendererActive(){
+    return !CANVAS_LEGACY_RENDERER && nodes.length > VIRTUAL_RENDER_THRESHOLD;
+}
+function canvasRectIntersects(a, b){
+    return a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
+}
+function canvasVisibleNodeIds(){
+    if(!canvasVirtualRendererActive()) return new Set(nodes.map(node => node.id));
+    const view = currentWorldViewRect();
+    const area = {
+        x:view.x - VIRTUAL_RENDER_OVERSCAN,
+        y:view.y - VIRTUAL_RENDER_OVERSCAN,
+        w:view.w + VIRTUAL_RENDER_OVERSCAN * 2,
+        h:view.h + VIRTUAL_RENDER_OVERSCAN * 2
+    };
+    const visibleIds = new Set(
+        nodes.filter(node => canvasRectIntersects(estimatedNodeRect(node), area)).map(node => node.id)
+    );
+    selected.forEach(id => visibleIds.add(id));
+    [dragNode?.node?.id, resizeNode?.node?.id, tempLink?.from, linkCreateState?.from].filter(Boolean).forEach(id => visibleIds.add(id));
+    (dragNode?.children || []).forEach(item => visibleIds.add(item?.node?.id || item?.id));
+    nodes.forEach(node => {
+        if(node.running || node.pending || node.queued || node.jimengPending || (node.pendingTasks || []).length){
+            visibleIds.add(node.id);
+        }
+    });
+    let changed = true;
+    while(changed){
+        changed = false;
+        nodes.filter(node => node.type === 'group' || node.type === 'promptGroup').forEach(group => {
+            const itemIds = Array.isArray(group.items) ? group.items : [];
+            if(visibleIds.has(group.id)){
+                itemIds.forEach(id => {
+                    if(!visibleIds.has(id)){ visibleIds.add(id); changed = true; }
+                });
+            } else if(itemIds.some(id => visibleIds.has(id))){
+                visibleIds.add(group.id);
+                changed = true;
+            }
+        });
+    }
+    return visibleIds;
+}
+function canvasVisibleNodeSignature(){
+    const visibleIds = canvasVisibleNodeIds();
+    return nodes.filter(node => visibleIds.has(node.id)).map(node => node.id).join('|');
+}
+function scheduleCanvasVirtualRender(){
+    if(!canvasVirtualRendererActive() || canvasVirtualRenderRaf) return;
+    canvasVirtualRenderRaf = requestAnimationFrame(() => {
+        canvasVirtualRenderRaf = 0;
+        const nextSignature = canvasVisibleNodeSignature();
+        if(nextSignature === canvasVirtualRenderSignature) return;
+        render();
+    });
 }
 function minimapBounds(){
     const rects = (nodes || []).map(estimatedNodeRect);
@@ -1733,6 +1802,7 @@ async function loadConfig(){
     loadLocalModelLists();
     try {
         const cfg = await fetch('/api/config').then(r=>r.json());
+        configuredR2MediaPreviewBaseUrl = String(cfg.media_preview_public_base_url || '').replace(/\/$/, '');
         imageModels = cfg.image_models?.length ? cfg.image_models : imageModels;
         chatModels = cfg.chat_models?.length ? cfg.chat_models : chatModels;
         videoModels = cfg.video_models?.length ? cfg.video_models : DEFAULT_VIDEO_MODELS;
@@ -2138,6 +2208,7 @@ async function createCanvas(){
         canvas = data.canvas;
         canvas.logs = canvas.logs || [];
         nodes = canvas.nodes || [];
+        try { performance.mark('canvas-data-ready'); } catch(e) {}
         connections = canvas.connections || [];
         viewport = localViewportForCanvas(canvas.id, canvas.viewport || {x:0, y:0, scale:1});
         canvas.viewport = {...viewport};
@@ -6237,19 +6308,40 @@ function measureCanvasOriginalImageNodes(root=nodesEl){
     });
 }
 
+function markCanvasFirstRenderedContent(root=nodesEl){
+    try {
+        if(!window.__canvasFirstNodeMarked && root.querySelector('.node')){
+            window.__canvasFirstNodeMarked = true;
+            performance.mark('first-node-rendered');
+        }
+        if(window.__canvasFirstImageMarked) return;
+        const image = root.querySelector('img');
+        if(!image) return;
+        const markImage = () => {
+            if(window.__canvasFirstImageMarked) return;
+            window.__canvasFirstImageMarked = true;
+            performance.mark('first-image-loaded');
+        };
+        if(image.complete && image.naturalWidth) markImage();
+        else image.addEventListener('load', markImage, {once:true});
+    } catch(e) {}
+}
+
 function render(){
+    const visibleIds = canvasVisibleNodeIds();
+    canvasVirtualRenderSignature = nodes.filter(node => visibleIds.has(node.id)).map(node => node.id).join('|');
     const outputScrolls = captureOutputScrolls();
     const mediaStates = captureMediaPlaybackStates();
     const reusableMediaNodes = new Map();
     nodesEl.querySelectorAll('.node').forEach(el => {
         const node = nodes.find(n => n.id === el.dataset.id);
-        if(nodeHasLiveMedia(node)) reusableMediaNodes.set(node.id, el);
+        if(visibleIds.has(node?.id) && nodeHasLiveMedia(node)) reusableMediaNodes.set(node.id, el);
     });
     applyViewport();
     [...nodesEl.children].forEach(child => {
         if(!reusableMediaNodes.has(child.dataset?.id)) child.remove();
     });
-    nodes.forEach(node => {
+    nodes.filter(node => visibleIds.has(node.id)).forEach(node => {
         // 单个节点渲染异常不能中断整个循环，否则它后面的节点（含新建节点，通常排在末尾）都不会被
         // 追加进 DOM，连带这些节点的连线也会因找不到 DOM 而画到 (0,0) 变成“消失”。
         try {
@@ -6271,7 +6363,7 @@ function render(){
     refreshIcons();
     bindCanvasPreviewImageFallbacks(nodesEl);
     syncCanvasSelectedImageResolution(nodesEl);
-    measureCanvasOriginalImageNodes(nodesEl);
+    markCanvasFirstRenderedContent(nodesEl);
     refreshOutputTimer();
 }
 function refreshNodes(ids=[]){
@@ -6279,9 +6371,11 @@ function refreshNodes(ids=[]){
     if(!uniqueIds.length) return;
     const outputScrolls = captureOutputScrolls();
     applyViewport();
+    const visibleIds = canvasVisibleNodeIds();
     for(const id of uniqueIds){
         const node = nodes.find(n => n.id === id);
         if(!node) continue;
+        if(canvasVirtualRendererActive() && !visibleIds.has(id)) continue;
         if(node.type === 'output' && refreshOutputNodeContent(node)) continue;
         const current = nodesEl.querySelector(`.node[data-id="${CSS.escape(id)}"]`);
         if(!current){
@@ -6302,7 +6396,6 @@ function refreshNodes(ids=[]){
     refreshIcons();
     bindCanvasPreviewImageFallbacks(nodesEl);
     syncCanvasSelectedImageResolution(nodesEl);
-    measureCanvasOriginalImageNodes(nodesEl);
     refreshOutputTimer();
 }
 function refreshRunNodes(node, out=null){
@@ -13145,7 +13238,7 @@ function renderOutputMedia(item, useGridLayout=false){
         const label = kind === 'text' ? 'TEXT' : 'FILE';
         return `<div class="output-img-wrap output-file-wrap" data-output-url="${safe}"${gridStyle}><div class="output-file-card"><i data-lucide="${icon}" class="w-7 h-7"></i><span>${escapeHtml(meta.name || outputImageName(url))}</span><small>${label}</small></div>${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
     }
-    return `<div class="output-img-wrap" data-output-url="${safe}"${gridStyle}>${canvasPreviewImgHtml(url, useGridLayout ? 512 : 512, 'alt="generated output"', mediaFallbackUrlsForItem(item))}${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
+    return `<div class="output-img-wrap" data-output-url="${safe}"${gridStyle}>${canvasPreviewImgHtml(item, useGridLayout ? 512 : 512, 'alt="generated output"', mediaFallbackUrlsForItem(item))}${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
 }
 function outputGridLayout(node){
     const images = node?.images || [];
@@ -15018,10 +15111,12 @@ function renderLinks(){
     // 否则“读一条 rect → append 一条线”交错进行，每次 append 都让布局失效，下一次读 rect 就触发一次
     // 全量强制重排（layout thrashing），连线一多拖动就掉帧。读写分离后每帧只强制重排一次。
     const segments = [];
+    const visibleIds = canvasVisibleNodeIds();
     connections.forEach(c => {
         // 端点无法解析（节点已删除、或尚未渲染出 DOM）就跳过，否则连线会被画到 (0,0)，
         // 看起来像很多连线都从同一个空白处中转。
         if(!canResolvePort(c.from) || !canResolvePort(c.to)) return;
+        if(canvasVirtualRendererActive() && (!visibleIds.has(c.from) || !visibleIds.has(c.to))) return;
         segments.push({c, a:portPoint(c.from, 'out'), b:portPoint(c.to, 'in')});
     });
     segments.forEach(({c, a, b}) => {
@@ -15655,6 +15750,7 @@ cloudVersionHistoryList?.addEventListener('click', event => {
     if(button) restoreCloudVersion(button.dataset.cloudVersionRestore);
 });
 window.onload = async () => {
+    try { performance.mark('shell-visible'); } catch(e) {}
     applyTheme(localStorage.getItem('studio_theme') || localStorage.getItem(CANVAS_THEME_KEY) || 'dark');
     applyQuickToolbarState();
     if(window.StudioI18n) StudioI18n.apply();

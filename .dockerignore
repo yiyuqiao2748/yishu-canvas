@@ -1,6 +1,7 @@
 .git
 .github
 .venv
+node_modules/
 .codex-speedtest-current
 __pycache__/
 tests/__pycache__/

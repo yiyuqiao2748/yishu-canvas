@@ -1,0 +1,15 @@
+{
+  "name": "yishu-canvas-static-build",
+  "private": true,
+  "scripts": {
+    "build:tailwind": "tailwindcss -i ./static/css/tailwind-input.css -o ./static/dist/tailwind.css --minify",
+    "build:lucide": "node ./tools/build-lucide-subset.mjs",
+    "build:scripts": "node ./tools/build-static-scripts.mjs",
+    "build:static": "npm run build:tailwind && npm run build:lucide && npm run build:scripts"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "lucide": "1.31.0",
+    "tailwindcss": "3.4.19"
+  }
+}

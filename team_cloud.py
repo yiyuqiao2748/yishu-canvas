@@ -100,6 +100,8 @@ router = APIRouter(prefix="/api/team-cloud", tags=["team-cloud"])
 CF_ACCESS_CERTS_CACHE_TTL = 60 * 60
 _cf_access_certs_cache: Dict[str, Any] = {"expires_at": 0.0, "keys": []}
 _verification_resend_times: Dict[str, float] = {}
+_supabase_auth_client: Optional[httpx.AsyncClient] = None
+_supabase_auth_client_lock = asyncio.Lock()
 
 
 class CurrentUser(BaseModel):
@@ -496,17 +498,35 @@ def current_user_from_supabase_payload(payload: Dict[str, Any]) -> CurrentUser:
     )
 
 
+async def get_supabase_auth_client() -> httpx.AsyncClient:
+    global _supabase_auth_client
+    if _supabase_auth_client and not _supabase_auth_client.is_closed:
+        return _supabase_auth_client
+    async with _supabase_auth_client_lock:
+        if not _supabase_auth_client or _supabase_auth_client.is_closed:
+            _supabase_auth_client = httpx.AsyncClient(timeout=20)
+    return _supabase_auth_client
+
+
+async def close_supabase_auth_client() -> None:
+    global _supabase_auth_client
+    client = _supabase_auth_client
+    _supabase_auth_client = None
+    if client and not client.is_closed:
+        await client.aclose()
+
+
 async def fetch_supabase_user(token: str) -> CurrentUser:
     if not settings.supabase_url or not settings.supabase_anon_key:
         raise HTTPException(status_code=503, detail="Supabase Auth 未配置")
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.get(
-            f"{settings.supabase_url}/auth/v1/user",
-            headers={
-                "apikey": settings.supabase_anon_key,
-                "Authorization": f"Bearer {token}",
-            },
-        )
+    client = await get_supabase_auth_client()
+    resp = await client.get(
+        f"{settings.supabase_url}/auth/v1/user",
+        headers={
+            "apikey": settings.supabase_anon_key,
+            "Authorization": f"Bearer {token}",
+        },
+    )
     if resp.status_code in {401, 403}:
         raise HTTPException(status_code=401, detail="登录凭证无效")
     if resp.status_code >= 400:
@@ -643,6 +663,19 @@ async def require_user(
     return await resolve_current_user(authorization, team_cloud_access_token, cf_access_jwt_assertion)
 
 
+async def optional_current_user(request: Request) -> Optional[CurrentUser]:
+    try:
+        return await resolve_current_user(
+            request.headers.get("Authorization"),
+            request.cookies.get(settings.cookie_name),
+            request.headers.get("Cf-Access-Jwt-Assertion"),
+        )
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            return None
+        raise
+
+
 async def require_user_or_query_token(
     authorization: Optional[str] = Header(default=None),
     team_cloud_access_token: Optional[str] = Cookie(default=None, alias=settings.cookie_name),
@@ -673,16 +706,16 @@ def clear_auth_cookie(response: Response) -> None:
 async def supabase_auth_request(path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     if not settings.supabase_url or not settings.supabase_anon_key:
         raise HTTPException(status_code=503, detail="Supabase Auth 未配置")
-    async with httpx.AsyncClient(timeout=20) as client:
-        response = await client.post(
-            f"{settings.supabase_url}/auth/v1/{path}",
-            headers={
-                "apikey": settings.supabase_anon_key,
-                "Authorization": f"Bearer {settings.supabase_anon_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
+    client = await get_supabase_auth_client()
+    response = await client.post(
+        f"{settings.supabase_url}/auth/v1/{path}",
+        headers={
+            "apikey": settings.supabase_anon_key,
+            "Authorization": f"Bearer {settings.supabase_anon_key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+    )
     if response.status_code >= 400:
         detail = "登录服务请求失败"
         try:
@@ -697,16 +730,16 @@ async def supabase_auth_request(path: str, payload: Dict[str, Any]) -> Dict[str,
 async def supabase_update_password(access_token: str, password: str) -> Dict[str, Any]:
     if not settings.supabase_url or not settings.supabase_anon_key:
         raise HTTPException(status_code=503, detail="Supabase Auth 未配置")
-    async with httpx.AsyncClient(timeout=20) as client:
-        response = await client.put(
-            f"{settings.supabase_url}/auth/v1/user",
-            headers={
-                "apikey": settings.supabase_anon_key,
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-            },
-            json={"password": password},
-        )
+    client = await get_supabase_auth_client()
+    response = await client.put(
+        f"{settings.supabase_url}/auth/v1/user",
+        headers={
+            "apikey": settings.supabase_anon_key,
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
+        json={"password": password},
+    )
     if response.status_code >= 400:
         detail = "密码更新失败"
         try:
@@ -3586,29 +3619,37 @@ async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[s
         raise HTTPException(status_code=401, detail="登录失败")
     user = data.get("user") or {}
     user_id = str(user.get("id") or "")
-    profile = await get_user_profile_by_user_id(user_id)
-    if (
-        profile
-        and not supabase_user_email_confirmed(user)
-        and await legacy_admin_login_without_email_verification(user_id, email, profile)
-    ):
-        set_auth_cookie(response, data["access_token"])
-        payload_out = sanitize_auth_payload(data)
-        payload_out["legacy_email_verification_bypassed"] = True
-        payload_out["user"]["username"] = profile.get("username") or ""
-        payload_out["user"]["display_name"] = profile.get("display_name") or profile.get("username") or ""
-        return payload_out
     if not supabase_user_email_confirmed(user):
+        profile = await get_user_profile_by_user_id(user_id)
+        if profile and await legacy_admin_login_without_email_verification(user_id, email, profile):
+            set_auth_cookie(response, data["access_token"])
+            payload_out = sanitize_auth_payload(data)
+            payload_out["legacy_email_verification_bypassed"] = True
+            payload_out["user"]["username"] = profile.get("username") or ""
+            payload_out["user"]["display_name"] = profile.get("display_name") or profile.get("username") or ""
+            return payload_out
         clear_auth_cookie(response)
         raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")
-    if not profile:
-        profile = await ensure_confirmed_auth_profile(user_id, email)
-    if not profile:
-        clear_auth_cookie(response)
-        raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")
+
+    metadata = user.get("user_metadata") if isinstance(user.get("user_metadata"), dict) else {}
+    metadata_username = str(metadata.get("username") or "").strip().lower()
+    if not USERNAME_PATTERN.fullmatch(metadata_username):
+        metadata_username = ""
+    metadata_display_name = str(metadata.get("display_name") or metadata_username).strip()
+    profile = None
+    if not metadata_username:
+        profile = await get_user_profile_by_user_id(user_id)
+        if not profile:
+            profile = await ensure_confirmed_auth_profile(user_id, email)
+        if not profile:
+            clear_auth_cookie(response)
+            raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")
     set_auth_cookie(response, data["access_token"])
     payload_out = sanitize_auth_payload(data)
-    if profile:
+    if metadata_username:
+        payload_out["user"]["username"] = metadata_username
+        payload_out["user"]["display_name"] = metadata_display_name or metadata_username
+    elif profile:
         payload_out["user"]["username"] = profile.get("username") or ""
         payload_out["user"]["display_name"] = profile.get("display_name") or profile.get("username") or ""
     return payload_out
@@ -3662,6 +3703,27 @@ async def team_cloud_me(user: CurrentUser = Depends(require_user)) -> Dict[str, 
     user = await enrich_user_profile(user)
     teams = await maybe_await(active_store().list_user_teams(user))
     return {"user": user.model_dump(), "teams": teams}
+
+
+async def workbench_account_summary(request: Request) -> Dict[str, Any]:
+    user = await optional_current_user(request)
+    if not user:
+        return {"user": None, "teams": [], "points": None}
+    user, teams = await asyncio.gather(
+        enrich_user_profile(user),
+        maybe_await(active_store().list_user_teams(user)),
+    )
+    selected_team_id = str((teams[0] if teams else {}).get("id") or "")
+    points = None
+    if selected_team_id:
+        getter = getattr(active_store(), "get_user_points", None)
+        if getter:
+            points = await maybe_await(getter(user, selected_team_id, user.id))
+    return {
+        "user": user.model_dump(),
+        "teams": teams,
+        "points": points,
+    }
 
 
 @router.get("/bootstrap")

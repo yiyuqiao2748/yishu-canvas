@@ -27,6 +27,7 @@ import shlex
 import functools
 import html
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, wait
 from typing import List, Dict, Any, Optional, Tuple
 from threading import Lock, RLock, Thread
 import httpx
@@ -38,6 +39,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response, StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 
 BASE_IMPORT_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_IMPORT_DIR not in sys.path:
@@ -46,6 +48,7 @@ if BASE_IMPORT_DIR not in sys.path:
 from team_cloud import (
     CurrentUser,
     assert_team_points_available,
+    close_supabase_auth_client,
     record_team_generation_log,
     record_team_usage_log,
     require_user,
@@ -53,8 +56,9 @@ from team_cloud import (
     resolve_team_api_provider_config,
     router as team_cloud_router,
     settings as team_cloud_settings,
+    workbench_account_summary,
 )
-from team_storage import save_generated_file_from_path, settings as team_storage_settings
+from team_storage import r2_client, save_generated_file_from_path, settings as team_storage_settings
 
 QUIET_ACCESS_PATHS = {
     "/api/queue_status",
@@ -95,17 +99,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 app.include_router(team_cloud_router)
 
 
 @app.middleware("http")
 async def request_timing_middleware(request: Request, call_next):
     started = time.perf_counter()
-    response = await call_next(request)
-    duration_ms = int((time.perf_counter() - started) * 1000)
+    supplied_request_id = str(request.headers.get("X-Request-ID") or "").strip()
+    try:
+        uuid.UUID(supplied_request_id)
+        request_id = supplied_request_id
+    except (ValueError, AttributeError):
+        request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+    request.state.server_timings = []
+    try:
+        response = await call_next(request)
+    except Exception:
+        traceback.print_exc()
+        response = JSONResponse(status_code=500, content={"detail": "Internal server error", "request_id": request_id})
+    duration_precise_ms = (time.perf_counter() - started) * 1000
+    duration_ms = int(duration_precise_ms)
+    response.headers["X-Request-ID"] = request_id
     response.headers["X-Request-Duration-Ms"] = str(duration_ms)
-    if duration_ms >= SLOW_REQUEST_MS:
-        print(f"[slow-request] {request.method} {request.url.path} {duration_ms}ms", flush=True)
+    timing_parts = [f"app;dur={duration_precise_ms:.1f}"]
+    timing_parts.extend(request.state.server_timings)
+    response.headers["Server-Timing"] = ", ".join(timing_parts)
+    if duration_precise_ms >= SLOW_REQUEST_MS:
+        print(f"[slow-request] {request.method} {request.url.path} {duration_ms}ms request_id={request_id}", flush=True)
     return response
 
 def health_version():
@@ -118,6 +140,39 @@ def health_version():
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok", "version": health_version(), "deployment": deployment_health_config()}
+
+
+@app.get("/api/workbench/summary")
+async def get_workbench_summary(request: Request, response: Response):
+    async def timed(name: str, awaitable):
+        started = time.perf_counter()
+        try:
+            return await awaitable
+        finally:
+            duration_ms = (time.perf_counter() - started) * 1000
+            request.state.server_timings.append(f"{name};dur={duration_ms:.1f}")
+
+    account = await timed("account", workbench_account_summary(request))
+    user = account.get("user") or {}
+    local_dev_session = bool(team_cloud_settings.dev_bypass and user.get("provider") == "dev-bypass")
+    if local_dev_session:
+        recent_canvas, featured_asset = await asyncio.gather(
+            timed("recent_canvas", asyncio.to_thread(recent_workbench_canvas_summaries, 3)),
+            timed("featured_asset", asyncio.to_thread(featured_workbench_asset)),
+        )
+    else:
+        # Local canvas files have no authoritative cloud owner mapping. Never expose
+        # their titles or media URLs through the public workbench summary.
+        recent_canvas, featured_asset = [], None
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "version": health_version(),
+        "user": account.get("user"),
+        "teams": account.get("teams") or [],
+        "points": account.get("points"),
+        "recent_canvas": recent_canvas,
+        "featured_asset": featured_asset,
+    }
 
 
 def deployment_health_config():
@@ -280,6 +335,15 @@ async def startup_event():
     except Exception as exc:
         print(f"纠正图片扩展名失败: {exc}")
 
+
+    schedule_media_preview_backfill()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await asyncio.to_thread(wait_for_media_preview_tasks, 30)
+    await close_supabase_auth_client()
+
 @app.websocket("/ws/stats")
 async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
     await manager.connect(websocket, client_id)
@@ -317,7 +381,17 @@ DATA_DIR = os.getenv("YISHU_DATA_DIR", os.path.join(BASE_DIR, "data"))
 CONVERSATION_DIR = os.path.join(DATA_DIR, "conversations")
 CANVAS_DIR = os.path.join(DATA_DIR, "canvases")
 MEDIA_PREVIEW_DIR = os.path.join(DATA_DIR, "media_previews")
-MEDIA_PREVIEW_CACHE_HEADERS = {"Cache-Control": "public, max-age=86400, immutable"}
+HTML_CACHE_CONTROL = "public, max-age=0, s-maxage=300, must-revalidate"
+DIST_CACHE_CONTROL = "public, max-age=31536000, s-maxage=2592000, immutable"
+STATIC_CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604800"
+MEDIA_PREVIEW_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, s-maxage=2592000, immutable"}
+MEDIA_PREVIEW_STANDARD_WIDTHS = (256, 512, 1024)
+MEDIA_PREVIEW_REMOTE_MAX_BYTES = int(os.getenv("MEDIA_PREVIEW_REMOTE_MAX_BYTES", str(32 * 1024 * 1024)))
+MEDIA_PREVIEW_REMOTE_MAX_PIXELS = int(os.getenv("MEDIA_PREVIEW_REMOTE_MAX_PIXELS", str(80_000_000)))
+MEDIA_PREVIEW_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="media-preview")
+MEDIA_PREVIEW_FUTURES = set()
+MEDIA_PREVIEW_FUTURES_LOCK = Lock()
+MEDIA_PREVIEW_BACKFILL_STARTED = False
 WORKBENCH_FEEDBACK_FILE = os.path.join(DATA_DIR, "workbench_feedback.jsonl")
 ASSET_LIBRARY_PATH = os.path.join(DATA_DIR, "asset_library.json")
 PROMPT_LIBRARY_PATH = os.path.join(DATA_DIR, "prompt_libraries.json")
@@ -1560,7 +1634,23 @@ os.makedirs(WORKFLOW_DIR, exist_ok=True)
 os.makedirs(CONVERSATION_DIR, exist_ok=True)
 os.makedirs(CANVAS_DIR, exist_ok=True)
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+class CacheControlledStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code >= 400:
+            return response
+        normalized = path.replace("\\", "/").lstrip("/")
+        query_string = scope.get("query_string", b"")
+        if normalized.lower().endswith(".html"):
+            response.headers["Cache-Control"] = HTML_CACHE_CONTROL
+        elif normalized.startswith("dist/") or b"v=" in query_string:
+            response.headers["Cache-Control"] = DIST_CACHE_CONTROL
+        else:
+            response.headers["Cache-Control"] = STATIC_CACHE_CONTROL
+        return response
+
+
+app.mount("/static", CacheControlledStaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/output", StaticFiles(directory=OUTPUT_DIR), name="output")
 app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
@@ -1737,7 +1827,7 @@ def static_html_response(filename: str):
     return Response(
         versioned_static_html(html),
         media_type="text/html; charset=utf-8",
-        headers={"Cache-Control": "no-cache"},
+        headers={"Cache-Control": HTML_CACHE_CONTROL},
     )
 
 STATIC_PROMPT_TEMPLATE_MD = os.path.join(STATIC_DIR, "system-prompts", "infinite-canvas-prompt-templates.md")
@@ -3505,6 +3595,93 @@ def list_canvases():
             -int(item.get("updated_at") or item.get("created_at") or 0),
         ),
     )
+
+
+def _workbench_first_image_url(value):
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith(("/assets/", "/output/", "http://", "https://")) and re.search(
+            r"\.(?:png|jpe?g|webp|gif|bmp|avif|tiff?)(?:[?#].*)?$",
+            text,
+            re.IGNORECASE,
+        ):
+            return text
+        return ""
+    if isinstance(value, list):
+        for item in value:
+            found = _workbench_first_image_url(item)
+            if found:
+                return found
+        return ""
+    if isinstance(value, dict):
+        for key in ("thumbnail_url", "preview_url", "image_url", "url", "src", "path", "output_url"):
+            found = _workbench_first_image_url(value.get(key))
+            if found:
+                return found
+        for key in ("nodes", "items", "categories", "outputs", "images"):
+            found = _workbench_first_image_url(value.get(key))
+            if found:
+                return found
+    return ""
+
+
+def recent_workbench_canvas_summaries(limit=3):
+    safe_limit = max(0, min(3, int(limit or 0)))
+    if safe_limit <= 0 or not os.path.isdir(CANVAS_DIR):
+        return []
+    candidates = []
+    for entry in os.scandir(CANVAS_DIR):
+        if not entry.is_file() or not entry.name.endswith(".json"):
+            continue
+        try:
+            candidates.append((entry.stat().st_mtime_ns, entry.path))
+        except OSError:
+            continue
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    summaries = []
+    for _mtime, path in candidates:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                canvas = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        if canvas.get("deleted_at"):
+            continue
+        summary = canvas_record(canvas)
+        preview_url = _workbench_first_image_url(canvas.get("nodes") or [])
+        if preview_url:
+            summary["preview_url"] = preview_url
+        summaries.append(summary)
+        if len(summaries) >= safe_limit:
+            break
+    return summaries
+
+
+def featured_workbench_asset():
+    latest = None
+    if os.path.isdir(LOCAL_UPLOAD_DIR):
+        for current, _dirs, files in os.walk(LOCAL_UPLOAD_DIR):
+            for name in files:
+                if os.path.splitext(name)[1].lower() not in STORAGE_IMAGE_EXTS:
+                    continue
+                path = os.path.join(current, name)
+                try:
+                    modified = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if latest is None or modified > latest[0]:
+                    rel = os.path.relpath(path, LOCAL_UPLOAD_DIR).replace("\\", "/")
+                    latest = (modified, rel)
+    if latest:
+        item = _local_upload_item(latest[1])
+        return {
+            "name": item.get("name") or os.path.basename(latest[1]),
+            "url": item.get("url") or item.get("path") or "",
+            "kind": item.get("kind") or "image",
+        }
+    library = load_asset_library()
+    url = _workbench_first_image_url(library)
+    return {"name": "", "url": url, "kind": "image"} if url else None
 
 def list_deleted_canvases():
     records = iter_canvas_records(include_deleted=True)
@@ -6801,6 +6978,8 @@ def output_path_for(filename, category="output"):
     return os.path.join(folder, filename)
 
 def output_public_url_for_saved_file(filename, path, category="output", content_type=""):
+    if category == "output":
+        schedule_media_preview_warm(path)
     if category != "output" or not team_storage_settings.r2_ready:
         return output_url_for(filename, category)
     try:
@@ -7237,6 +7416,160 @@ def media_preview_cache_paths(path: str, width: int):
         os.path.join(MEDIA_PREVIEW_DIR, f"{key}.png"),
     )
 
+def normalized_media_preview_width(width: int, *, remote: bool = False) -> int:
+    requested = max(64, min(2048, int(width or 512)))
+    if not remote:
+        return requested
+    return next((candidate for candidate in MEDIA_PREVIEW_STANDARD_WIDTHS if candidate >= requested), MEDIA_PREVIEW_STANDARD_WIDTHS[-1])
+
+def r2_generated_key_from_public_url(url: str) -> Optional[str]:
+    base_text = str(team_storage_settings.r2_public_base_url or "").strip().rstrip("/")
+    if not base_text:
+        return None
+    try:
+        base = urllib.parse.urlsplit(base_text)
+        parsed = urllib.parse.urlsplit(str(url or "").strip())
+        if parsed.username or parsed.password:
+            return None
+        if (parsed.scheme.lower(), parsed.hostname, parsed.port) != (base.scheme.lower(), base.hostname, base.port):
+            return None
+        base_path = urllib.parse.unquote(base.path or "").rstrip("/")
+        path = urllib.parse.unquote(parsed.path or "")
+        prefix = f"{base_path}/" if base_path else "/"
+        if not path.startswith(prefix):
+            return None
+        key = path[len(prefix):].replace("\\", "/").lstrip("/")
+        segments = key.split("/")
+        if not key.startswith("generated/") or any(segment in {"", ".", ".."} for segment in segments):
+            return None
+        if not re.search(r"\.(?:png|jpe?g|webp|gif|bmp|avif|tiff?)$", key, re.IGNORECASE):
+            return None
+        return key
+    except (TypeError, ValueError):
+        return None
+
+def r2_media_preview_cache_paths(key: str, etag: str, width: int):
+    digest = hashlib.sha1(
+        f"{team_storage_settings.r2_bucket}|{key}|{etag}|{width}".encode("utf-8", "ignore")
+    ).hexdigest()
+    return (
+        os.path.join(MEDIA_PREVIEW_DIR, f"{digest}.webp"),
+        os.path.join(MEDIA_PREVIEW_DIR, f"{digest}.png"),
+    )
+
+def build_media_preview_file(path: str, width: int, webp_path: str, png_path: str):
+    os.makedirs(MEDIA_PREVIEW_DIR, exist_ok=True)
+    if is_video_preview_file(path):
+        img = generate_video_preview_image(path, width)
+    else:
+        with Image.open(path) as source:
+            img = ImageOps.exif_transpose(source)
+            img.thumbnail((width, width), Image.LANCZOS)
+            img = img.convert("RGBA" if image_has_alpha(img) else "RGB")
+    try:
+        img.save(webp_path, format="WEBP", quality=80, method=1)
+        return webp_path, "image/webp"
+    except Exception:
+        img.save(png_path, format="PNG")
+        return png_path, "image/png"
+
+def build_r2_media_preview(key: str, width: int):
+    client = r2_client()
+    head = client.head_object(Bucket=team_storage_settings.r2_bucket, Key=key)
+    size = int(head.get("ContentLength") or 0)
+    content_type = str(head.get("ContentType") or "").lower()
+    if size <= 0 or size > MEDIA_PREVIEW_REMOTE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="远程图片过大，无法生成预览")
+    if content_type and not content_type.startswith("image/"):
+        raise HTTPException(status_code=415, detail="远程文件不是图片")
+    etag = str(head.get("ETag") or "").strip('"') or str(size)
+    webp_path, png_path = r2_media_preview_cache_paths(key, etag, width)
+    if os.path.exists(webp_path):
+        return webp_path, "image/webp"
+    if os.path.exists(png_path):
+        return png_path, "image/png"
+    obj = client.get_object(Bucket=team_storage_settings.r2_bucket, Key=key)
+    content = obj["Body"].read(MEDIA_PREVIEW_REMOTE_MAX_BYTES + 1)
+    if len(content) > MEDIA_PREVIEW_REMOTE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="远程图片过大，无法生成预览")
+    os.makedirs(MEDIA_PREVIEW_DIR, exist_ok=True)
+    with Image.open(BytesIO(content)) as source:
+        source.load()
+        if source.width * source.height > MEDIA_PREVIEW_REMOTE_MAX_PIXELS:
+            raise HTTPException(status_code=413, detail="远程图片像素过大，无法生成预览")
+        image = ImageOps.exif_transpose(source)
+        image.thumbnail((width, width), Image.LANCZOS)
+        image = image.convert("RGBA" if image_has_alpha(image) else "RGB")
+    try:
+        image.save(webp_path, format="WEBP", quality=80, method=1)
+        return webp_path, "image/webp"
+    except Exception:
+        image.save(png_path, format="PNG")
+        return png_path, "image/png"
+
+def warm_media_previews(path: str):
+    if not path or not os.path.isfile(path) or is_video_preview_file(path):
+        return
+    for width in MEDIA_PREVIEW_STANDARD_WIDTHS:
+        webp_path, png_path = media_preview_cache_paths(path, width)
+        if os.path.exists(webp_path) or os.path.exists(png_path):
+            continue
+        try:
+            build_media_preview_file(path, width, webp_path, png_path)
+        except Exception as exc:
+            print(f"预览图生成失败: {path} width={width}: {exc}", flush=True)
+            return
+
+def track_media_preview_future(future):
+    with MEDIA_PREVIEW_FUTURES_LOCK:
+        MEDIA_PREVIEW_FUTURES.add(future)
+
+    def finished(done):
+        with MEDIA_PREVIEW_FUTURES_LOCK:
+            MEDIA_PREVIEW_FUTURES.discard(done)
+
+    future.add_done_callback(finished)
+    return future
+
+def wait_for_media_preview_tasks(timeout=30):
+    deadline = time.monotonic() + max(0.0, float(timeout or 0))
+    while True:
+        with MEDIA_PREVIEW_FUTURES_LOCK:
+            pending = list(MEDIA_PREVIEW_FUTURES)
+        if not pending:
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        wait(pending, timeout=remaining)
+
+def schedule_media_preview_warm(path: str):
+    if path and os.path.isfile(path):
+        return track_media_preview_future(MEDIA_PREVIEW_EXECUTOR.submit(warm_media_previews, path))
+    return None
+
+def schedule_media_preview_backfill():
+    global MEDIA_PREVIEW_BACKFILL_STARTED
+    with MEDIA_PREVIEW_FUTURES_LOCK:
+        if MEDIA_PREVIEW_BACKFILL_STARTED:
+            return None
+        MEDIA_PREVIEW_BACKFILL_STARTED = True
+    return track_media_preview_future(MEDIA_PREVIEW_EXECUTOR.submit(backfill_media_previews))
+
+def backfill_media_previews():
+    roots = [OUTPUT_OUTPUT_DIR, os.path.join(ASSETS_DIR, "generated")]
+    seen = set()
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for current, _dirs, files in os.walk(root):
+            for name in files:
+                path = os.path.join(current, name)
+                if path in seen or os.path.splitext(name)[1].lower() not in STORAGE_IMAGE_EXTS:
+                    continue
+                seen.add(path)
+                warm_media_previews(path)
+
 def is_video_preview_file(path: str) -> bool:
     return os.path.splitext(str(path or "").split("?", 1)[0])[1].lower() in {".mp4", ".webm", ".mov", ".m4v", ".avi", ".mkv"}
 
@@ -7269,12 +7602,25 @@ def generate_video_preview_image(path: str, width: int) -> Image.Image:
             pass
 
 @app.get("/api/media-preview")
-async def media_preview(url: str, w: int = 512):
+async def media_preview(request: Request, url: str, w: int = 512):
     path = output_file_from_url(url)
+    remote_key = None
     if not path or not os.path.isfile(path):
+        remote_key = r2_generated_key_from_public_url(url)
+        if remote_key:
+            path = local_media_file_by_basename(filename_from_media_url(url, ""))
+    if (not path or not os.path.isfile(path)) and not remote_key:
         raise HTTPException(status_code=404, detail="媒体文件不存在")
 
-    width = max(64, min(2048, int(w or 512)))
+    width = normalized_media_preview_width(w, remote=bool(remote_key))
+    if remote_key and (not path or not os.path.isfile(path)):
+        started = time.perf_counter()
+        try:
+            out_path, media_type = await asyncio.to_thread(build_r2_media_preview, remote_key, width)
+        finally:
+            request.state.server_timings.append(f"r2_preview;dur={(time.perf_counter() - started) * 1000:.1f}")
+        return FileResponse(out_path, media_type=media_type, headers=MEDIA_PREVIEW_CACHE_HEADERS)
+
     webp_path, png_path = media_preview_cache_paths(path, width)
 
     if os.path.exists(webp_path):
@@ -7300,7 +7646,9 @@ async def media_preview(url: str, w: int = 512):
             return png_path, "image/png"
 
     try:
+        started = time.perf_counter()
         out_path, media_type = await asyncio.to_thread(_build_preview)
+        request.state.server_timings.append(f"image_preview;dur={(time.perf_counter() - started) * 1000:.1f}")
         return FileResponse(out_path, media_type=media_type, headers=MEDIA_PREVIEW_CACHE_HEADERS)
     except Exception as exc:
         raise HTTPException(status_code=415, detail=f"无法生成预览图：{exc}") from exc
@@ -9664,12 +10012,16 @@ def image_output_meta(url, source_item=None):
     meta = {"url": url, "kind": "image"}
     if not url:
         return meta
+    local_path = None
     parsed_name = os.path.basename(urllib.parse.urlparse(str(url)).path)
     if parsed_name:
         meta["name"] = parsed_name
         local_fallback = output_url_for(parsed_name, "output")
-        if local_fallback != url and output_file_from_url(local_fallback):
+        local_path = output_file_from_url(local_fallback)
+        if local_fallback != url and local_path:
             meta["fallback_url"] = local_fallback
+    if r2_generated_key_from_public_url(str(url)) or local_path or output_file_from_url(url):
+        meta["preview_url"] = f"/api/media-preview?w=512&url={urllib.parse.quote(str(url), safe='')}"
     if isinstance(source_item, dict):
         for key in ("source_url", "sourceUrl", "original_url", "originalUrl", "remote_url", "remoteUrl", "fallback_url", "fallbackUrl"):
             value = source_item.get(key)
@@ -9682,7 +10034,7 @@ def image_output_meta(url, source_item=None):
                 value = 0
             if value > 0:
                 meta[key] = value
-    path = output_file_from_url(url)
+    path = output_file_from_url(url) or local_path
     if path and os.path.exists(path):
         try:
             with Image.open(path) as img:
@@ -13489,6 +13841,7 @@ async def ai_config():
         "has_api_key": bool(AI_API_KEY),
         "ms_chat_models": MODELSCOPE_CHAT_MODELS,
         "has_ms_key": bool(modelscope_api_key()),
+        "media_preview_public_base_url": team_storage_settings.r2_public_base_url,
     }
     API_CONFIG_CACHE["data"] = data
     API_CONFIG_CACHE["expires_at"] = now + API_CONFIG_CACHE_TTL

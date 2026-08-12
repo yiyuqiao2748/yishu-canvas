@@ -308,6 +308,49 @@
         }
     }
 
+    function applyWorkbenchSummary(data) {
+        applyWorkbenchAuthState(data || {});
+        const points = document.getElementById('workbenchInspirationPoints');
+        if(points) points.textContent = currentWorkbenchUser && currentWorkbenchTeams.length
+            ? new Intl.NumberFormat('zh-CN').format(Number(data?.points?.balance || 0))
+            : '0';
+        const versionLabel = document.getElementById('workbenchVersionLabel');
+        if(versionLabel) {
+            const version = String(data?.version || '').trim();
+            versionLabel.textContent = version ? `v${version}` : '';
+            versionLabel.hidden = !version;
+        }
+        const recent = Array.isArray(data?.recent_canvas) ? data.recent_canvas : [];
+        const recentUrl = recent.map(item => item?.preview_url || '').find(Boolean) || '';
+        applyCardBackground(document.querySelector('[data-recent-canvas-card]'), recentUrl);
+        applyCardBackground(document.querySelector('[data-frequent-assets-card]'), data?.featured_asset?.url || '');
+        try { performance.mark('summary-ready'); } catch(e) {}
+        return data;
+    }
+
+    async function loadWorkbenchSummary() {
+        try {
+            return applyWorkbenchSummary(await fetchJson('/api/workbench/summary'));
+        } catch(e) {
+            await Promise.all([
+                loadWorkbenchVersion(),
+                loadCurrentUser(),
+                loadRecentCanvasBackground(),
+                loadAssetBackground(),
+            ]);
+            return null;
+        }
+    }
+
+    function scheduleWorkbenchSummary() {
+        const load = () => { void loadWorkbenchSummary(); };
+        if('requestIdleCallback' in window) {
+            window.requestIdleCallback(load, { timeout: 1200 });
+            return;
+        }
+        window.setTimeout(load, 0);
+    }
+
     function hasApiSettingsAccess() {
         return !!currentWorkbenchUser && currentWorkbenchTeams.some(team => ['owner', 'admin'].includes(String(team?.role || '').toLowerCase()));
     }
@@ -478,7 +521,7 @@
             }
             closeAuthModal();
             setStatus(isSignup ? '注册成功' : '登录成功');
-            void loadCurrentUser();
+            void loadWorkbenchSummary();
         } catch(e) {
             setAuthMessage(e.message || (isSignup ? '注册失败，请检查邮箱验证码。' : '账号或密码不正确。'), 'error');
         } finally {
@@ -1073,12 +1116,13 @@
         });
 
         if(window.lucide) window.lucide.createIcons();
-        loadWorkbenchVersion();
-        void loadCurrentUser();
         updateReferenceCount();
         startPromptTyping();
-        loadRecentCanvasBackground();
-        loadAssetBackground();
+        try {
+            performance.mark('shell-visible');
+            performance.mark('workbench-shell-visible');
+        } catch(e) {}
+        scheduleWorkbenchSummary();
     }
 
     if(document.readyState === 'loading') {

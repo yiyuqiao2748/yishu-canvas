@@ -375,6 +375,8 @@ body.smart-node-resize .smart-node-floating-menu,
 .theme-dark .image-name-badge:hover { color:rgba(241,245,249,.9); }
 .image-node.dragging .image-name-badge { opacity:0 !important; pointer-events:none !important; }
 .node-img { display:block; width:var(--node-img-w, 260px); height:var(--node-img-h, 180px); object-fit:cover; border-radius:12px; background:transparent; }
+.smart-preview-unavailable { display:flex; width:100%; min-height:96px; align-items:center; justify-content:center; border:1px dashed var(--line); border-radius:12px; background:var(--soft); color:var(--faint); }
+.smart-preview-unavailable::after { content:"Preview unavailable"; font-size:11px; font-weight:700; }
 video.node-img { object-fit:cover; background:#0f172a; }
 .media-video-card { position:relative; align-items:stretch; justify-content:stretch; overflow:hidden; border:0; border-radius:12px; background:transparent; box-sizing:border-box; }
 .media-video-card video,.media-video-card img[data-preview-kind="video"] { width:100%; height:100%; object-fit:cover; display:block; border-radius:11px; }

@@ -1,6 +1,7 @@
 __pycache__/
 tests/__pycache__/
 .venv/
+node_modules/
 server.log
 server.err.log
 server.*.log

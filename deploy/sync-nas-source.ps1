@@ -29,6 +29,7 @@ $runtimeDirs = @(
 $excludeDirs = @(
     ".git",
     ".venv",
+    "node_modules",
     ".codex-speedtest-current",
     "__pycache__",
     ".pytest_cache",

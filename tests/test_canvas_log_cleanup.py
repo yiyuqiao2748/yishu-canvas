@@ -2,10 +2,12 @@ import json
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import main
@@ -49,6 +51,7 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
             item.start()
 
     def tearDown(self):
+        main.wait_for_media_preview_tasks(timeout=10)
         for item in reversed(self.patches):
             item.stop()
         self.temp.cleanup()
@@ -153,6 +156,124 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("team-secret", json.dumps(payload))
         self.assertNotIn("r2-secret", json.dumps(payload))
         self.assertNotIn("service-secret", json.dumps(payload))
+
+    def test_request_timing_headers_reuse_valid_request_id(self):
+        request_id = str(uuid.uuid4())
+
+        client = TestClient(main.app, raise_server_exceptions=False)
+        response = client.get("/healthz", headers={"X-Request-ID": request_id})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-Request-ID"], request_id)
+        self.assertRegex(response.headers["X-Request-Duration-Ms"], r"^\d+$")
+        self.assertRegex(response.headers["Server-Timing"], r"^app;dur=\d+(?:\.\d+)?$")
+
+    def test_request_timing_headers_replace_invalid_request_id_on_error(self):
+        client = TestClient(main.app, raise_server_exceptions=False)
+        response = client.get("/api/canvases/__missing_request_id_test__", headers={"X-Request-ID": "not a uuid"})
+
+        self.assertEqual(response.status_code, 404)
+        self.assertNotEqual(response.headers["X-Request-ID"], "not a uuid")
+        uuid.UUID(response.headers["X-Request-ID"])
+        self.assertIn("X-Request-Duration-Ms", response.headers)
+        self.assertIn("Server-Timing", response.headers)
+
+    def test_request_timing_headers_are_present_on_unhandled_error(self):
+        path = f"/__test_unhandled_error_{uuid.uuid4().hex}"
+
+        async def fail_request():
+            raise RuntimeError("timing probe")
+
+        main.app.add_api_route(path, fail_request, methods=["GET"])
+        response = TestClient(main.app, raise_server_exceptions=False).get(path)
+
+        self.assertEqual(response.status_code, 500)
+        uuid.UUID(response.headers["X-Request-ID"])
+        self.assertIn("X-Request-Duration-Ms", response.headers)
+        self.assertIn("Server-Timing", response.headers)
+
+    def test_cache_headers_separate_html_dist_and_private_api(self):
+        client = TestClient(main.app, raise_server_exceptions=False)
+
+        index_response = client.get("/")
+        static_html_response = client.get("/static/index.html")
+        dist_response = client.get("/static/dist/tailwind.css")
+        versioned_css_response = client.get("/static/css/canvas.css?v=2026.08.12.1")
+        unversioned_css_response = client.get("/static/css/canvas.css")
+        summary_response = client.get("/api/workbench/summary")
+
+        self.assertEqual(index_response.status_code, 200)
+        self.assertEqual(
+            index_response.headers["Cache-Control"],
+            "public, max-age=0, s-maxage=300, must-revalidate",
+        )
+        self.assertEqual(
+            static_html_response.headers["Cache-Control"],
+            "public, max-age=0, s-maxage=300, must-revalidate",
+        )
+        self.assertEqual(dist_response.status_code, 200)
+        self.assertEqual(
+            dist_response.headers["Cache-Control"],
+            "public, max-age=31536000, s-maxage=2592000, immutable",
+        )
+        self.assertEqual(
+            versioned_css_response.headers["Cache-Control"],
+            "public, max-age=31536000, s-maxage=2592000, immutable",
+        )
+        self.assertEqual(
+            unversioned_css_response.headers["Cache-Control"],
+            "public, max-age=86400, stale-while-revalidate=604800",
+        )
+        self.assertEqual(summary_response.headers["Cache-Control"], "private, no-store")
+
+        compressed_response = client.get(
+            "/static/dist/js/canvas.min.js",
+            headers={"Accept-Encoding": "gzip"},
+        )
+        self.assertEqual(compressed_response.headers.get("Content-Encoding"), "gzip")
+
+    def test_workbench_summary_is_anonymous_private_and_lightweight(self):
+        for index in range(5):
+            self.write_canvas(
+                f"canvas-{index}",
+                [],
+                nodes=[{"id": f"node-{index}", "type": "image", "url": f"/assets/output/{index}.png"}],
+                updated_at=index + 1,
+            )
+            path = self.canvases / f"canvas-{index}.json"
+            path.touch()
+        self.asset_library.write_text(json.dumps({
+            "libraries": [{"categories": [{"items": [{"name": "asset", "url": "/assets/input/featured.png"}]}]}],
+        }), encoding="utf-8")
+
+        client = TestClient(main.app, raise_server_exceptions=False)
+        response = client.get("/api/workbench/summary")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(set(payload), {"version", "user", "teams", "points", "recent_canvas", "featured_asset"})
+        self.assertIsNone(payload["user"])
+        self.assertEqual(payload["teams"], [])
+        self.assertEqual(payload["recent_canvas"], [])
+        self.assertIsNone(payload["featured_asset"])
+        self.assertNotIn("canvas-", response.text)
+        self.assertNotIn("featured.png", response.text)
+        timings = response.headers["Server-Timing"]
+        self.assertIn("account;dur=", timings)
+
+    def test_recent_workbench_summary_skips_invalid_newest_candidates(self):
+        for index in range(4):
+            self.write_canvas(
+                f"valid-{index}",
+                [],
+                nodes=[{"id": f"node-{index}", "type": "prompt", "text": str(index)}],
+                updated_at=index + 1,
+            )
+        (self.canvases / "newest-invalid.json").write_text("{broken", encoding="utf-8")
+
+        summaries = main.recent_workbench_canvas_summaries(3)
+
+        self.assertEqual(len(summaries), 3)
 
     def test_deployment_installs_websocket_runtime(self):
         requirements = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text(encoding="utf-8")

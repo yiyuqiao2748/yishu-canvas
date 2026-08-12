@@ -567,6 +567,23 @@ class TeamCloudStoreTests(unittest.TestCase):
 
 
 class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_workbench_account_summary_returns_compact_logged_in_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = LocalTeamStore(str(Path(tmp) / "team_cloud.json"))
+            user = CurrentUser(id="owner-1", email="owner@example.com", username="owner", display_name="Owner")
+            team = store.create_team(user, "Design Lab")
+
+            with patch.object(team_cloud, "optional_current_user", AsyncMock(return_value=user)), \
+                 patch.object(team_cloud, "active_store", return_value=store), \
+                 patch.object(team_cloud, "enrich_user_profile", AsyncMock(return_value=user)):
+                summary = await team_cloud.workbench_account_summary(object())
+
+        self.assertEqual(summary["user"]["id"], user.id)
+        self.assertEqual(summary["teams"][0]["id"], team["id"])
+        self.assertEqual(summary["points"]["user_id"], user.id)
+        self.assertNotIn("members", summary)
+        self.assertNotIn("projects", summary)
+
     async def test_resolve_auth_identifier_accepts_email_without_profile_lookup(self):
         email = await team_cloud.resolve_auth_identifier_email("User@Example.com")
 
@@ -706,6 +723,75 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["user"]["username"], "owner")
         self.assertIn("team_cloud_access_token=session-token", response.headers["set-cookie"])
 
+    async def test_login_uses_confirmed_metadata_without_profile_lookup(self):
+        response = Response()
+        auth_mock = AsyncMock(return_value={
+            "access_token": "session-token",
+            "user": {
+                "id": "user-1",
+                "email": "person@example.com",
+                "email_confirmed_at": "2026-08-09T00:00:00Z",
+                "user_metadata": {"username": "yiwei", "display_name": "Yiwei"},
+            },
+        })
+        profile_mock = AsyncMock(side_effect=AssertionError("confirmed metadata login must not read profile"))
+
+        with patch.object(team_cloud, "resolve_auth_identifier_email", AsyncMock(return_value="person@example.com")), \
+             patch.object(team_cloud, "supabase_auth_request", auth_mock), \
+             patch.object(team_cloud, "get_user_profile_by_user_id", profile_mock):
+            payload = await team_cloud.login(
+                team_cloud.AuthEmailPasswordRequest(identifier="person@example.com", password="secret-123"),
+                response,
+            )
+
+        profile_mock.assert_not_awaited()
+        self.assertEqual(payload["user"]["username"], "yiwei")
+        self.assertEqual(payload["user"]["display_name"], "Yiwei")
+
+    async def test_login_still_rejects_unverified_metadata_user(self):
+        response = Response()
+        auth_mock = AsyncMock(return_value={
+            "access_token": "session-token",
+            "user": {
+                "id": "user-1",
+                "email": "person@example.com",
+                "confirmation_sent_at": "2026-08-09T00:00:00Z",
+                "user_metadata": {"username": "yiwei", "display_name": "Yiwei"},
+            },
+        })
+
+        with patch.object(team_cloud, "resolve_auth_identifier_email", AsyncMock(return_value="person@example.com")), \
+             patch.object(team_cloud, "supabase_auth_request", auth_mock), \
+             patch.object(team_cloud, "get_user_profile_by_user_id", AsyncMock(return_value=None)):
+            with self.assertRaises(HTTPException) as error:
+                await team_cloud.login(
+                    team_cloud.AuthEmailPasswordRequest(identifier="person@example.com", password="secret-123"),
+                    response,
+                )
+
+        self.assertEqual(error.exception.status_code, 403)
+
+    async def test_supabase_auth_requests_reuse_module_client(self):
+        class FakeResponse:
+            status_code = 200
+            text = ""
+
+            @staticmethod
+            def json():
+                return {"ok": True}
+
+        client = AsyncMock()
+        client.post.return_value = FakeResponse()
+
+        with patch.object(team_cloud, "get_supabase_auth_client", AsyncMock(return_value=client)) as client_factory, \
+             patch.object(team_cloud.settings, "supabase_url", "https://supabase.example"), \
+             patch.object(team_cloud.settings, "supabase_anon_key", "anon-key"):
+            await team_cloud.supabase_auth_request("token?grant_type=password", {"email": "person@example.com"})
+            await team_cloud.supabase_auth_request("recover", {"email": "person@example.com"})
+
+        self.assertEqual(client_factory.await_count, 2)
+        self.assertEqual(client.post.await_count, 2)
+
     async def test_recover_password_does_not_reveal_missing_account(self):
         with patch.object(team_cloud, "resolve_auth_identifier_email", AsyncMock(side_effect=HTTPException(status_code=401, detail="missing"))):
             payload = await team_cloud.recover_password(team_cloud.AuthRecoverRequest(identifier="missing-user"))
@@ -831,7 +917,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn('id="verificationField"', html)
         self.assertIn('id="verificationToken"', html)
         self.assertIn('id="resendVerificationBtn"', html)
-        self.assertIn("team-cloud.js?v=2026.08.09.1", html)
+        self.assertIn("/static/js/team-cloud.js", html)
         self.assertIn("awaitingSignupVerification", script)
         self.assertIn('/auth/signup/start', script)
         self.assertIn('/auth/signup/verify', script)
@@ -839,7 +925,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function resendVerification", script)
         self.assertIn("pending_user_profiles", schema)
         self.assertIn("grant all on table public.pending_user_profiles to service_role;", schema)
-        self.assertIn('/static/team-cloud.html?v=2026.08.09.1', index_html)
+        self.assertIn('/static/team-cloud.html', index_html)
 
     def test_team_api_fetch_models_merges_with_manual_rows(self):
         root = Path(__file__).resolve().parents[1]
@@ -961,6 +1047,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         compose = (root / "deploy" / "fnos" / "docker-compose.yml").read_text(encoding="utf-8")
         dockerignore = (root / ".dockerignore").read_text(encoding="utf-8")
         sync_script = (root / "deploy" / "sync-nas-source.ps1").read_text(encoding="utf-8")
+        mac_sync_script = (root / "deploy" / "sync-nas-source-mac.sh").read_text(encoding="utf-8")
 
         self.assertIn("./api-env:/app/API", compose)
         self.assertIn("./assets:/app/assets", compose)
@@ -977,9 +1064,12 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn(".venv", dockerignore)
         self.assertIn("tmp/", dockerignore)
         self.assertIn(".codex-speedtest-current", dockerignore)
+        self.assertIn("node_modules", dockerignore)
         self.assertIn('".venv"', sync_script)
+        self.assertIn('"node_modules"', sync_script)
         self.assertIn('"tmp"', sync_script)
         self.assertIn('".codex-speedtest-current"', sync_script)
+        self.assertIn("node_modules/", mac_sync_script)
 
     def test_cloud_canvas_kind_is_per_canvas_and_defaults_classic(self):
         root = Path(__file__).resolve().parents[1]
@@ -1035,9 +1125,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         html = (root / "static" / "canvas-list.html").read_text(encoding="utf-8")
         index_html = (root / "static" / "index.html").read_text(encoding="utf-8")
 
-        self.assertIn("canvas-list.html?v=2026.08.10.5", index_html)
-        self.assertIn("canvas-list.css?v=2026.08.09.3", html)
-        self.assertIn("canvas-list.js?v=2026.08.10.1", html)
+        self.assertIn("/static/canvas-list.html", index_html)
+        self.assertIn("/static/css/canvas-list.css", html)
+        self.assertIn("/static/js/canvas-list.js", html)
         self.assertIn("Light theme topbar readability", css)
         self.assertIn("body.theme-light .ws-top-kicker", css)
         self.assertIn("color:#7c2d12;", css)
@@ -1082,8 +1172,9 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function maybeAutoCreateWorkbenchCanvas", list_script)
         self.assertIn("workbenchDraft=", list_script)
         self.assertIn("openPage('canvas', params)", workbench_script)
-        self.assertIn("params: event.data.params || null", (root / "static" / "index.html").read_text(encoding="utf-8"))
-        self.assertIn("function frameSrcWithParams", (root / "static" / "index.html").read_text(encoding="utf-8"))
+        index_script = (root / "static" / "js" / "index.js").read_text(encoding="utf-8")
+        self.assertIn("params: event.data.params || null", index_script)
+        self.assertIn("function frameSrcWithParams", index_script)
         self.assertIn("function applyWorkbenchDraftToCanvas", canvas_script)
         self.assertIn("addPromptNode(defaultPoint(0, 0), prompt)", canvas_script)
         self.assertIn("function seedWorkbenchGeneratorFromDraft", canvas_script)
@@ -1173,23 +1264,26 @@ class TeamCloudStaticUiTests(unittest.TestCase):
     def test_workbench_home_owns_the_full_studio_shell(self):
         root = Path(__file__).resolve().parents[1]
         index_html = (root / "static" / "index.html").read_text(encoding="utf-8")
+        index_css = (root / "static" / "css" / "index.css").read_text(encoding="utf-8")
+        index_script = (root / "static" / "js" / "index.js").read_text(encoding="utf-8")
+        index_assets = "\n".join((index_html, index_css, index_script))
         workbench_css = (root / "static" / "css" / "workbench.css").read_text(encoding="utf-8")
         admin_html = (root / "static" / "admin-preview.html").read_text(encoding="utf-8")
         admin_script = (root / "static" / "js" / "admin-preview.js").read_text(encoding="utf-8")
         admin_css = (root / "static" / "css" / "admin-preview.css").read_text(encoding="utf-8")
 
-        self.assertIn("body.studio-immersive-mode .sidebar", index_html)
-        self.assertIn("body.studio-immersive-mode .stage", index_html)
-        self.assertIn("const IMMERSIVE_PAGE_IDS = new Set(['workbench', 'canvas', 'team-cloud', 'admin-preview', 'asset-manager', 'api-settings', 'comfyui-settings']);", index_html)
-        self.assertIn("IMMERSIVE_PAGE_IDS.has(id)", index_html)
+        self.assertIn("body.studio-immersive-mode .sidebar", index_css)
+        self.assertIn("body.studio-immersive-mode .stage", index_css)
+        self.assertIn("const IMMERSIVE_PAGE_IDS = new Set(['workbench', 'canvas', 'team-cloud', 'admin-preview', 'asset-manager', 'api-settings', 'comfyui-settings']);", index_script)
+        self.assertIn("IMMERSIVE_PAGE_IDS.has(id)", index_script)
         self.assertIn('id="frame-admin-preview"', index_html)
-        self.assertIn("'admin-preview'", index_html)
-        self.assertIn("function setStudioPageMode", index_html)
-        self.assertIn("studio-toggle-theme", index_html)
-        self.assertIn("studio shell sidebar dark active contrast", index_html)
-        self.assertIn("html.theme-dark .nav-item.active,\n        body.theme-dark .nav-item.active,\n        html.studio-theme-dark .nav-item.active,\n        body.studio-theme-dark .nav-item.active", index_html)
-        self.assertIn("html.theme-dark .side-pill.active,\n        body.theme-dark .side-pill.active,\n        html.studio-theme-dark .side-pill.active,\n        body.studio-theme-dark .side-pill.active", index_html)
-        self.assertIn("background:rgba(220,38,38,.22);", index_html)
+        self.assertIn("'admin-preview'", index_script)
+        self.assertIn("function setStudioPageMode", index_script)
+        self.assertIn("studio-toggle-theme", index_assets)
+        self.assertIn("studio shell sidebar dark active contrast", index_css)
+        self.assertIn("html.theme-dark .nav-item.active,\n        body.theme-dark .nav-item.active,\n        html.studio-theme-dark .nav-item.active,\n        body.studio-theme-dark .nav-item.active", index_css)
+        self.assertIn("html.theme-dark .side-pill.active,\n        body.theme-dark .side-pill.active,\n        html.studio-theme-dark .side-pill.active,\n        body.studio-theme-dark .side-pill.active", index_css)
+        self.assertIn("background:rgba(220,38,38,.22);", index_css)
         self.assertIn(".preview-quick-rail button.active", workbench_css)
         self.assertIn(".nav-chip.user-chip #workbenchUserLabel", workbench_css)
         self.assertIn(".nav-chip.status-chip", workbench_css)
@@ -1205,10 +1299,10 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("/admin/feedback", admin_script)
         self.assertIn("function renderFeedback", admin_script)
         self.assertIn(".feedback-item", admin_css)
-        self.assertIn('/static/asset-manager.html?v=2026.08.10.1', index_html)
-        self.assertIn('/static/admin-preview.html?v=2026.08.10.6', index_html)
-        self.assertIn('/static/api-settings.html?v=2026.08.09.12', index_html)
-        self.assertIn('/static/comfyui-settings.html?v=2026.08.09.8', index_html)
+        self.assertIn('/static/asset-manager.html', index_html)
+        self.assertIn('/static/admin-preview.html', index_html)
+        self.assertIn('/static/api-settings.html', index_html)
+        self.assertIn('/static/comfyui-settings.html', index_html)
 
     def test_workbench_home_annotation_polish_is_preserved(self):
         root = Path(__file__).resolve().parents[1]
@@ -1224,7 +1318,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("box-shadow:\n        inset 0 1px 0 rgba(255, 255, 255, .16),\n        inset 0 -18px 38px rgba(255, 255, 255, .035),\n        0 12px 30px rgba(0, 0, 0, .16);", workbench_css)
         self.assertEqual(html.count('data-custom-select'), 3)
         self.assertIn("workbench.css?v=2026.08.12.1", html)
-        self.assertIn("workbench.js?v=2026.08.12.1", html)
+        self.assertIn("/static/dist/js/workbench.min.js", html)
         self.assertIn('class="select-display"', html)
         self.assertIn('class="select-menu"', html)
         self.assertIn("function initCustomSelects", workbench_script)
@@ -1246,10 +1340,10 @@ class TeamCloudStaticUiTests(unittest.TestCase):
 
         agent_css = (root / "static" / "css" / "agent-panel.css").read_text(encoding="utf-8")
         self.assertIn("canvas.css?v=2026.08.12.1", canvas_html)
-        self.assertIn("canvas.js?v=2026.08.12.1", canvas_html)
-        self.assertIn("agent-panel.css?v=2026.08.09.8", canvas_html)
-        self.assertIn("smart-canvas.css?v=2026.07.30.3", smart_html)
-        self.assertIn("smart-canvas.js?v=2026.08.05.1", smart_html)
+        self.assertIn("/static/dist/js/canvas.min.js", canvas_html)
+        self.assertIn("/static/css/agent-panel.css", canvas_html)
+        self.assertIn("/static/css/smart-canvas.css", smart_html)
+        self.assertIn("/static/dist/js/smart-canvas.min.js", smart_html)
         self.assertIn("2026-07-28 secondary canvas workbench alignment", canvas_css)
         self.assertIn("2026-07-30 classic canvas final theme sweep", canvas_css)
         self.assertIn("2026-08-09 light canvas contrast sync for embedded studio pages", canvas_css)
@@ -1269,7 +1363,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("order:99;", canvas_css)
         self.assertIn('id="secondaryActionsToggle"', canvas_html)
         self.assertIn('id="agentToggle"', canvas_html)
-        self.assertIn('/static/js/canvas-agent-classic-bridge.js?v=2026.07.30.1', canvas_html)
+        self.assertIn('/static/js/canvas-agent-loader.js', canvas_html)
         canvas_js = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
         self.assertIn("document.documentElement.classList.toggle('studio-theme-light', light);", canvas_js)
         self.assertIn("if(event.data?.type === 'studio-theme') applyTheme(event.data.theme || 'light');", canvas_js)
@@ -1326,7 +1420,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn('data-open-page="canvas"', html)
         self.assertIn('data-open-page="team-cloud"', html)
         self.assertIn('data-open-page="asset-manager"', html)
-        self.assertIn("/static/js/workbench.js", html)
+        self.assertIn("/static/dist/js/workbench.min.js", html)
         self.assertIn(".hero-avatar.character", css)
         self.assertIn(".preview-top-dock", css)
         self.assertIn(".preview-quick-rail", css)
@@ -1347,15 +1441,117 @@ class TeamCloudStaticUiTests(unittest.TestCase):
 
         self.assertIn("function workbenchMediaPreviewUrl", workbench_script)
         self.assertIn("/api/media-preview?w=", workbench_script)
-        self.assertIn("void loadCurrentUser();", workbench_script)
+        self.assertIn("fetchJson('/api/workbench/summary')", workbench_script)
         self.assertNotIn("await loadCurrentUser();\n            if(authModalMode === 'admin')", workbench_script)
         self.assertIn("Promise.all", workbench_script)
         self.assertIn("const preview = workbenchMediaPreviewUrl(url, 512);", workbench_script)
         self.assertIn("canvasPreviewImgHtml(node.url, 512", canvas_script)
-        self.assertIn('"Cache-Control": "public, max-age=86400, immutable"', main_py)
+        self.assertIn('"Cache-Control": "public, max-age=31536000, s-maxage=2592000, immutable"', main_py)
 
         login_source = team_cloud_py.split('@router.post("/auth/login")', 1)[1].split('@router.post("/auth/recover")', 1)[0]
         self.assertEqual(login_source.count("get_user_profile_by_user_id(str(user.get(\"id\") or \"\"))"), 0)
+
+    def test_production_pages_use_precompiled_static_assets(self):
+        root = Path(__file__).resolve().parents[1]
+        static_dir = root / "static"
+        html_sources = {
+            path.name: path.read_text(encoding="utf-8")
+            for path in static_dir.glob("*.html")
+        }
+
+        self.assertFalse(
+            [name for name, source in html_sources.items() if "tailwindcss-cdn.js" in source]
+        )
+        self.assertFalse(
+            [name for name, source in html_sources.items() if "/static/vendor/js/lucide.js" in source]
+        )
+        self.assertTrue(
+            any("/static/dist/tailwind.css" in source for source in html_sources.values())
+        )
+        self.assertTrue(
+            any("/static/dist/lucide-subset.js" in source for source in html_sources.values())
+        )
+
+        expected_scripts = {
+            "canvas.html": "/static/dist/js/canvas.min.js",
+            "smart-canvas.html": "/static/dist/js/smart-canvas.min.js",
+            "workbench.html": "/static/dist/js/workbench.min.js",
+        }
+        for filename, asset_url in expected_scripts.items():
+            self.assertIn(asset_url, html_sources[filename])
+
+        tailwind_css = static_dir / "dist" / "tailwind.css"
+        lucide_subset = static_dir / "dist" / "lucide-subset.js"
+        self.assertTrue(tailwind_css.is_file())
+        self.assertTrue(lucide_subset.is_file())
+        self.assertLess(lucide_subset.stat().st_size, (static_dir / "vendor" / "js" / "lucide.js").stat().st_size)
+
+    def test_home_shell_moves_large_inline_assets_to_cacheable_files(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "static" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn('/static/css/index.css', html)
+        self.assertIn('/static/dist/js/index.min.js', html)
+        self.assertLess(len(html.encode("utf-8")), 40_000)
+        self.assertTrue((root / "static" / "css" / "index.css").is_file())
+        self.assertTrue((root / "static" / "dist" / "js" / "index.min.js").is_file())
+
+    def test_workbench_home_defers_one_summary_request_after_first_paint(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "workbench.js").read_text(encoding="utf-8")
+        init_source = script.split("function init()", 1)[1].split("if(document.readyState", 1)[0]
+
+        self.assertIn("performance.mark('workbench-shell-visible')", init_source)
+        self.assertIn("requestIdleCallback", script)
+        self.assertIn("setTimeout", script)
+        self.assertIn("fetchJson('/api/workbench/summary')", script)
+        self.assertIn("performance.mark('summary-ready')", script)
+        self.assertEqual(init_source.count("scheduleWorkbenchSummary"), 1)
+        self.assertNotIn("loadRecentCanvasBackground();", init_source)
+        self.assertNotIn("loadAssetBackground();", init_source)
+        self.assertNotIn("loadWorkbenchVersion();", init_source)
+        self.assertNotIn("void loadCurrentUser();", init_source)
+
+    def test_canvas_pages_publish_first_render_performance_marks(self):
+        root = Path(__file__).resolve().parents[1]
+        workbench_script = (root / "static" / "js" / "workbench.js").read_text(encoding="utf-8")
+        canvas_script = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+        smart_script = (root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("performance.mark('shell-visible')", workbench_script)
+        for source in (canvas_script, smart_script):
+            self.assertIn("performance.mark('shell-visible')", source)
+            self.assertIn("performance.mark('canvas-data-ready')", source)
+            self.assertIn("performance.mark('first-node-rendered')", source)
+            self.assertIn("performance.mark('first-image-loaded')", source)
+
+    def test_canvas_previews_do_not_implicitly_download_original_images(self):
+        root = Path(__file__).resolve().parents[1]
+        canvas_script = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+        smart_script = (root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("configuredR2MediaPreviewUrl", canvas_script)
+        self.assertIn("configuredR2MediaPreviewUrl", smart_script)
+        self.assertNotIn("measureCanvasOriginalImageNodes(nodesEl);", canvas_script)
+        self.assertNotIn("loadSmartOriginalImageDimensions(originalSrc).then", smart_script)
+        self.assertNotIn("preloadCanvasSelectedHighRes(item.target)", canvas_script)
+        self.assertNotIn("preloadSmartSelectedHighRes(item.target)", smart_script)
+        self.assertIn("if(!imgEl || imgEl.dataset?.previewSrc", smart_script)
+
+    def test_large_canvas_renderers_virtualize_with_legacy_rollback(self):
+        root = Path(__file__).resolve().parents[1]
+        canvas_script = (root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+        smart_script = (root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        for source in (canvas_script, smart_script):
+            self.assertIn("renderer') === 'legacy'", source)
+            self.assertIn("VIRTUAL_RENDER_THRESHOLD = 50", source)
+            self.assertIn("VIRTUAL_RENDER_OVERSCAN = 640", source)
+            self.assertIn("requestAnimationFrame", source)
+        self.assertIn("canvasVisibleNodeIds", canvas_script)
+        self.assertIn("if(canvasVirtualRendererActive() && !visibleIds.has(id)) continue", canvas_script)
+        self.assertIn("smartVisibleNodeIds", smart_script)
+        self.assertIn("updateNodeElementDuringResize", smart_script)
 
     def test_canvas_agent_api_is_auth_gated_and_validates_plans(self):
         root = Path(__file__).resolve().parents[1]
@@ -1393,9 +1589,17 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         executor_script = (root / "static" / "js" / "canvas-agent-executor.js").read_text(encoding="utf-8")
         smart_html = (root / "static" / "smart-canvas.html").read_text(encoding="utf-8")
         canvas_html = (root / "static" / "canvas.html").read_text(encoding="utf-8")
+        loader_script = (root / "static" / "js" / "canvas-agent-loader.js").read_text(encoding="utf-8")
 
-        self.assertIn("/static/js/canvas-agent-panel.js?v=2026.08.02.2", smart_html)
-        self.assertIn("/static/css/agent-panel.css?v=2026.08.09.8", smart_html)
+        self.assertIn("/static/js/canvas-agent-loader.js", smart_html)
+        self.assertIn("/static/js/canvas-agent-loader.js", canvas_html)
+        self.assertNotIn('<script src="/static/js/canvas-agent-panel.js', smart_html)
+        self.assertNotIn('<script src="/static/js/canvas-agent-panel.js', canvas_html)
+        self.assertIn("canvas-agent-panel.js", loader_script)
+        self.assertIn("canvas-agent-memory.js", loader_script)
+        self.assertIn("window.toggleAgentPanel", loader_script)
+        self.assertIn("loadAgentModules", loader_script)
+        self.assertIn("/static/css/agent-panel.css", smart_html)
         self.assertIn("/api/canvas-agent/suggest", panel_script)
         self.assertIn("/api/canvas-agent/feedback", panel_script)
         self.assertIn("teamCloudAuthHeaders", panel_script)
@@ -1452,8 +1656,8 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         canvas_html = (root / "static" / "canvas.html").read_text(encoding="utf-8")
         smart_html = (root / "static" / "smart-canvas.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/js/canvas-workflow-builder.js?v=2026.08.03.1", canvas_html)
-        self.assertIn("/static/js/canvas-workflow-builder.js?v=2026.08.03.1", smart_html)
+        self.assertIn("/static/js/canvas-workflow-builder.js", canvas_html)
+        self.assertIn("/static/js/canvas-workflow-builder.js", smart_html)
         self.assertIn("BUILTIN_WORKFLOW_TEMPLATES", builder_script)
         self.assertIn("text-to-image", builder_script)
         self.assertIn("image-to-image", builder_script)

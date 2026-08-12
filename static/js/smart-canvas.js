@@ -7,6 +7,11 @@ const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
 const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
 const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
 const TEAM_CLOUD_CANVAS = params.get('cloud') === '1';
+const SMART_LEGACY_RENDERER = params.get('renderer') === 'legacy';
+const VIRTUAL_RENDER_THRESHOLD = 50;
+const VIRTUAL_RENDER_OVERSCAN = 640;
+let smartVirtualRenderRaf = 0;
+let smartVirtualRenderSignature = '';
 function teamCloudFetch(url, options={}){
     let token = '';
     try { token = localStorage.getItem(TEAM_CLOUD_ACCESS_TOKEN_KEY) || ''; } catch(e){}
@@ -510,12 +515,29 @@ function smartTeamAssetAuthedUrl(url){
     if(!token) return raw;
     return `${raw}${raw.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`;
 }
+let configuredR2MediaPreviewBaseUrl = '';
+function configuredR2MediaPreviewUrl(url, size=512){
+    if(!configuredR2MediaPreviewBaseUrl || !/^https?:\/\//i.test(String(url || ''))) return '';
+    try {
+        const base = new URL(configuredR2MediaPreviewBaseUrl);
+        const parsed = new URL(String(url));
+        const prefix = `${base.pathname.replace(/\/$/, '')}/generated/`;
+        if(parsed.origin !== base.origin || !parsed.pathname.startsWith(prefix)) return '';
+        const width = Math.max(64, Math.min(1024, Math.round(Number(size) || 512)));
+        return `/api/media-preview?w=${width}&url=${encodeURIComponent(parsed.href)}`;
+    } catch(e) {
+        return '';
+    }
+}
 function smartMediaPreviewUrl(itemOrUrl, size=512){
     const raw = smartOriginalMediaUrl(itemOrUrl);
     const displayItem = typeof itemOrUrl === 'object' && itemOrUrl ? {...itemOrUrl, url:raw} : raw;
     const displayUrl = displayMediaUrl(displayItem);
     if(!raw || raw.startsWith('data:') || raw.startsWith('blob:')) return displayUrl;
     if(raw.startsWith('/api/team-cloud/')) return smartTeamAssetAuthedUrl(raw);
+    if(itemOrUrl && typeof itemOrUrl === 'object' && itemOrUrl.preview_url) return String(itemOrUrl.preview_url);
+    const remotePreview = configuredR2MediaPreviewUrl(raw, size);
+    if(remotePreview) return remotePreview;
     if(!raw.startsWith('/output/') && !raw.startsWith('/assets/')) return displayUrl;
     if(!/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|mp4|webm|mov|m4v|avi|mkv)(\?|#|$)/i.test(raw)) return displayUrl;
     const width = Math.max(64, Math.min(2048, Math.round(Number(size) || 512)));
@@ -524,7 +546,7 @@ function smartMediaPreviewUrl(itemOrUrl, size=512){
 function smartPreviewImgHtml(itemOrUrl, size=512, attrs=''){
     const original = smartOriginalMediaUrl(itemOrUrl);
     const preview = smartMediaPreviewUrl(itemOrUrl, size);
-    return `<img src="${escapeHtml(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" draggable="false"${attrs ? ` ${attrs}` : ''}>`;
+    return `<img loading="lazy" decoding="async" src="${escapeHtml(preview)}" data-preview-src="${escapeAttr(preview)}" data-original-src="${escapeAttr(original)}" draggable="false"${attrs ? ` ${attrs}` : ''}>`;
 }
 function loadSmartOriginalImageDimensions(url){
     const src = displayMediaUrl({url:smartOriginalMediaUrl(url)});
@@ -603,7 +625,11 @@ function bindSmartPreviewImageFallbacks(root=document){
                 img.replaceWith(tpl.content.firstElementChild);
                 return;
             }
-            if(original && img.getAttribute('src') !== original) img.src = original;
+            const placeholder = document.createElement('div');
+            placeholder.className = 'smart-preview-unavailable';
+            placeholder.textContent = '预览不可用';
+            placeholder.title = original;
+            img.replaceWith(placeholder);
         });
     });
 }
@@ -681,14 +707,7 @@ function syncSmartSelectedImageResolution(root=null){
     smartSelectedHighResTimer = setTimeout(async () => {
         smartSelectedHighResTimer = 0;
         if(seq !== smartSelectedHighResSeq || smartImageEditorIsOpen()) return;
-        await Promise.all(selectedImages.map(item => preloadSmartSelectedHighRes(item.target)));
         if(seq !== smartSelectedHighResSeq || smartImageEditorIsOpen()) return;
-        selectedImages.forEach(({img, target}) => {
-            if(!img.isConnected || img.dataset.selectedHighResTarget !== target) return;
-            const nodeEl = img.closest('.image-node');
-            if(!nodeEl?.dataset?.id || !isNodeSelected(nodeEl.dataset.id)) return;
-            if(smartSelectedHighResLoaded.has(target) && img.getAttribute('src') !== target) img.src = target;
-        });
     }, SMART_SELECTED_HIGH_RES_DELAY);
 }
 function cloneSmartSettings(source=settings){
@@ -2002,6 +2021,65 @@ function nodeRect(node){
     const layout = imageLayout(node.images || [], nodeScale(node), node);
     return {x:node.x || 0, y:node.y || 0, width:layout.width, height:layout.height};
 }
+function smartVirtualRendererActive(){
+    return !SMART_LEGACY_RENDERER && nodes.length > VIRTUAL_RENDER_THRESHOLD;
+}
+function smartWorldViewRect(){
+    const rect = shell.getBoundingClientRect();
+    const scale = viewport.scale || 1;
+    return {x:-viewport.x / scale, y:-viewport.y / scale, width:rect.width / scale, height:rect.height / scale};
+}
+function smartRectIntersects(a, b){
+    return a.x <= b.x + b.width && a.x + a.width >= b.x && a.y <= b.y + b.height && a.y + a.height >= b.y;
+}
+function smartVisibleNodeIds(){
+    if(!smartVirtualRendererActive()) return new Set(nodes.map(node => node.id));
+    const view = smartWorldViewRect();
+    const area = {
+        x:view.x - VIRTUAL_RENDER_OVERSCAN,
+        y:view.y - VIRTUAL_RENDER_OVERSCAN,
+        width:view.width + VIRTUAL_RENDER_OVERSCAN * 2,
+        height:view.height + VIRTUAL_RENDER_OVERSCAN * 2
+    };
+    const visibleIds = new Set(nodes.filter(node => smartRectIntersects(nodeRect(node), area)).map(node => node.id));
+    selectedNodeIds().forEach(id => visibleIds.add(id));
+    [dragState?.id, resizeState?.id, portDragState?.id, portDragState?.from, portDragState?.to].filter(Boolean).forEach(id => visibleIds.add(id));
+    (dragState?.groupIds || []).forEach(id => visibleIds.add(id));
+    nodes.forEach(node => {
+        if(node.running || node.pending || node.queued || node.jimengPending || smartPendingTasks(node).length){
+            visibleIds.add(node.id);
+        }
+    });
+    let changed = true;
+    while(changed){
+        changed = false;
+        nodes.filter(isSmartGroupNode).forEach(group => {
+            const itemIds = Array.isArray(group.items) ? group.items : [];
+            if(visibleIds.has(group.id)){
+                itemIds.forEach(id => {
+                    if(!visibleIds.has(id)){ visibleIds.add(id); changed = true; }
+                });
+            } else if(itemIds.some(id => visibleIds.has(id))){
+                visibleIds.add(group.id);
+                changed = true;
+            }
+        });
+    }
+    return visibleIds;
+}
+function smartVisibleNodeSignature(){
+    const visibleIds = smartVisibleNodeIds();
+    return nodes.filter(node => visibleIds.has(node.id)).map(node => node.id).join('|');
+}
+function scheduleSmartVirtualRender(){
+    if(!smartVirtualRendererActive() || smartVirtualRenderRaf) return;
+    smartVirtualRenderRaf = requestAnimationFrame(() => {
+        smartVirtualRenderRaf = 0;
+        const nextSignature = smartVisibleNodeSignature();
+        if(nextSignature === smartVirtualRenderSignature) return;
+        render();
+    });
+}
 function connectedSmartClusterIds(seedId){
     const ids = new Set(nodes.map(n => n.id));
     if(!ids.has(seedId)) return [];
@@ -2119,6 +2197,7 @@ function applyViewport(){
     shell.style.backgroundSize = '24px 24px';
     shell.style.backgroundPosition = '0 0';
     renderMinimap();
+    scheduleSmartVirtualRender();
 }
 function screenToWorld(event){
     const rect = shell.getBoundingClientRect();
@@ -4318,6 +4397,7 @@ async function loadConfig(options={}){
     const renderDuringLoad = options.renderDuringLoad !== false;
     try {
         const cfg = await fetch('/api/config').then(r => r.json());
+        configuredR2MediaPreviewBaseUrl = String(cfg.media_preview_public_base_url || '').replace(/\/$/, '');
         apiProviders = Array.isArray(cfg.api_providers) ? cfg.api_providers : [];
         comfyInstanceCount = Math.max(1, (Array.isArray(cfg.comfy_instances) ? cfg.comfy_instances : []).filter(Boolean).length || 1);
         // 提供商配置已就绪即先渲染参数面板，避免等工作流/RunningHub 预取完成后参数才「突然刷新出来」。
@@ -6111,6 +6191,7 @@ async function loadCanvas(){
         document.getElementById('smartTitle').textContent = canvas.title || tr('canvas.smartCanvas');
         if(smartCloudHistoryToggle) smartCloudHistoryToggle.style.display = TEAM_CLOUD_CANVAS ? '' : 'none';
         nodes = (Array.isArray(canvas.nodes) ? canvas.nodes : []).map(normalizeLegacySmartNode).filter(Boolean);
+        try { performance.mark('canvas-data-ready'); } catch(e) {}
         migrateSmartGroupImageMembers();
         canvas.connections = Array.isArray(canvas.connections) ? canvas.connections : [];
         nodes.forEach(n => {
@@ -6605,7 +6686,11 @@ function shellPoint(event){
     return {x:event.clientX - rect.left, y:event.clientY - rect.top};
 }
 function renderConnections(){
-    const conns = (canvas?.connections || []).map((conn, index) => ({...conn, index})).filter(c => nodes.some(n => n.id === c.from) && nodes.some(n => n.id === c.to));
+    const visibleIds = smartVisibleNodeIds();
+    const conns = (canvas?.connections || []).map((conn, index) => ({...conn, index})).filter(c => {
+        if(!nodes.some(n => n.id === c.from) || !nodes.some(n => n.id === c.to)) return false;
+        return !smartVirtualRendererActive() || (visibleIds.has(c.from) && visibleIds.has(c.to));
+    });
     const cascadeKeys = cascadeConnectionKeys();
     const activeCascadeCount = (smartCascadeRunPath?.states && Object.values(smartCascadeRunPath.states).filter(state => state && state !== 'done').length) || 0;
     const reduceMotion = activeCascadeCount > 24;
@@ -6722,6 +6807,7 @@ function updateNodeElementDuringResize(node){
     if(!node) return;
     const el = world.querySelector(`.image-node[data-id="${CSS.escape(node.id)}"]`);
     if(!el){
+        if(smartVirtualRendererActive() && !smartVisibleNodeIds().has(node.id)) return;
         render();
         return;
     }
@@ -7120,7 +7206,7 @@ function displayMediaUrl(itemOrUrl, name=''){
     return url;
 }
 function bindImageProxyFallback(imgEl, itemOrUrl){
-    if(!imgEl || imgEl.dataset.proxyFallbackBound === '1') return;
+    if(!imgEl || imgEl.dataset?.previewSrc || imgEl.dataset.proxyFallbackBound === '1') return;
     imgEl.dataset.proxyFallbackBound = '1';
     imgEl.addEventListener('error', () => {
         if(imgEl.dataset.proxyFallbackTried === '1') return;
@@ -8043,6 +8129,8 @@ function rememberInlineVideoActivations(){
     });
 }
 function render(){
+    const visibleIds = smartVisibleNodeIds();
+    smartVirtualRenderSignature = nodes.filter(node => visibleIds.has(node.id)).map(node => node.id).join('|');
     if(smartWorkflowTransferModal?.classList.contains('open')) updateSmartWorkflowTransferMeta();
     rememberInlineVideoActivations();
     world.classList.toggle('smart-multi-selected', selectedNodeIds().length > 1);
@@ -8054,10 +8142,11 @@ function render(){
     const reusableNodes = new Map();
     world.querySelectorAll('.image-node').forEach(el => {
         const node = nodes.find(n => n.id === el.dataset.id);
-        if(smartNodeHasLiveMedia(node)) reusableNodes.set(node.id, el);
+        if(visibleIds.has(node?.id) && smartNodeHasLiveMedia(node)) reusableNodes.set(node.id, el);
     });
     const nodeHtmlEntries = nodes
         .filter(node => node.id !== SMART_LOG_PREVIEW_NODE_ID)
+        .filter(node => visibleIds.has(node.id))
         // 分组节点先渲染（DOM 靠前→层级在下），作为成员的背板；成员渲染在后、盖在分组之上，
         // 否则缩小分组把成员挪进卡片区域时会被分组卡片背景遮住而“消失”。
         .slice()
@@ -8130,6 +8219,7 @@ function render(){
     if(window.lucide) lucide.createIcons();
     scheduleSmartPostRenderMediaWork();
     refreshRunTimerPills();
+    markSmartFirstRenderedContent();
     return;
     world.innerHTML = '';
     if(composerEl) world.appendChild(composerEl);
@@ -8182,28 +8272,6 @@ function measureSmartNodeImages(){
         if(!node || !image || image.natural_w || image.natural_h) return;
         const isPreview = isSmartPreviewImage(imgEl);
         const originalSrc = imgEl.dataset?.originalSrc || image.url || '';
-        if(isPreview && imgEl.dataset?.previewKind !== 'video' && originalSrc && !image._naturalSizeLoading){
-            image._naturalSizeLoading = true;
-            loadSmartOriginalImageDimensions(originalSrc).then(size => {
-                image._naturalSizeLoading = false;
-                if(!size || image.natural_w || image.natural_h) return;
-                image.natural_w = size.w;
-                image.natural_h = size.h;
-                delete image.layout_w;
-                delete image.layout_h;
-                applyThumbDisplaySizeToElement(itemEl, image, Math.max(itemEl?.clientWidth || 0, itemEl?.clientHeight || 0));
-                updateImageResolutionBadgeElement(itemEl, image);
-                if(!isSmartGroupNode(node) && (node.images || []).length === 1 && !node.w && !node.h){
-                    const layout = singleImageLayout(image, node, mediaNodeDefaultScale(node));
-                    node.w = layout.width;
-                    node.h = layout.height;
-                }
-                updateNodeElementDuringResize(node);
-                if(containerNode && containerNode.id !== node.id) updateNodeElementDuringResize(containerNode);
-                if(isNodeSelected(node.id)) updateComposer();
-                scheduleSave();
-            });
-        }
         if(isPreview && image.layout_w && image.layout_h) return;
         const apply = () => {
             const w = imgEl.naturalWidth || imgEl.videoWidth || 0;
@@ -11691,6 +11759,24 @@ async function uploadCroppedBlob(blob, name){
     form.append('files', blob, name);
     const data = await postSmartAiUpload(form, tr('smart.toastUploadFail'));
     return data.files?.[0];
+}
+function markSmartFirstRenderedContent(){
+    try {
+        if(!window.__smartCanvasFirstNodeMarked && world.querySelector('.image-node')){
+            window.__smartCanvasFirstNodeMarked = true;
+            performance.mark('first-node-rendered');
+        }
+        if(window.__smartCanvasFirstImageMarked) return;
+        const image = world.querySelector('.image-node img');
+        if(!image) return;
+        const markImage = () => {
+            if(window.__smartCanvasFirstImageMarked) return;
+            window.__smartCanvasFirstImageMarked = true;
+            performance.mark('first-image-loaded');
+        };
+        if(image.complete && image.naturalWidth) markImage();
+        else image.addEventListener('load', markImage, {once:true});
+    } catch(e) {}
 }
 async function uploadImageBlobs(blobs){
     const sizeError = smartUploadSizeError((blobs || []).map(item => item.blob), '图片');
@@ -17844,6 +17930,7 @@ window.addEventListener('studio-lang-change', () => {
     render();
 });
 window.onload = async () => {
+    try { performance.mark('shell-visible'); } catch(e) {}
     applyTheme(localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'dark');
     loadPromptPresets();
     loadPromptTemplateGroups();
