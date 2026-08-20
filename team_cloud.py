@@ -633,15 +633,27 @@ async def ensure_default_team_membership(user: CurrentUser) -> None:
         await maybe_await(ensure(user, team_id, role))
 
 
+async def reconcile_supabase_email_identity(user: CurrentUser) -> None:
+    if user.provider != "supabase" or not normalize_email(user.email):
+        return
+    reconcile = getattr(active_store(), "reconcile_email_identity", None)
+    if reconcile:
+        await maybe_await(reconcile(user))
+
+
 async def resolve_current_user(
     authorization: Optional[str] = None,
     team_cloud_access_token: Optional[str] = None,
     cf_access_jwt_assertion: Optional[str] = None,
 ) -> CurrentUser:
     if authorization and authorization.lower().startswith("bearer "):
-        return await authenticate_supabase_token(authorization[7:].strip())
+        user = await authenticate_supabase_token(authorization[7:].strip())
+        await reconcile_supabase_email_identity(user)
+        return user
     if team_cloud_access_token:
-        return await authenticate_supabase_token(team_cloud_access_token)
+        user = await authenticate_supabase_token(team_cloud_access_token)
+        await reconcile_supabase_email_identity(user)
+        return user
     cf_user = await authenticate_cloudflare_access_token(cf_access_jwt_assertion)
     if cf_user:
         await ensure_default_team_membership(cf_user)
@@ -1149,6 +1161,41 @@ class LocalTeamStore:
                 if team:
                     result.append({**team, "role": member.get("role", "member")})
             return result
+
+    def reconcile_email_identity(self, user: CurrentUser) -> List[str]:
+        email = normalize_email(user.email)
+        if not email:
+            return []
+        with self.lock:
+            data = self._read()
+            migrated_team_ids: List[str] = []
+            for member in data["members"]:
+                legacy_user_id = str(member.get("user_id") or "")
+                team_id = str(member.get("team_id") or "")
+                if (
+                    not team_id
+                    or legacy_user_id == user.id
+                    or normalize_email(str(member.get("email") or "")) != email
+                    or any(item.get("team_id") == team_id and item.get("user_id") == user.id for item in data["members"])
+                ):
+                    continue
+                member["user_id"] = user.id
+                member["email"] = email
+                legacy_points = next(
+                    (item for item in data["user_points"] if item.get("team_id") == team_id and item.get("user_id") == legacy_user_id),
+                    None,
+                )
+                current_points = next(
+                    (item for item in data["user_points"] if item.get("team_id") == team_id and item.get("user_id") == user.id),
+                    None,
+                )
+                if legacy_points and not current_points:
+                    legacy_points["user_id"] = user.id
+                    legacy_points["updated_at"] = now_ms()
+                migrated_team_ids.append(team_id)
+            if migrated_team_ids:
+                self._write(data)
+            return migrated_team_ids
 
     def ensure_team_member(self, user: CurrentUser, team_id: str, role: str) -> Dict[str, Any]:
         if role not in TEAM_ROLES:
@@ -2141,6 +2188,51 @@ class SupabaseTeamStore:
             f"/team_members?select=role,teams(id,name,owner_id,created_at,updated_at)&user_id=eq.{user.id}",
         )
         return [{**row["teams"], "role": row["role"]} for row in rows if row.get("teams")]
+
+    async def reconcile_email_identity(self, user: CurrentUser) -> List[str]:
+        email = normalize_email(user.email)
+        if not email:
+            return []
+        legacy_memberships = await self._request(
+            "GET",
+            f"/team_members?email=eq.{quote(email, safe='')}&user_id=neq.{quote(user.id, safe='')}&select=*",
+        )
+        migrated_team_ids: List[str] = []
+        for member in legacy_memberships or []:
+            team_id = str(member.get("team_id") or "")
+            legacy_user_id = str(member.get("user_id") or "")
+            if not team_id or not legacy_user_id:
+                continue
+            current_memberships = await self._request(
+                "GET",
+                f"/team_members?team_id=eq.{quote(team_id, safe='')}&user_id=eq.{quote(user.id, safe='')}&select=id",
+            )
+            if current_memberships:
+                continue
+            await self._request(
+                "PATCH",
+                f"/team_members?id=eq.{quote(str(member.get('id') or ''), safe='')}",
+                json_body={"user_id": user.id, "email": email},
+            )
+            legacy_points = await self._optional_table_request(
+                "user_points",
+                "GET",
+                f"/user_points?team_id=eq.{quote(team_id, safe='')}&user_id=eq.{quote(legacy_user_id, safe='')}&select=id",
+            )
+            current_points = await self._optional_table_request(
+                "user_points",
+                "GET",
+                f"/user_points?team_id=eq.{quote(team_id, safe='')}&user_id=eq.{quote(user.id, safe='')}&select=id",
+            )
+            if legacy_points and not current_points:
+                await self._optional_table_request(
+                    "user_points",
+                    "PATCH",
+                    f"/user_points?id=eq.{quote(str(legacy_points[0].get('id') or ''), safe='')}",
+                    json_body={"user_id": user.id, "updated_at": utc_now_iso()},
+                )
+            migrated_team_ids.append(team_id)
+        return migrated_team_ids
 
     async def ensure_team_member(self, user: CurrentUser, team_id: str, role: str) -> Dict[str, Any]:
         if role not in TEAM_ROLES:

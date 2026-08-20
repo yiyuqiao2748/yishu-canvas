@@ -433,6 +433,39 @@ class TeamCloudStoreTests(unittest.TestCase):
         self.assertEqual(adjusted["points"]["balance"], 11)
         self.assertEqual(adjusted["delta"], 10)
 
+    def test_reconcile_email_identity_moves_legacy_membership_and_points(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        legacy = CurrentUser(id="legacy-cloudflare-id", email="member@example.com", provider="cloudflare-access")
+        current = CurrentUser(id="current-supabase-id", email="member@example.com", provider="supabase")
+        data = self.store._read()
+        data["members"].append({
+            "id": "legacy-member-row",
+            "team_id": team["id"],
+            "user_id": legacy.id,
+            "email": legacy.email,
+            "role": "member",
+            "created_at": 1,
+        })
+        data["user_points"].append({
+            "id": "legacy-points-row",
+            "team_id": team["id"],
+            "user_id": legacy.id,
+            "balance": 1100,
+            "monthly_quota": 1100,
+            "created_at": 1,
+            "updated_at": 1,
+        })
+        self.store._write(data)
+
+        migrated_team_ids = self.store.reconcile_email_identity(current)
+
+        self.assertEqual(migrated_team_ids, [team["id"]])
+        self.assertEqual(self.store.list_user_teams(current)[0]["role"], "member")
+        self.assertEqual(self.store.get_user_points(current, team["id"], current.id)["balance"], 1100)
+        stored = self.store._read()
+        self.assertFalse(any(row.get("user_id") == legacy.id for row in stored["members"]))
+        self.assertFalse(any(row.get("user_id") == legacy.id for row in stored["user_points"]))
+
     def test_admin_can_edit_model_billing_price_and_members_can_quote(self):
         team = self.store.create_team(self.owner, "Design Lab")
         member = CurrentUser(id="member-1", email="member@example.com", provider="test")
@@ -567,6 +600,44 @@ class TeamCloudStoreTests(unittest.TestCase):
 
 
 class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_supabase_login_reconciles_legacy_email_points_for_workbench(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = LocalTeamStore(str(Path(tmp) / "team_cloud.json"))
+            owner = CurrentUser(id="owner-1", email="owner@example.com", provider="test")
+            team = store.create_team(owner, "Design Lab")
+            legacy = CurrentUser(id="legacy-cloudflare-id", email="member@example.com", provider="cloudflare-access")
+            current = CurrentUser(id="current-supabase-id", email="member@example.com", provider="supabase")
+            data = store._read()
+            data["members"].append({
+                "id": "legacy-member-row",
+                "team_id": team["id"],
+                "user_id": legacy.id,
+                "email": legacy.email,
+                "role": "member",
+                "created_at": 1,
+            })
+            data["user_points"].append({
+                "id": "legacy-points-row",
+                "team_id": team["id"],
+                "user_id": legacy.id,
+                "balance": 1100,
+                "monthly_quota": 1100,
+                "created_at": 1,
+                "updated_at": 1,
+            })
+            store._write(data)
+
+            with patch.object(team_cloud, "authenticate_supabase_token", AsyncMock(return_value=current)), \
+                 patch.object(team_cloud, "active_store", return_value=store), \
+                 patch.object(team_cloud, "optional_current_user", AsyncMock(return_value=current)), \
+                 patch.object(team_cloud, "enrich_user_profile", AsyncMock(return_value=current)):
+                logged_in = await team_cloud.resolve_current_user(authorization="Bearer session-token")
+                summary = await team_cloud.workbench_account_summary(object())
+
+        self.assertEqual(logged_in.id, current.id)
+        self.assertEqual(summary["teams"][0]["id"], team["id"])
+        self.assertEqual(summary["points"]["balance"], 1100)
+
     async def test_workbench_account_summary_returns_compact_logged_in_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = LocalTeamStore(str(Path(tmp) / "team_cloud.json"))
