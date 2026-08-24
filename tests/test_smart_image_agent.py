@@ -96,6 +96,19 @@ class SmartImageAgentStoreTests(unittest.TestCase):
             {"gpt-image-2", "custom-api", "standard", 6},
         )
 
+    def test_updating_vip_prompt_only_retains_existing_model_policy(self):
+        plan = self.create_plan(model="gpt-image-2-vip")
+        updated = self.store.update_plan(
+            self.user,
+            plan["id"],
+            ImageAgentPlanUpdate(prompt="Make the lighting warmer"),
+        )
+
+        self.assertEqual(updated["model"], "gpt-image-2-vip")
+        self.assertEqual(updated["quality"], "vip")
+        self.assertEqual(updated["unit_points"], 20)
+        self.assertEqual(updated["estimated_points"], 20)
+
     def test_high_quality_plan_uses_pro_model_and_never_an_image_fallback(self):
         plan = self.create_plan(quality="pro", count=2)
 

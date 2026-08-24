@@ -429,8 +429,15 @@ class LocalSmartImageAgentStore:
             for key in ("prompt", "ratio", "count"):
                 if key in changes:
                     plan[key] = changes[key]
+            selected_model = (
+                changes["model"]
+                if "model" in changes
+                else None
+                if "quality" in changes
+                else plan.get("model")
+            )
             model, provider_id, quality, unit_points = resolve_smart_image_agent_model(
-                changes.get("model"), changes.get("quality", plan.get("quality") or "standard")
+                selected_model, changes.get("quality", plan.get("quality") or "standard")
             )
             plan["model"] = model
             plan["provider_id"] = provider_id
@@ -754,7 +761,14 @@ class SupabaseSmartImageAgentStore:
             raise HTTPException(status_code=422, detail="Unsupported image ratio")
         quality = changes.get("quality", plan.get("quality") or "standard")
         count = int(changes.get("count", plan.get("count") or 1))
-        model, provider_id, quality, unit_points = resolve_smart_image_agent_model(changes.get("model"), quality)
+        selected_model = (
+            changes["model"]
+            if "model" in changes
+            else None
+            if "quality" in changes
+            else plan.get("model")
+        )
+        model, provider_id, quality, unit_points = resolve_smart_image_agent_model(selected_model, quality)
         changes.update({
             "model": model,
             "provider_id": provider_id,
