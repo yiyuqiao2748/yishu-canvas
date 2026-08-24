@@ -1137,6 +1137,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn(".codex-speedtest-current", dockerignore)
         self.assertIn("node_modules", dockerignore)
         self.assertIn('".venv"', sync_script)
+        self.assertIn('".git"', sync_script.split('$excludeFiles = @(', 1)[1])
         self.assertIn('"node_modules"', sync_script)
         self.assertIn('"tmp"', sync_script)
         self.assertIn('".codex-speedtest-current"', sync_script)

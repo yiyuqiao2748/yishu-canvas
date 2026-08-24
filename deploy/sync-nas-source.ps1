@@ -42,6 +42,7 @@ $excludeDirs = @(
 )
 
 $excludeFiles = @(
+    ".git",
     ".env",
     ".env.*",
     "*.log",
