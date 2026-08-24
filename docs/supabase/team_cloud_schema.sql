@@ -232,8 +232,11 @@ create table if not exists public.smart_image_agent_sessions (
   team_id uuid references public.teams(id) on delete cascade,
   project_id text,
   canvas_id text not null,
+  title text not null default '',
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  last_activity_at timestamptz not null default now(),
+  archived_at timestamptz
 );
 
 create table if not exists public.smart_image_agent_messages (
@@ -287,6 +290,7 @@ create table if not exists public.smart_image_agent_runs (
   model text not null,
   result jsonb not null default '{}'::jsonb,
   error text not null default '',
+  progress_stage text not null default 'queued',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   started_at timestamptz,
@@ -317,12 +321,29 @@ create index if not exists idx_smart_image_agent_runs_user_canvas on public.smar
 create index if not exists idx_smart_image_agent_runs_status on public.smart_image_agent_runs(status, created_at asc);
 
 alter table public.assets add column if not exists thumbnail_url text not null default '';
+alter table public.smart_image_agent_sessions add column if not exists title text not null default '';
+alter table public.smart_image_agent_sessions add column if not exists last_activity_at timestamptz not null default now();
+alter table public.smart_image_agent_sessions add column if not exists archived_at timestamptz;
+alter table public.smart_image_agent_runs add column if not exists progress_stage text not null default 'queued';
 alter table public.assets add column if not exists thumbnail_storage_key text not null default '';
 alter table public.api_providers add column if not exists updated_by uuid;
 alter table public.api_usage_logs add column if not exists provider_points_charged integer not null default 0;
 alter table public.api_usage_logs add column if not exists estimated_cost_cny numeric(12,4) not null default 0;
 alter table public.canvases add column if not exists visibility text not null default 'team';
 alter table public.assets add column if not exists visibility text not null default 'team';
+create index if not exists idx_smart_image_agent_sessions_history on public.smart_image_agent_sessions(user_id, canvas_id, archived_at, last_activity_at desc);
+with ranked_smart_image_agent_plans as (
+  select id, row_number() over (partition by user_id, canvas_id order by created_at desc, id desc) as rank
+  from public.smart_image_agent_plans
+  where status = 'awaiting_confirmation'
+)
+update public.smart_image_agent_plans as plan
+set status = 'cancelled', updated_at = now()
+from ranked_smart_image_agent_plans as ranked
+where plan.id = ranked.id and ranked.rank > 1;
+create unique index if not exists idx_smart_image_agent_one_pending_plan
+  on public.smart_image_agent_plans(user_id, canvas_id)
+  where status = 'awaiting_confirmation';
 alter table public.canvases drop constraint if exists canvases_visibility_check;
 alter table public.canvases add constraint canvases_visibility_check check (visibility in ('private', 'team'));
 alter table public.assets drop constraint if exists assets_visibility_check;

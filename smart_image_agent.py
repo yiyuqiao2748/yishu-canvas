@@ -38,6 +38,7 @@ SMART_IMAGE_AGENT_PRO_MODEL = "nano-banana-pro"
 SMART_IMAGE_AGENT_STANDARD_POINTS = 12
 SMART_IMAGE_AGENT_PRO_POINTS = 18
 SMART_IMAGE_AGENT_MAX_REFERENCES = 10
+SMART_IMAGE_AGENT_REFERENCE_ROLES = {"primary", "reference", "edit_target"}
 
 
 def utc_now() -> str:
@@ -48,6 +49,12 @@ class ImageAgentSessionCreate(BaseModel):
     canvas_id: str = Field(..., min_length=1, max_length=200)
     project_id: str = Field("", max_length=200)
     team_id: str = Field("", max_length=200)
+    title: str = Field("", max_length=120)
+
+
+class ImageAgentSessionUpdate(BaseModel):
+    title: Optional[str] = Field(None, max_length=120)
+    archived: Optional[bool] = None
 
 
 class ImageAgentMessageCreate(BaseModel):
@@ -71,12 +78,14 @@ class ImageAgentPlanUpdate(BaseModel):
     ratio: Optional[str] = Field(None, max_length=20)
     count: Optional[int] = Field(None, ge=1, le=8)
     quality: Optional[str] = Field(None, pattern="^(standard|pro)$")
+    status: Optional[str] = Field(None, pattern="^cancelled$")
 
 
 class ImageAgentRunUpdate(BaseModel):
     status: str = Field(..., pattern="^(running|succeeded|failed|cancelled)$")
     result: Dict[str, Any] = Field(default_factory=dict)
     error: str = Field("", max_length=4000)
+    progress_stage: str = Field("", max_length=40)
 
 
 def infer_image_action(message: str, context: Dict[str, Any]) -> str:
@@ -110,6 +119,10 @@ def _persistable_reference_url(value: Any) -> str:
     return url
 
 
+def _session_title(value: Any) -> str:
+    return " ".join(str(value or "").split())[:120]
+
+
 def normalize_references(context: Dict[str, Any]) -> List[Dict[str, Any]]:
     raw = context.get("selected_images") if isinstance(context, dict) else []
     references = raw if isinstance(raw, list) else []
@@ -127,10 +140,26 @@ def normalize_references(context: Dict[str, Any]) -> List[Dict[str, Any]]:
             "width": _safe_image_dimension(item.get("width")),
             "height": _safe_image_dimension(item.get("height")),
             "prompt": str(item.get("prompt") or "")[:4000],
+            "role": str(item.get("role") or "").strip().lower(),
         }
         if reference["node_id"] or reference["asset_id"] or reference["url"]:
             cleaned.append(reference)
     return cleaned
+
+
+def assign_reference_roles(references: List[Dict[str, Any]], action: str) -> List[Dict[str, Any]]:
+    assigned = [dict(item) for item in references]
+    for index, reference in enumerate(assigned):
+        role = reference.get("role")
+        if role not in SMART_IMAGE_AGENT_REFERENCE_ROLES:
+            if action in {"edit_image", "expand_image"}:
+                role = "edit_target" if index == 0 else "reference"
+            elif index == 0:
+                role = "primary"
+            else:
+                role = "reference"
+        reference["role"] = role
+    return assigned
 
 
 def normalize_message_context(context: Dict[str, Any]) -> Dict[str, Any]:
@@ -156,6 +185,13 @@ def normalize_message_context(context: Dict[str, Any]) -> Dict[str, Any]:
         if settings.get(key) is not None
     }
     return cleaned
+
+
+def validate_session_context(session: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = normalize_message_context(context)
+    if normalized.get("canvas_id") != session.get("canvas_id"):
+        raise HTTPException(status_code=422, detail="Image Agent context must match its Smart Canvas")
+    return normalized
 
 
 class LocalSmartImageAgentStore:
@@ -195,6 +231,12 @@ class LocalSmartImageAgentStore:
             raise HTTPException(status_code=404, detail=f"Image Agent {bucket[:-1]} not found")
         return record
 
+    def _session_record(self, data: Dict[str, Any], session_id: str, user: CurrentUser, canvas_id: str = "") -> Dict[str, Any]:
+        session = self._record(data, "sessions", session_id, user)
+        if canvas_id and session.get("canvas_id") != canvas_id:
+            raise HTTPException(status_code=404, detail="Image Agent session not found")
+        return session
+
     def create_session(self, user: CurrentUser, payload: ImageAgentSessionCreate) -> Dict[str, Any]:
         with self.lock:
             data = self._read()
@@ -205,17 +247,62 @@ class LocalSmartImageAgentStore:
                 "canvas_id": payload.canvas_id,
                 "project_id": payload.project_id,
                 "team_id": payload.team_id,
+                "title": _session_title(payload.title),
                 "created_at": now,
                 "updated_at": now,
+                "last_activity_at": now,
+                "archived_at": None,
             }
             data["sessions"].append(session)
             self._write(data)
             return dict(session)
 
-    def get_session(self, user: CurrentUser, session_id: str) -> Dict[str, Any]:
+    @staticmethod
+    def _session_summary(session: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            key: session.get(key)
+            for key in (
+                "id", "canvas_id", "project_id", "team_id", "title", "created_at",
+                "updated_at", "last_activity_at", "archived_at",
+            )
+        }
+
+    @staticmethod
+    def _touch_session(session: Dict[str, Any], now: Optional[str] = None) -> None:
+        timestamp = now or utc_now()
+        session["updated_at"] = timestamp
+        session["last_activity_at"] = timestamp
+
+    def list_sessions(self, user: CurrentUser, canvas_id: str, include_archived: bool = False) -> List[Dict[str, Any]]:
+        with self.lock:
+            sessions = [
+                item for item in self._read()["sessions"]
+                if item.get("user_id") == user.id and item.get("canvas_id") == canvas_id
+                and (include_archived or not item.get("archived_at"))
+            ]
+            return [self._session_summary(item) for item in sorted(
+                sessions,
+                key=lambda item: item.get("last_activity_at") or item.get("updated_at") or "",
+                reverse=True,
+            )]
+
+    def update_session(self, user: CurrentUser, session_id: str, payload: ImageAgentSessionUpdate, canvas_id: str = "") -> Dict[str, Any]:
         with self.lock:
             data = self._read()
-            session = self._record(data, "sessions", session_id, user)
+            session = self._session_record(data, session_id, user, canvas_id)
+            now = utc_now()
+            if payload.title is not None:
+                session["title"] = _session_title(payload.title)
+            if payload.archived is not None:
+                session["archived_at"] = now if payload.archived else None
+            self._touch_session(session, now)
+            self._write(data)
+            return dict(session)
+
+    def get_session(self, user: CurrentUser, session_id: str, canvas_id: str = "") -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            session = self._session_record(data, session_id, user, canvas_id)
             return {
                 **session,
                 "messages": [item for item in data["messages"] if item.get("session_id") == session_id and item.get("user_id") == user.id],
@@ -226,6 +313,7 @@ class LocalSmartImageAgentStore:
         with self.lock:
             data = self._read()
             session = self._record(data, "sessions", session_id, user)
+            context = validate_session_context(session, payload.context)
             now = utc_now()
             message = {
                 "id": str(uuid.uuid4()),
@@ -234,11 +322,13 @@ class LocalSmartImageAgentStore:
                 "canvas_id": session["canvas_id"],
                 "role": "user",
                 "content": payload.content,
-                "context": normalize_message_context(payload.context),
+                "context": context,
                 "created_at": now,
             }
             data["messages"].append(message)
-            session["updated_at"] = now
+            if not session.get("title"):
+                session["title"] = _session_title(payload.content)
+            self._touch_session(session, now)
             self._write(data)
             return dict(message)
 
@@ -246,14 +336,26 @@ class LocalSmartImageAgentStore:
         with self.lock:
             data = self._read()
             session = self._record(data, "sessions", payload.session_id, user)
-            references = normalize_references(payload.context)
-            action = payload.action.strip() or infer_image_action(payload.message, payload.context)
+            context = validate_session_context(session, payload.context)
+            references = context["selected_images"]
+            action = payload.action.strip() or infer_image_action(payload.message, context)
             if not payload.action and payload.count > 1 and action == "generate_image":
                 action = "generate_image_set"
             if action not in SMART_IMAGE_AGENT_ACTIONS:
                 raise HTTPException(status_code=422, detail="Unsupported image Agent action")
+            active_plan = next(
+                (
+                    item for item in data["plans"]
+                    if item.get("canvas_id") == session["canvas_id"] and item.get("user_id") == user.id
+                    and item.get("status") == "awaiting_confirmation"
+                ),
+                None,
+            )
+            if active_plan:
+                raise HTTPException(status_code=409, detail="Finish or dismiss the current image plan before creating another")
             if payload.ratio not in SMART_IMAGE_AGENT_RATIOS:
                 raise HTTPException(status_code=422, detail="Unsupported image ratio")
+            references = assign_reference_roles(references, action)
             model = SMART_IMAGE_AGENT_PRO_MODEL if payload.quality == "pro" else SMART_IMAGE_AGENT_STANDARD_MODEL
             unit_points = SMART_IMAGE_AGENT_PRO_POINTS if payload.quality == "pro" else SMART_IMAGE_AGENT_STANDARD_POINTS
             now = utc_now()
@@ -283,7 +385,7 @@ class LocalSmartImageAgentStore:
                 "confirmed_at": None,
             }
             data["plans"].append(plan)
-            session["updated_at"] = now
+            self._touch_session(session, now)
             self._write(data)
             return dict(plan)
 
@@ -295,6 +397,11 @@ class LocalSmartImageAgentStore:
         with self.lock:
             data = self._read()
             plan = self._record(data, "plans", plan_id, user)
+            if payload.status == "cancelled" and plan.get("status") in {"draft", "awaiting_confirmation"}:
+                plan["status"] = "cancelled"
+                plan["updated_at"] = utc_now()
+                self._write(data)
+                return dict(plan)
             if plan.get("status") not in {"draft", "awaiting_confirmation"}:
                 raise HTTPException(status_code=409, detail="Confirmed image Agent plans cannot be edited")
             changes = payload.model_dump(exclude_none=True)
@@ -332,6 +439,7 @@ class LocalSmartImageAgentStore:
                     "sequence": sequence,
                     "attempt": 1,
                     "status": "queued",
+                    "progress_stage": "queued",
                     "provider_id": plan["provider_id"],
                     "model": plan["model"],
                     "result": {},
@@ -346,6 +454,7 @@ class LocalSmartImageAgentStore:
             plan["status"] = "queued"
             plan["confirmed_at"] = now
             plan["updated_at"] = now
+            self._touch_session(session := self._record(data, "sessions", plan["session_id"], user), now)
             self._write(data)
             return {"plan": dict(plan), "runs": [dict(item) for item in runs]}
 
@@ -383,7 +492,7 @@ class LocalSmartImageAgentStore:
             current = run.get("status")
             allowed = {
                 "queued": {"running", "cancelled"},
-                "running": {"succeeded", "failed", "cancelled"},
+                "running": {"running", "succeeded", "failed", "cancelled"},
             }
             if payload.status not in allowed.get(current, set()):
                 raise HTTPException(status_code=409, detail=f"Cannot change image Agent run from {current} to {payload.status}")
@@ -391,12 +500,17 @@ class LocalSmartImageAgentStore:
             run["status"] = payload.status
             run["result"] = payload.result if payload.status == "succeeded" else {}
             run["error"] = payload.error if payload.status == "failed" else ""
+            if payload.progress_stage:
+                run["progress_stage"] = payload.progress_stage
+            elif payload.status in {"succeeded", "failed", "cancelled"}:
+                run["progress_stage"] = payload.status
             run["updated_at"] = now
             if payload.status == "running":
                 run["started_at"] = run.get("started_at") or now
             if payload.status in {"succeeded", "failed", "cancelled"}:
                 run["finished_at"] = now
             self._refresh_plan_status(data, run["plan_id"])
+            self._touch_session(self._record(data, "sessions", run["session_id"], user), now)
             self._write(data)
             return dict(run)
 
@@ -415,15 +529,16 @@ class LocalSmartImageAgentStore:
             run["error"] = ""
             run["started_at"] = None
             run["finished_at"] = None
+            run["progress_stage"] = "queued"
             run["updated_at"] = utc_now()
             self._refresh_plan_status(data, run["plan_id"])
             self._write(data)
             return dict(run)
 
-    def list_results(self, user: CurrentUser, session_id: str) -> List[Dict[str, Any]]:
+    def list_results(self, user: CurrentUser, session_id: str, canvas_id: str = "") -> List[Dict[str, Any]]:
         with self.lock:
             data = self._read()
-            self._record(data, "sessions", session_id, user)
+            self._session_record(data, session_id, user, canvas_id)
             return [
                 {
                     "run_id": item["id"],
@@ -455,6 +570,12 @@ class SupabaseSmartImageAgentStore:
             raise HTTPException(status_code=404, detail=f"Image Agent {label} not found")
         return rows[0]
 
+    async def _get_session(self, user: CurrentUser, session_id: str, canvas_id: str = "") -> Dict[str, Any]:
+        session = await self._get_record("smart_image_agent_sessions", session_id, user)
+        if canvas_id and session.get("canvas_id") != canvas_id:
+            raise HTTPException(status_code=404, detail="Image Agent session not found")
+        return session
+
     async def create_session(self, user: CurrentUser, payload: ImageAgentSessionCreate) -> Dict[str, Any]:
         now = utc_now()
         body = {
@@ -463,14 +584,43 @@ class SupabaseSmartImageAgentStore:
             "canvas_id": payload.canvas_id,
             "project_id": payload.project_id or None,
             "team_id": payload.team_id or None,
+            "title": _session_title(payload.title),
             "created_at": now,
             "updated_at": now,
+            "last_activity_at": now,
+            "archived_at": None,
         }
         rows = await self.client._request("POST", "/smart_image_agent_sessions", json_body=[body])
         return rows[0] if rows else body
 
-    async def get_session(self, user: CurrentUser, session_id: str) -> Dict[str, Any]:
-        session = await self._get_record("smart_image_agent_sessions", session_id, user)
+    async def list_sessions(self, user: CurrentUser, canvas_id: str, include_archived: bool = False) -> List[Dict[str, Any]]:
+        filters = [
+            f"user_id=eq.{quote(user.id, safe='')}",
+            f"canvas_id=eq.{quote(canvas_id, safe='')}",
+            "select=*",
+            "order=last_activity_at.desc",
+        ]
+        if not include_archived:
+            filters.append("archived_at=is.null")
+        return await self.client._request("GET", "/smart_image_agent_sessions?" + "&".join(filters)) or []
+
+    async def update_session(self, user: CurrentUser, session_id: str, payload: ImageAgentSessionUpdate, canvas_id: str = "") -> Dict[str, Any]:
+        session = await self._get_session(user, session_id, canvas_id)
+        now = utc_now()
+        changes: Dict[str, Any] = {"updated_at": now, "last_activity_at": now}
+        if payload.title is not None:
+            changes["title"] = _session_title(payload.title)
+        if payload.archived is not None:
+            changes["archived_at"] = now if payload.archived else None
+        rows = await self.client._request(
+            "PATCH",
+            f"/smart_image_agent_sessions?id=eq.{quote(session_id, safe='')}&user_id=eq.{quote(user.id, safe='')}",
+            json_body=changes,
+        )
+        return rows[0] if rows else {**session, **changes}
+
+    async def get_session(self, user: CurrentUser, session_id: str, canvas_id: str = "") -> Dict[str, Any]:
+        session = await self._get_session(user, session_id, canvas_id)
         encoded_id = quote(session_id, safe="")
         messages = await self.client._request(
             "GET",
@@ -484,6 +634,7 @@ class SupabaseSmartImageAgentStore:
 
     async def add_message(self, user: CurrentUser, session_id: str, payload: ImageAgentMessageCreate) -> Dict[str, Any]:
         session = await self._get_record("smart_image_agent_sessions", session_id, user)
+        context = validate_session_context(session, payload.context)
         now = utc_now()
         body = {
             "id": str(uuid.uuid4()),
@@ -492,27 +643,38 @@ class SupabaseSmartImageAgentStore:
             "canvas_id": session["canvas_id"],
             "role": "user",
             "content": payload.content,
-            "context": normalize_message_context(payload.context),
+            "context": context,
             "created_at": now,
         }
         rows = await self.client._request("POST", "/smart_image_agent_messages", json_body=[body])
+        session_changes = {"updated_at": now, "last_activity_at": now}
+        if not session.get("title"):
+            session_changes["title"] = _session_title(payload.content)
         await self.client._request(
             "PATCH",
             f"/smart_image_agent_sessions?id=eq.{quote(session_id, safe='')}&user_id=eq.{quote(user.id, safe='')}",
-            json_body={"updated_at": now},
+            json_body=session_changes,
         )
         return rows[0] if rows else body
 
     async def create_plan(self, user: CurrentUser, payload: ImageAgentPlanCreate) -> Dict[str, Any]:
         session = await self._get_record("smart_image_agent_sessions", payload.session_id, user)
-        references = normalize_references(payload.context)
-        action = payload.action.strip() or infer_image_action(payload.message, payload.context)
+        context = validate_session_context(session, payload.context)
+        references = context["selected_images"]
+        action = payload.action.strip() or infer_image_action(payload.message, context)
         if not payload.action and payload.count > 1 and action == "generate_image":
             action = "generate_image_set"
         if action not in SMART_IMAGE_AGENT_ACTIONS:
             raise HTTPException(status_code=422, detail="Unsupported image Agent action")
+        active = await self.client._request(
+            "GET",
+            f"/smart_image_agent_plans?canvas_id=eq.{quote(session['canvas_id'], safe='')}&user_id=eq.{quote(user.id, safe='')}&status=eq.awaiting_confirmation&select=id&limit=1",
+        )
+        if active:
+            raise HTTPException(status_code=409, detail="Finish or dismiss the current image plan before creating another")
         if payload.ratio not in SMART_IMAGE_AGENT_RATIOS:
             raise HTTPException(status_code=422, detail="Unsupported image ratio")
+        references = assign_reference_roles(references, action)
         model = SMART_IMAGE_AGENT_PRO_MODEL if payload.quality == "pro" else SMART_IMAGE_AGENT_STANDARD_MODEL
         unit_points = SMART_IMAGE_AGENT_PRO_POINTS if payload.quality == "pro" else SMART_IMAGE_AGENT_STANDARD_POINTS
         now = utc_now()
@@ -542,6 +704,11 @@ class SupabaseSmartImageAgentStore:
             "confirmed_at": None,
         }
         rows = await self.client._request("POST", "/smart_image_agent_plans", json_body=[body])
+        await self.client._request(
+            "PATCH",
+            f"/smart_image_agent_sessions?id=eq.{quote(session['id'], safe='')}&user_id=eq.{quote(user.id, safe='')}",
+            json_body={"updated_at": now, "last_activity_at": now},
+        )
         return rows[0] if rows else body
 
     async def get_plan(self, user: CurrentUser, plan_id: str) -> Dict[str, Any]:
@@ -549,6 +716,14 @@ class SupabaseSmartImageAgentStore:
 
     async def update_plan(self, user: CurrentUser, plan_id: str, payload: ImageAgentPlanUpdate) -> Dict[str, Any]:
         plan = await self.get_plan(user, plan_id)
+        if payload.status == "cancelled" and plan.get("status") in {"draft", "awaiting_confirmation"}:
+            changes = {"status": "cancelled", "updated_at": utc_now()}
+            rows = await self.client._request(
+                "PATCH",
+                f"/smart_image_agent_plans?id=eq.{quote(plan_id, safe='')}&user_id=eq.{quote(user.id, safe='')}",
+                json_body=changes,
+            )
+            return rows[0] if rows else {**plan, **changes}
         if plan.get("status") not in {"draft", "awaiting_confirmation"}:
             raise HTTPException(status_code=409, detail="Confirmed image Agent plans cannot be edited")
         changes = payload.model_dump(exclude_none=True)
@@ -591,6 +766,7 @@ class SupabaseSmartImageAgentStore:
             "sequence": sequence,
             "attempt": 1,
             "status": "queued",
+            "progress_stage": "queued",
             "provider_id": plan["provider_id"],
             "model": plan["model"],
             "result": {},
@@ -603,6 +779,11 @@ class SupabaseSmartImageAgentStore:
             "PATCH",
             f"/smart_image_agent_plans?id=eq.{quote(plan_id, safe='')}&user_id=eq.{quote(user.id, safe='')}",
             json_body={"status": "queued", "confirmed_at": now, "updated_at": now},
+        )
+        await self.client._request(
+            "PATCH",
+            f"/smart_image_agent_sessions?id=eq.{quote(plan['session_id'], safe='')}&user_id=eq.{quote(user.id, safe='')}",
+            json_body={"updated_at": now, "last_activity_at": now},
         )
         return {"plan": plan_rows[0] if plan_rows else {**plan, "status": "queued", "confirmed_at": now}, "runs": created or runs}
 
@@ -638,7 +819,7 @@ class SupabaseSmartImageAgentStore:
 
     async def update_run(self, user: CurrentUser, run_id: str, payload: ImageAgentRunUpdate) -> Dict[str, Any]:
         run = await self._get_record("smart_image_agent_runs", run_id, user)
-        allowed = {"queued": {"running", "cancelled"}, "running": {"succeeded", "failed", "cancelled"}}
+        allowed = {"queued": {"running", "cancelled"}, "running": {"running", "succeeded", "failed", "cancelled"}}
         if payload.status not in allowed.get(run.get("status"), set()):
             raise HTTPException(status_code=409, detail=f"Cannot change image Agent run from {run.get('status')} to {payload.status}")
         now = utc_now()
@@ -648,6 +829,10 @@ class SupabaseSmartImageAgentStore:
             "error": payload.error if payload.status == "failed" else "",
             "updated_at": now,
         }
+        if payload.progress_stage:
+            changes["progress_stage"] = payload.progress_stage
+        elif payload.status in {"succeeded", "failed", "cancelled"}:
+            changes["progress_stage"] = payload.status
         if payload.status == "running":
             changes["started_at"] = run.get("started_at") or now
         if payload.status in {"succeeded", "failed", "cancelled"}:
@@ -658,6 +843,11 @@ class SupabaseSmartImageAgentStore:
             json_body=changes,
         )
         await self._refresh_plan_status(user, run["plan_id"])
+        await self.client._request(
+            "PATCH",
+            f"/smart_image_agent_sessions?id=eq.{quote(run['session_id'], safe='')}&user_id=eq.{quote(user.id, safe='')}",
+            json_body={"updated_at": now, "last_activity_at": now},
+        )
         return rows[0] if rows else {**run, **changes}
 
     async def cancel_run(self, user: CurrentUser, run_id: str) -> Dict[str, Any]:
@@ -674,6 +864,7 @@ class SupabaseSmartImageAgentStore:
             "error": "",
             "started_at": None,
             "finished_at": None,
+            "progress_stage": "queued",
             "updated_at": utc_now(),
         }
         rows = await self.client._request(
@@ -684,8 +875,8 @@ class SupabaseSmartImageAgentStore:
         await self._refresh_plan_status(user, run["plan_id"])
         return rows[0] if rows else {**run, **changes}
 
-    async def list_results(self, user: CurrentUser, session_id: str) -> List[Dict[str, Any]]:
-        await self._get_record("smart_image_agent_sessions", session_id, user)
+    async def list_results(self, user: CurrentUser, session_id: str, canvas_id: str = "") -> List[Dict[str, Any]]:
+        await self._get_session(user, session_id, canvas_id)
         rows = await self.client._request(
             "GET",
             f"/smart_image_agent_runs?session_id=eq.{quote(session_id, safe='')}&user_id=eq.{quote(user.id, safe='')}&status=eq.succeeded&select=*&order=finished_at.desc",

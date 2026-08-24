@@ -67,6 +67,7 @@ from smart_image_agent import (
     ImageAgentPlanUpdate,
     ImageAgentRunUpdate,
     ImageAgentSessionCreate,
+    ImageAgentSessionUpdate,
     infer_image_action,
     LocalSmartImageAgentStore,
     SupabaseSmartImageAgentStore,
@@ -16833,12 +16834,33 @@ async def create_smart_image_agent_session(
     return await maybe_await(SMART_IMAGE_AGENT_STORE.create_session(user, payload))
 
 
+@app.get("/api/smart-image-agent/sessions")
+async def list_smart_image_agent_sessions(
+    canvas_id: str,
+    include_archived: bool = False,
+    user: CurrentUser = Depends(require_user),
+):
+    sessions = await maybe_await(SMART_IMAGE_AGENT_STORE.list_sessions(user, canvas_id, include_archived))
+    return {"sessions": sessions}
+
+
+@app.patch("/api/smart-image-agent/sessions/{session_id}")
+async def update_smart_image_agent_session(
+    session_id: str,
+    canvas_id: str,
+    payload: ImageAgentSessionUpdate,
+    user: CurrentUser = Depends(require_user),
+):
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.update_session(user, session_id, payload, canvas_id))
+
+
 @app.get("/api/smart-image-agent/sessions/{session_id}")
 async def get_smart_image_agent_session(
     session_id: str,
+    canvas_id: str,
     user: CurrentUser = Depends(require_user),
 ):
-    return await maybe_await(SMART_IMAGE_AGENT_STORE.get_session(user, session_id))
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.get_session(user, session_id, canvas_id))
 
 
 @app.post("/api/smart-image-agent/sessions/{session_id}/messages")
@@ -16930,9 +16952,10 @@ async def retry_smart_image_agent_run(
 @app.get("/api/smart-image-agent/sessions/{session_id}/results")
 async def list_smart_image_agent_results(
     session_id: str,
+    canvas_id: str,
     user: CurrentUser = Depends(require_user),
 ):
-    results = await maybe_await(SMART_IMAGE_AGENT_STORE.list_results(user, session_id))
+    results = await maybe_await(SMART_IMAGE_AGENT_STORE.list_results(user, session_id, canvas_id))
     return {"results": results}
 
 

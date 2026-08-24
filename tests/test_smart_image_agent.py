@@ -12,6 +12,7 @@ from smart_image_agent import (
     ImageAgentPlanUpdate,
     ImageAgentRunUpdate,
     ImageAgentSessionCreate,
+    ImageAgentSessionUpdate,
     LocalSmartImageAgentStore,
 )
 from team_cloud import CurrentUser
@@ -179,6 +180,66 @@ class SmartImageAgentStoreTests(unittest.TestCase):
             )
         self.assertEqual(error.exception.status_code, 422)
 
+    def test_sessions_have_titles_can_be_archived_and_stay_scoped_to_canvas(self):
+        self.store.add_message(
+            self.user,
+            self.session["id"],
+            ImageAgentMessageCreate(content="Create a premium tea poster", context={"canvas_id": "canvas-1"}),
+        )
+        other_canvas = self.store.create_session(self.user, ImageAgentSessionCreate(canvas_id="canvas-2"))
+        other_user = self.store.create_session(self.other_user, ImageAgentSessionCreate(canvas_id="canvas-1"))
+
+        sessions = self.store.list_sessions(self.user, "canvas-1")
+        self.assertEqual([item["id"] for item in sessions], [self.session["id"]])
+        self.assertEqual(sessions[0]["title"], "Create a premium tea poster")
+        self.assertNotIn(other_canvas["id"], [item["id"] for item in sessions])
+        self.assertNotIn(other_user["id"], [item["id"] for item in sessions])
+
+        archived = self.store.update_session(
+            self.user,
+            self.session["id"],
+            ImageAgentSessionUpdate(archived=True),
+        )
+        self.assertTrue(archived["archived_at"])
+        self.assertEqual(self.store.list_sessions(self.user, "canvas-1"), [])
+        self.assertEqual(self.store.list_sessions(self.user, "canvas-1", include_archived=True)[0]["id"], self.session["id"])
+
+    def test_plan_assigns_reference_roles_and_requires_one_decision_at_a_time(self):
+        plan = self.create_plan(
+            message="Edit this image into a rainy neon scene",
+            context={"canvas_id": "canvas-1", "selected_images": [
+                {"node_id": "image-1", "url": "/one.png"},
+                {"node_id": "image-2", "url": "/two.png"},
+            ]},
+        )
+        self.assertEqual(plan["action"], "compose_images")
+        self.assertEqual([item["role"] for item in plan["references"]], ["primary", "reference"])
+
+        with self.assertRaises(HTTPException) as error:
+            self.create_plan(message="Make another plan")
+        self.assertEqual(error.exception.status_code, 409)
+
+        dismissed = self.store.update_plan(self.user, plan["id"], ImageAgentPlanUpdate(status="cancelled"))
+        self.assertEqual(dismissed["status"], "cancelled")
+        replacement = self.create_plan(message="Make another plan")
+        self.assertEqual(replacement["status"], "awaiting_confirmation")
+
+    def test_pending_plan_and_session_access_are_scoped_to_the_same_canvas(self):
+        self.create_plan(message="Create a first plan")
+        second_session = self.store.create_session(self.user, ImageAgentSessionCreate(canvas_id="canvas-1"))
+        with self.assertRaises(HTTPException) as plan_error:
+            self.store.create_plan(self.user, ImageAgentPlanCreate(
+                session_id=second_session["id"], message="Create a competing plan", context={"canvas_id": "canvas-1"},
+            ))
+        self.assertEqual(plan_error.exception.status_code, 409)
+
+        with self.assertRaises(HTTPException) as get_error:
+            self.store.get_session(self.user, self.session["id"], canvas_id="canvas-2")
+        self.assertEqual(get_error.exception.status_code, 404)
+        with self.assertRaises(HTTPException) as update_error:
+            self.store.update_session(self.user, self.session["id"], ImageAgentSessionUpdate(title="wrong canvas"), canvas_id="canvas-2")
+        self.assertEqual(update_error.exception.status_code, 404)
+
 
 class SmartImageAgentApiTests(unittest.TestCase):
     def setUp(self):
@@ -242,7 +303,7 @@ class SmartImageAgentApiTests(unittest.TestCase):
         ).json()
         plan = self.client.post(
             "/api/smart-image-agent/plans",
-            json={"session_id": session["id"], "message": "生成一张海报"},
+            json={"session_id": session["id"], "message": "生成一张海报", "context": {"canvas_id": "canvas-api"}},
         ).json()
         run = self.client.post(f"/api/smart-image-agent/plans/{plan['id']}/confirm").json()["runs"][0]
 
@@ -257,9 +318,45 @@ class SmartImageAgentApiTests(unittest.TestCase):
         )
         self.assertEqual(completed.status_code, 200)
 
-        results = self.client.get(f"/api/smart-image-agent/sessions/{session['id']}/results")
+        results = self.client.get(f"/api/smart-image-agent/sessions/{session['id']}/results?canvas_id=canvas-api")
         self.assertEqual(results.status_code, 200)
         self.assertEqual(results.json()["results"][0]["target_node_id"], "node-1")
+
+    def test_api_lists_and_updates_canvas_sessions(self):
+        first = self.client.post(
+            "/api/smart-image-agent/sessions",
+            json={"canvas_id": "canvas-api", "title": "First concept"},
+        ).json()
+        second = self.client.post(
+            "/api/smart-image-agent/sessions",
+            json={"canvas_id": "canvas-api", "title": "Second concept"},
+        ).json()
+
+        listed = self.client.get("/api/smart-image-agent/sessions?canvas_id=canvas-api")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual([item["id"] for item in listed.json()["sessions"]], [second["id"], first["id"]])
+
+        archived = self.client.patch(
+            f"/api/smart-image-agent/sessions/{second['id']}?canvas_id=canvas-api",
+            json={"archived": True},
+        )
+        self.assertEqual(archived.status_code, 200)
+        remaining = self.client.get("/api/smart-image-agent/sessions?canvas_id=canvas-api").json()["sessions"]
+        self.assertEqual([item["id"] for item in remaining], [first["id"]])
+
+    def test_api_rejects_cross_canvas_session_access(self):
+        session = self.client.post("/api/smart-image-agent/sessions", json={"canvas_id": "canvas-api"}).json()
+        wrong_get = self.client.get(f"/api/smart-image-agent/sessions/{session['id']}?canvas_id=other-canvas")
+        self.assertEqual(wrong_get.status_code, 404)
+        wrong_patch = self.client.patch(
+            f"/api/smart-image-agent/sessions/{session['id']}?canvas_id=other-canvas",
+            json={"archived": True},
+        )
+        self.assertEqual(wrong_patch.status_code, 404)
+        wrong_results = self.client.get(
+            f"/api/smart-image-agent/sessions/{session['id']}/results?canvas_id=other-canvas",
+        )
+        self.assertEqual(wrong_results.status_code, 404)
 
 
 class SmartImageAgentStaticIsolationTests(unittest.TestCase):
@@ -361,6 +458,21 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
         self.assertIn('SMART_IMAGE_AGENT_STANDARD_MODEL = "nano-banana-2"', service_source)
         self.assertIn('SMART_IMAGE_AGENT_PRO_MODEL = "nano-banana-pro"', service_source)
         self.assertNotIn("AGENT_FALLBACK_PROVIDER", service_source)
+
+    def test_v2_creation_path_includes_sessions_roles_and_single_plan_focus(self):
+        main_source = (self.root / "main.py").read_text(encoding="utf-8")
+        service_source = (self.root / "smart_image_agent.py").read_text(encoding="utf-8")
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+        migration = (self.root / "docs" / "supabase" / "smart_image_agent_v2.sql").read_text(encoding="utf-8")
+
+        self.assertIn('"/api/smart-image-agent/sessions"', main_source)
+        self.assertIn('ImageAgentSessionUpdate', service_source)
+        self.assertIn('assign_reference_roles', service_source)
+        self.assertIn('data-session-history', app)
+        self.assertIn('data-dismiss-plan', app)
+        self.assertIn('data-reference-role', app)
+        self.assertIn('canvas_id=${encodeURIComponent(context.canvas_id)}', app)
+        self.assertLess(migration.index('add column if not exists last_activity_at'), migration.index('idx_smart_image_agent_sessions_history'))
 
 
 if __name__ == "__main__":

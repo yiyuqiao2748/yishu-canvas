@@ -6,8 +6,12 @@
         currentPlan:null,
         runs:[],
         results:[],
+        sessions:[],
         selectionRefs:[],
         manualRefs:[],
+        referenceRoles:new Map(),
+        selectedResultGroup:[],
+        pendingAction:'',
         assetCache:[],
         activeRuns:0,
         cancelled:new Set(),
@@ -74,7 +78,10 @@
             if(!item.url || seen.has(key)) return false;
             seen.add(key);
             return true;
-        });
+        }).map(item => ({...item, role:state.referenceRoles.get(referenceKey(item)) || item.role || ''}));
+    }
+    function referenceKey(item){
+        return `${item?.node_id || ''}|${item?.asset_id || ''}|${item?.url || ''}`;
     }
     function addManualReferences(items){
         const additions = (Array.isArray(items) ? items : [items]).filter(item => item?.url);
@@ -93,11 +100,20 @@
     function referenceLabel(item, index){
         return item.name || item.prompt || `参考图 ${index + 1}`;
     }
+    function referenceRoleLabel(role){
+        return {primary:'主图', reference:'参考', edit_target:'待修改'}[role] || '自动';
+    }
     function renderReferences(){
         const refs = combinedRefs();
         els.refs.innerHTML = refs.length ? refs.map((item, index) => `
             <div class="sia-ref" data-ref-index="${index}">
                 <img src="${escapeHtml(item.preview_url || item.url)}" alt="${escapeHtml(referenceLabel(item, index))}">
+                <select data-reference-role="${index}" title="图片用途">
+                    <option value="" ${!item.role ? 'selected' : ''}>自动</option>
+                    <option value="primary" ${item.role === 'primary' ? 'selected' : ''}>主图</option>
+                    <option value="reference" ${item.role === 'reference' ? 'selected' : ''}>参考</option>
+                    <option value="edit_target" ${item.role === 'edit_target' ? 'selected' : ''}>修改</option>
+                </select>
                 <button type="button" data-remove-ref="${index}" title="移除参考图"><i data-lucide="x"></i></button>
             </div>
         `).join('') : '<div class="sia-empty-ref"><i data-lucide="image-plus"></i><span>选中画布图片或添加参考图</span></div>';
@@ -107,11 +123,18 @@
         els.refs.querySelectorAll('[data-remove-ref]').forEach(button => {
             button.addEventListener('click', () => {
                 const target = refs[Number(button.dataset.removeRef)];
-                state.manualRefs = state.manualRefs.filter(item => item !== target);
-                state.selectionRefs = state.selectionRefs.filter(item => item !== target);
+                state.referenceRoles.delete(referenceKey(target));
+                state.manualRefs = state.manualRefs.filter(item => referenceKey(item) !== referenceKey(target));
+                state.selectionRefs = state.selectionRefs.filter(item => referenceKey(item) !== referenceKey(target));
                 renderReferences();
             });
         });
+        els.refs.querySelectorAll('[data-reference-role]').forEach(select => select.addEventListener('change', () => {
+            const item = refs[Number(select.dataset.referenceRole)];
+            if(!item) return;
+            state.referenceRoles.set(referenceKey(item), select.value);
+            notify(`${referenceLabel(item, Number(select.dataset.referenceRole))} 将作为${referenceRoleLabel(select.value)}`);
+        }));
         refreshIcons();
     }
     function actionLabel(action){
@@ -137,6 +160,9 @@
                 <strong>${escapeHtml(modelLabel(plan))}</strong>
             </div>
             <p>${escapeHtml(plan.prompt || plan.message)}</p>
+            <div class="sia-plan-references">${(plan.references || []).map((item, index) => `
+                <span title="${escapeHtml(referenceLabel(item, index))}">${escapeHtml(referenceRoleLabel(item.role))}</span>
+            `).join('') || '<span>纯文字创作</span>'}</div>
             <div class="sia-plan-controls">
                 <label><span>比例</span><select data-plan-field="ratio">
                     ${['auto','1:1','4:5','16:9','9:16','4:3','3:4','21:9'].map(value => `<option value="${value}" ${value === plan.ratio ? 'selected' : ''}>${value === 'auto' ? '自动' : value}</option>`).join('')}
@@ -150,14 +176,17 @@
             <div class="sia-plan-cost"><span>预计消耗</span><strong>${Number(plan.estimated_points) || 0} 灵感点</strong></div>
             <button class="sia-primary" type="button" data-confirm-plan ${plan.status !== 'awaiting_confirmation' ? 'disabled' : ''}>
                 <i data-lucide="sparkles"></i><span>${Number(plan.count) > 1 ? '全部生成' : '生成'}</span>
-            </button>`;
+            </button>
+            ${plan.status === 'awaiting_confirmation' ? '<button class="sia-secondary" type="button" data-dismiss-plan>放弃此方案</button>' : ''}`;
         els.plan.querySelectorAll('[data-plan-field]').forEach(control => {
             control.addEventListener('change', () => updatePlan(control.dataset.planField, control.type === 'number' ? Number(control.value) : control.value));
         });
         els.plan.querySelector('[data-confirm-plan]')?.addEventListener('click', confirmCurrentPlan);
+        els.plan.querySelector('[data-dismiss-plan]')?.addEventListener('click', dismissCurrentPlan);
         refreshIcons();
     }
-    function statusLabel(status){
+    function statusLabel(status, stage=''){
+        if(stage) return {queued:'排队等待', preparing:'准备图片', generating:'生成中', saving:'保存结果', completed:'已完成', failed:'失败', cancelled:'已取消'}[stage] || stage;
         return {queued:'排队中', running:'生成中', succeeded:'已完成', failed:'失败', cancelled:'已取消'}[status] || status;
     }
     function renderTasks(){
@@ -174,7 +203,7 @@
             const canCancel = ['queued','running'].includes(run.status);
             const canRetry = ['failed','cancelled'].includes(run.status);
             return `<article class="sia-task" data-run-id="${escapeHtml(run.id)}">
-                <div class="sia-task-state" data-state="${escapeHtml(run.status)}"><span></span>${escapeHtml(statusLabel(run.status))}</div>
+                <div class="sia-task-state" data-state="${escapeHtml(run.status)}"><span></span>${escapeHtml(statusLabel(run.status, run.progress_stage))}</div>
                 <strong>${escapeHtml(actionLabel(plan.action))} · ${Number(run.sequence) || 1}</strong>
                 <small>${escapeHtml(modelLabel(plan))}${run.attempt > 1 ? ` · 第 ${run.attempt} 次` : ''}</small>
                 ${run.error ? `<p>${escapeHtml(run.error)}</p>` : ''}
@@ -200,6 +229,8 @@
                 </button>
                 <div class="sia-result-actions">
                     <button type="button" data-use-result title="继续修改"><i data-lucide="wand-sparkles"></i></button>
+                    <button type="button" data-variant-result title="生成变体"><i data-lucide="copy-plus"></i></button>
+                    <button type="button" data-expand-result title="扩图补景"><i data-lucide="maximize"></i></button>
                     <button type="button" data-save-result title="保存素材库"><i data-lucide="archive"></i></button>
                     <a href="${escapeHtml(result.url)}" download title="下载"><i data-lucide="download"></i></a>
                 </div>
@@ -208,12 +239,10 @@
             const result = state.results.find(item => item.run_id === card.dataset.resultRun);
             card.querySelector('[data-focus-node]')?.addEventListener('click', () => global.SmartImageAgentBridge.focusNode(result.target_node_id));
             card.querySelector('[data-use-result]')?.addEventListener('click', () => {
-                state.manualRefs = [{...result, node_id:result.target_node_id, name:'上一轮结果'}];
-                switchTab('create');
-                renderReferences();
-                els.input.focus();
-                notify('已引用该结果，可继续描述修改');
+                continueFromResult(result, '继续修改这张图片：');
             });
+            card.querySelector('[data-variant-result]')?.addEventListener('click', () => continueFromResult(result, '基于这张图片生成四个视觉变体：', 'create_variants', 4));
+            card.querySelector('[data-expand-result]')?.addEventListener('click', () => continueFromResult(result, '扩展画面并自然补全背景：', 'expand_image'));
             card.querySelector('[data-save-result]')?.addEventListener('click', async () => {
                 try {
                     await global.SmartImageAgentBridge.saveToAssetLibrary(result);
@@ -222,6 +251,19 @@
             });
         });
         refreshIcons();
+    }
+    function continueFromResult(result, prefix, action='', count=1){
+        state.selectedResultGroup = state.results.filter(item => item.plan_id === result.plan_id)
+            .sort((left, right) => Number(left.sequence || 0) - Number(right.sequence || 0));
+        state.manualRefs = [{...result, node_id:result.target_node_id, name:'上一轮结果', role:'edit_target'}];
+        state.referenceRoles.set(referenceKey(state.manualRefs[0]), 'edit_target');
+        state.pendingAction = action;
+        els.count.value = String(count);
+        els.input.value = prefix;
+        switchTab('create');
+        renderReferences();
+        els.input.focus();
+        notify('已引用结果，可直接继续创作');
     }
     function switchTab(tab){
         els.root.dataset.tab = tab;
@@ -259,12 +301,67 @@
             document.addEventListener('pointerup', end, {once:true});
         });
     }
-    async function loadSession(){
+    async function refreshSessions(){
         const context = global.SmartImageAgentBridge.getCanvasContext();
-        const stored = readSetting('session', '');
+        if(!context.canvas_id) return [];
+        const data = await api(`/api/smart-image-agent/sessions?canvas_id=${encodeURIComponent(context.canvas_id)}`);
+        state.sessions = data.sessions || [];
+        renderSessionHistory();
+        return state.sessions;
+    }
+    function renderSessionHistory(){
+        if(!els.sessionHistory) return;
+        els.sessionHistory.innerHTML = state.sessions.length ? state.sessions.map(session => `
+            <div class="sia-session-item" data-session-id="${escapeHtml(session.id)}">
+                <button type="button" data-open-session title="${escapeHtml(session.title || '未命名创作')}">${escapeHtml(session.title || '未命名创作')}</button>
+                <button type="button" data-archive-session title="归档"><i data-lucide="archive"></i></button>
+            </div>
+        `).join('') : '<div class="sia-empty">暂无历史创作</div>';
+        els.sessionHistory.querySelectorAll('[data-session-id]').forEach(row => {
+            row.querySelector('[data-open-session]')?.addEventListener('click', () => switchSession(row.dataset.sessionId));
+            row.querySelector('[data-archive-session]')?.addEventListener('click', () => archiveSession(row.dataset.sessionId));
+        });
+        refreshIcons();
+    }
+    async function switchSession(sessionId){
+        if(!sessionId || sessionId === state.session?.id) return;
+        state.session = null;
+        writeSetting('session', sessionId);
+        await loadSession(sessionId);
+        els.sessionHistory.hidden = true;
+        notify('已恢复该创作会话', 'success');
+    }
+    async function createNewSession(){
+        state.session = null;
+        state.plans.clear();
+        state.currentPlan = null;
+        state.runs = [];
+        state.results = [];
+        state.manualRefs = [];
+        state.referenceRoles.clear();
+        writeSetting('session', '');
+        await loadSession();
+        renderReferences(); renderPlan(); renderTasks(); renderResults();
+        els.input.value = '';
+        els.input.focus();
+        notify('已新建创作会话');
+    }
+    async function archiveSession(sessionId){
+        try {
+            const context = global.SmartImageAgentBridge.getCanvasContext();
+            await api(`/api/smart-image-agent/sessions/${encodeURIComponent(sessionId)}?canvas_id=${encodeURIComponent(context.canvas_id)}`, {
+                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({archived:true}),
+            });
+            if(sessionId === state.session?.id) await createNewSession();
+            await refreshSessions();
+        } catch(error) { notify(error.message, 'error'); }
+    }
+    async function loadSession(requestedId=''){
+        const context = global.SmartImageAgentBridge.getCanvasContext();
+        const stored = requestedId || readSetting('session', '');
         if(stored){
             try {
-                state.session = await api(`/api/smart-image-agent/sessions/${encodeURIComponent(stored)}`);
+                state.session = await api(`/api/smart-image-agent/sessions/${encodeURIComponent(stored)}?canvas_id=${encodeURIComponent(context.canvas_id)}`);
             } catch(_error) { writeSetting('session', ''); }
         }
         if(!state.session){
@@ -273,10 +370,12 @@
             });
             writeSetting('session', state.session.id);
         }
+        state.plans.clear();
         (state.session.plans || []).forEach(plan => state.plans.set(plan.id, plan));
-        const runData = await api(`/api/smart-image-agent/runs?session_id=${encodeURIComponent(state.session.id)}`);
+        state.currentPlan = [...state.plans.values()].reverse().find(plan => plan.status === 'awaiting_confirmation') || null;
+        const runData = await api(`/api/smart-image-agent/runs?session_id=${encodeURIComponent(state.session.id)}&canvas_id=${encodeURIComponent(context.canvas_id)}`);
         state.runs = runData.runs || [];
-        const resultData = await api(`/api/smart-image-agent/sessions/${encodeURIComponent(state.session.id)}/results`);
+        const resultData = await api(`/api/smart-image-agent/sessions/${encodeURIComponent(state.session.id)}/results?canvas_id=${encodeURIComponent(context.canvas_id)}`);
         state.results = resultData.results || [];
         for(const run of state.runs.filter(item => item.status === 'running')){
             try {
@@ -289,6 +388,8 @@
         }
         renderTasks();
         renderResults();
+        renderPlan();
+        refreshSessions().catch(() => {});
         processQueue();
         return state.session;
     }
@@ -301,6 +402,19 @@
     async function createPlan(){
         const message = els.input.value.trim();
         if(!message) return;
+        if(state.currentPlan?.status === 'awaiting_confirmation'){
+            notify('请先确认、编辑或放弃当前方案', 'error');
+            return;
+        }
+        const resultMatch = message.match(/第\s*(\d+)\s*张/);
+        if(resultMatch && state.selectedResultGroup.length){
+            const selected = state.selectedResultGroup[Number(resultMatch[1]) - 1];
+            if(selected){
+                state.manualRefs = [{...selected, node_id:selected.target_node_id, name:`第 ${resultMatch[1]} 张结果`, role:'edit_target'}];
+                state.referenceRoles.set(referenceKey(state.manualRefs[0]), 'edit_target');
+                renderReferences();
+            }
+        }
         const references = combinedRefs();
         if(references.length > 10){ notify('单次最多引用 10 张图片', 'error'); return; }
         const context = {...global.SmartImageAgentBridge.getCanvasContext(), selected_images:references};
@@ -320,11 +434,14 @@
                     ratio:els.ratio.value,
                     count:Number(els.count.value) || 1,
                     quality:els.quality.value
+                    ,action:state.pendingAction
                 })
             });
             state.currentPlan = plan;
             state.plans.set(plan.id, plan);
+            state.pendingAction = '';
             renderPlan();
+            refreshSessions().catch(() => {});
             notify('方案已准备，确认后才会开始生成', 'success');
         } catch(error) { notify(error.message, 'error'); }
         finally { els.create.disabled = false; }
@@ -339,6 +456,19 @@
             state.plans.set(updated.id, updated);
             renderPlan();
         } catch(error) { notify(error.message, 'error'); renderPlan(); }
+    }
+    async function dismissCurrentPlan(){
+        const plan = state.currentPlan;
+        if(!plan || plan.status !== 'awaiting_confirmation') return;
+        try {
+            const dismissed = await api(`/api/smart-image-agent/plans/${encodeURIComponent(plan.id)}`, {
+                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'cancelled'})
+            });
+            state.plans.set(dismissed.id, dismissed);
+            state.currentPlan = null;
+            renderPlan();
+            notify('已放弃该方案');
+        } catch(error) { notify(error.message, 'error'); }
     }
     async function confirmCurrentPlan(){
         const plan = state.currentPlan;
@@ -363,18 +493,28 @@
         state.activeRuns += 1;
         try {
             const started = await api(`/api/smart-image-agent/runs/${encodeURIComponent(run.id)}`, {
-                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'running'})
+                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'running', progress_stage:'preparing'})
             });
             Object.assign(run, started);
             renderTasks();
             const plan = state.plans.get(run.plan_id);
             if(!plan) throw new Error('任务方案已失效，请重新创建');
+            const generating = await api(`/api/smart-image-agent/runs/${encodeURIComponent(run.id)}`, {
+                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'running', progress_stage:'generating'})
+            });
+            Object.assign(run, generating);
+            renderTasks();
             const result = await global.SmartImageAgentBridge.runImageTask(run, plan, {
                 isCancelled:() => state.cancelled.has(run.id)
             });
             if(state.cancelled.has(run.id) || result?.cancelled) return;
+            const saving = await api(`/api/smart-image-agent/runs/${encodeURIComponent(run.id)}`, {
+                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'running', progress_stage:'saving'})
+            });
+            Object.assign(run, saving);
+            renderTasks();
             const completed = await api(`/api/smart-image-agent/runs/${encodeURIComponent(run.id)}`, {
-                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'succeeded', result})
+                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'succeeded', progress_stage:'completed', result})
             });
             Object.assign(run, completed);
             state.results.unshift({run_id:run.id, plan_id:run.plan_id, session_id:run.session_id, ...result});
@@ -491,6 +631,23 @@
             els.input.focus();
         }));
     }
+    function selectSkill(skill){
+        const presets = {
+            poster:{message:'生成一张高级视觉海报：', action:'generate_image', count:1, ratio:'4:5'},
+            product:{message:'为产品制作电商商品主图：', action:'generate_image', count:1, ratio:'1:1'},
+            social:{message:'生成四张统一视觉方向的社媒套图：', action:'generate_image_set', count:4, ratio:'4:5'},
+            variants:{message:'基于引用图片生成四个视觉变体：', action:'create_variants', count:4, ratio:'auto'},
+            expand:{message:'扩展画面并自然补全背景：', action:'expand_image', count:1, ratio:'auto'},
+            compose:{message:'融合引用图片并保持主体一致：', action:'compose_images', count:1, ratio:'auto'}
+        };
+        const preset = presets[skill];
+        if(!preset) return;
+        state.pendingAction = preset.action;
+        els.input.value = preset.message;
+        els.count.value = String(preset.count);
+        els.ratio.value = preset.ratio;
+        els.input.focus();
+    }
     function buildUi(){
         const oldPanel = document.getElementById('agentPanel');
         if(oldPanel) oldPanel.remove();
@@ -502,7 +659,11 @@
             <div class="sia-resizer" aria-hidden="true"></div>
             <header class="sia-header">
                 <div class="sia-brand"><i data-lucide="wand-sparkles"></i><div><strong>图片 Agent</strong><span>智能画布协作</span></div></div>
-                <button class="sia-icon" type="button" data-collapse title="收起图片 Agent"><i data-lucide="chevrons-right"></i></button>
+                <div class="sia-header-actions">
+                    <button class="sia-icon" type="button" data-new-session title="新建创作"><i data-lucide="plus"></i></button>
+                    <button class="sia-icon" type="button" data-session-history title="创作历史"><i data-lucide="history"></i></button>
+                    <button class="sia-icon" type="button" data-collapse title="收起图片 Agent"><i data-lucide="chevrons-right"></i></button>
+                </div>
             </header>
             <nav class="sia-tabs">
                 <button type="button" data-agent-tab="create" class="active"><i data-lucide="sparkles"></i><span>创作</span></button>
@@ -519,10 +680,12 @@
                     <input type="file" accept="image/*" multiple hidden data-file-input>
                 </div>
                 <div class="sia-quick">
-                    <button type="button" data-quick="生成一张高级视觉海报">海报</button>
-                    <button type="button" data-quick="基于选中图片创建四个视觉变体">变体</button>
-                    <button type="button" data-quick="扩展画面并自然补全背景">扩图</button>
-                    <button type="button" data-quick="融合所有参考图，保持主体一致">多图合成</button>
+                    <button type="button" data-skill="poster">海报</button>
+                    <button type="button" data-skill="product">商品主图</button>
+                    <button type="button" data-skill="social">社媒套图</button>
+                    <button type="button" data-skill="variants">风格变体</button>
+                    <button type="button" data-skill="expand">扩图补景</button>
+                    <button type="button" data-skill="compose">多图合成</button>
                 </div>
                 <div class="sia-composer">
                     <textarea data-input rows="4" placeholder="描述要生成或修改的图片，输入 @ 引用画布或素材图片"></textarea>
@@ -543,7 +706,8 @@
                 <div class="sia-picker-head"><strong>选择图片素材</strong><button type="button" data-close-assets title="关闭"><i data-lucide="x"></i></button></div>
                 <input type="search" data-asset-search placeholder="搜索素材">
                 <div class="sia-asset-grid" data-asset-grid></div>
-            </div>`;
+            </div>
+            <div class="sia-session-history" data-session-history-panel hidden></div>`;
         document.body.appendChild(root);
         els.root = root;
         els.resizer = root.querySelector('.sia-resizer');
@@ -569,19 +733,25 @@
         els.assetPicker = root.querySelector('[data-asset-picker]');
         els.assetGrid = root.querySelector('[data-asset-grid]');
         els.assetSearch = root.querySelector('[data-asset-search]');
+        els.sessionHistory = root.querySelector('[data-session-history-panel]');
         els.tabs.forEach(button => button.addEventListener('click', () => switchTab(button.dataset.agentTab)));
         els.collapse.addEventListener('click', () => setCollapsed(!root.classList.contains('is-collapsed')));
         root.querySelector('[data-expand]').addEventListener('click', () => setCollapsed(false));
         root.querySelector('[data-upload]').addEventListener('click', () => els.fileInput.click());
         root.querySelector('[data-assets]').addEventListener('click', openAssetPicker);
         root.querySelector('[data-close-assets]').addEventListener('click', () => { els.assetPicker.hidden = true; });
+        root.querySelector('[data-new-session]').addEventListener('click', createNewSession);
+        root.querySelector('[data-session-history]').addEventListener('click', () => {
+            els.sessionHistory.hidden = !els.sessionHistory.hidden;
+            if(!els.sessionHistory.hidden) refreshSessions().catch(error => notify(error.message, 'error'));
+        });
         els.fileInput.addEventListener('change', () => { uploadFiles(els.fileInput.files); els.fileInput.value = ''; });
         els.create.addEventListener('click', createPlan);
         els.input.addEventListener('input', renderMentionSuggestions);
         els.input.addEventListener('keydown', event => {
             if((event.ctrlKey || event.metaKey) && event.key === 'Enter'){ event.preventDefault(); createPlan(); }
         });
-        root.querySelectorAll('[data-quick]').forEach(button => button.addEventListener('click', () => { els.input.value = button.dataset.quick; els.input.focus(); }));
+        root.querySelectorAll('[data-skill]').forEach(button => button.addEventListener('click', () => selectSkill(button.dataset.skill)));
         els.assetSearch.addEventListener('input', () => renderAssetPicker(state.assetCache.filter(item => item.name.toLowerCase().includes(els.assetSearch.value.trim().toLowerCase()))));
         ['dragenter','dragover'].forEach(type => root.querySelector('[data-agent-view="create"]').addEventListener(type, event => { event.preventDefault(); root.classList.add('is-dragging'); }));
         root.querySelector('[data-agent-view="create"]').addEventListener('dragleave', () => root.classList.remove('is-dragging'));
