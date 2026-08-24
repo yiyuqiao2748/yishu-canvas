@@ -1,4 +1,5 @@
 import asyncio
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -481,6 +482,20 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
         self.assertNotIn("}).slice(0, 10);", app)
         self.assertNotIn("return references.slice(0, 10);", bridge)
         self.assertNotIn("filter(item => item.kind === 'image').slice(0, 10)", bridge)
+
+    def test_smart_image_agent_generation_guard_allows_exact_policy_models(self):
+        smart_script = (self.root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+        guard = re.search(
+            r"async function smartImageAgentRunImageTask\(run, plan, options=\{\}\)\{\s*"
+            r"if\(plan\?\.provider_id !== 'custom-api' \|\| (?P<models>.*?)\)\{",
+            smart_script,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(guard)
+        self.assertEqual(
+            set(re.findall(r"'([^']+)'", guard.group("models"))),
+            {"gpt-image-2", "nano-banana-2", "nano-banana-pro", "gpt-image-2-vip"},
+        )
 
     def test_session_restore_only_resumes_runs_with_loaded_plans(self):
         app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")

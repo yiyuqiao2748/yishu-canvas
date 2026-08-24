@@ -18051,7 +18051,7 @@ function smartImageAgentPlaceResults(outputNode, urls, plan, meta){
     };
 }
 async function smartImageAgentRunImageTask(run, plan, options={}){
-    if(plan?.provider_id !== 'custom-api' || !['nano-banana-2','nano-banana-pro'].includes(plan?.model)){
+    if(plan?.provider_id !== 'custom-api' || !['gpt-image-2','nano-banana-2','nano-banana-pro','gpt-image-2-vip'].includes(plan?.model)){
         throw new Error('图片 Agent 仅允许使用已配置的 Nano Banana 模型');
     }
     const refs = (plan.references || []).filter(item => item?.url).slice(0, 10);
