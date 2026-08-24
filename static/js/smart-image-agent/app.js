@@ -650,6 +650,18 @@
         els.ratio.value = preset.ratio;
         els.input.focus();
     }
+    function runCanvasControl(control){
+        const canvasControls = global.SmartImageAgentBridge?.canvasControls;
+        if(!canvasControls) return;
+        const actions = {
+            fitAll:() => canvasControls.fitAll(),
+            zoomIn:() => canvasControls.zoomIn(),
+            zoomOut:() => canvasControls.zoomOut(),
+            resetZoom:() => canvasControls.resetZoom(),
+            arrangeSelection:() => canvasControls.arrangeSelection()
+        };
+        actions[control]?.();
+    }
     function buildUi(){
         const oldPanel = document.getElementById('agentPanel');
         if(oldPanel) oldPanel.remove();
@@ -667,6 +679,13 @@
                     <button class="sia-icon" type="button" data-collapse title="收起图片 Agent"><i data-lucide="chevrons-right"></i></button>
                 </div>
             </header>
+            <div class="sia-canvas-controls" aria-label="画布控制">
+                <button type="button" data-canvas-control="fitAll" title="适应全部节点"><i data-lucide="scan"></i></button>
+                <button type="button" data-canvas-control="zoomIn" title="放大"><i data-lucide="zoom-in"></i></button>
+                <button type="button" data-canvas-control="zoomOut" title="缩小"><i data-lucide="zoom-out"></i></button>
+                <button type="button" data-canvas-control="resetZoom" title="重置缩放"><i data-lucide="rotate-ccw"></i></button>
+                <button type="button" data-canvas-control="arrangeSelection" title="整理选中节点"><i data-lucide="layout-grid"></i></button>
+            </div>
             <div class="sia-collapsed-entry"><button type="button" data-expand title="展开图片 Agent"><i data-lucide="wand-sparkles"></i><b data-collapsed-count>0</b></button></div>
             <main class="sia-activity" data-activity>
             <section class="sia-context">
@@ -740,6 +759,7 @@
             els.sessionHistory.hidden = !els.sessionHistory.hidden;
             if(!els.sessionHistory.hidden) refreshSessions().catch(error => notify(error.message, 'error'));
         });
+        root.querySelectorAll('[data-canvas-control]').forEach(button => button.addEventListener('click', () => runCanvasControl(button.dataset.canvasControl)));
         els.fileInput.addEventListener('change', () => { uploadFiles(els.fileInput.files); els.fileInput.value = ''; });
         els.create.addEventListener('click', createPlan);
         els.input.addEventListener('input', renderMentionSuggestions);

@@ -18052,7 +18052,7 @@ function smartImageAgentPlaceResults(outputNode, urls, plan, meta){
 }
 async function smartImageAgentRunImageTask(run, plan, options={}){
     if(plan?.provider_id !== 'custom-api' || !['gpt-image-2','nano-banana-2','nano-banana-pro','gpt-image-2-vip'].includes(plan?.model)){
-        throw new Error('图片 Agent 仅允许使用已配置的 Nano Banana 模型');
+        throw new Error('图片 Agent 仅支持已配置的四个图片模型');
     }
     const refs = (plan.references || []).filter(item => item?.url).slice(0, 10);
     pushUndo();
@@ -18154,6 +18154,13 @@ window.SmartImageAgentBridge = Object.freeze({
     runImageTask:smartImageAgentRunImageTask,
     placeResults:smartImageAgentPlaceResults,
     focusNode:smartImageAgentFocusNode,
+    canvasControls:Object.freeze({
+        fitAll:() => fitAllNodesViewport(),
+        zoomIn:() => { viewport.scale = Math.min(3, viewport.scale * 1.15); applyViewport(); scheduleSave(); },
+        zoomOut:() => { viewport.scale = Math.max(0.1, viewport.scale / 1.15); applyViewport(); scheduleSave(); },
+        resetZoom:() => { viewport.scale = 1; applyViewport(); scheduleSave(); },
+        arrangeSelection:() => arrangeSelectedSmartNodes()
+    }),
     saveCanvas:() => saveCanvas(),
     uploadReferences:smartImageAgentUploadReferences,
     saveToAssetLibrary:smartImageAgentSaveToAssetLibrary,

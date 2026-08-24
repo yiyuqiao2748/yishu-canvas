@@ -552,6 +552,18 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
             set(re.findall(r"'([^']+)'", guard.group("models"))),
             {"gpt-image-2", "nano-banana-2", "nano-banana-pro", "gpt-image-2-vip"},
         )
+        self.assertIn("图片 Agent 仅支持已配置的四个图片模型", smart_script)
+
+    def test_smart_bridge_exposes_only_verified_canvas_controls(self):
+        smart = (self.root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+
+        for method in ("fitAll", "zoomIn", "zoomOut", "resetZoom", "arrangeSelection"):
+            self.assertIn(f"{method}:", smart)
+            self.assertIn(f"canvasControls.{method}", app)
+
+        classic = (self.root / "static" / "canvas.html").read_text(encoding="utf-8")
+        self.assertNotIn("canvasControls", classic)
 
     def test_session_restore_only_resumes_runs_with_loaded_plans(self):
         app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
