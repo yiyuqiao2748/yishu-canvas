@@ -1,5 +1,11 @@
 (function(global){
     const STORAGE_PREFIX = 'smartImageAgentV2';
+    const IMAGE_MODELS = [
+        {id:'gpt-image-2', label:'GPT Image 2', cost:6, quality:'standard'},
+        {id:'nano-banana-2', label:'Nano Banana 2', cost:12, quality:'standard'},
+        {id:'nano-banana-pro', label:'Nano Banana Pro', cost:18, quality:'pro'},
+        {id:'gpt-image-2-vip', label:'GPT Image 2 VIP', cost:20, quality:'vip'}
+    ];
     const state = {
         session:null,
         plans:new Map(),
@@ -144,8 +150,14 @@
             organize_results:'整理结果'
         }[action] || '图片创作';
     }
+    function modelPolicy(model){
+        return IMAGE_MODELS.find(item => item.id === model) || IMAGE_MODELS[1];
+    }
+    function modelOptions(selected){
+        return IMAGE_MODELS.map(item => `<option value="${item.id}" ${item.id === selected ? 'selected' : ''}>${item.label} · ${item.cost} 灵感点</option>`).join('');
+    }
     function modelLabel(plan){
-        return plan?.model === 'nano-banana-pro' ? 'Nano Banana Pro' : 'Nano Banana 2';
+        return modelPolicy(plan?.model).label;
     }
     function renderPlan(){
         const plan = state.currentPlan;
@@ -164,14 +176,11 @@
                 <span title="${escapeHtml(referenceLabel(item, index))}">${escapeHtml(referenceRoleLabel(item.role))}</span>
             `).join('') || '<span>纯文字创作</span>'}</div>
             <div class="sia-plan-controls">
+                <label class="sia-model-control"><span>模型</span><select data-plan-field="model">${modelOptions(plan.model)}</select></label>
                 <label><span>比例</span><select data-plan-field="ratio">
                     ${['auto','1:1','4:5','16:9','9:16','4:3','3:4','21:9'].map(value => `<option value="${value}" ${value === plan.ratio ? 'selected' : ''}>${value === 'auto' ? '自动' : value}</option>`).join('')}
                 </select></label>
                 <label><span>数量</span><input data-plan-field="count" type="number" min="1" max="8" value="${Number(plan.count) || 1}"></label>
-                <label><span>质量</span><select data-plan-field="quality">
-                    <option value="standard" ${plan.quality !== 'pro' ? 'selected' : ''}>标准</option>
-                    <option value="pro" ${plan.quality === 'pro' ? 'selected' : ''}>高质量</option>
-                </select></label>
             </div>
             <div class="sia-plan-cost"><span>预计消耗</span><strong>${Number(plan.estimated_points) || 0} 灵感点</strong></div>
             <button class="sia-primary" type="button" data-confirm-plan ${plan.status !== 'awaiting_confirmation' ? 'disabled' : ''}>
@@ -191,8 +200,6 @@
     }
     function renderTasks(){
         const runs = state.runs.slice().sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
-        els.taskBadge.textContent = String(runs.filter(run => ['queued','running'].includes(run.status)).length || '');
-        els.taskBadge.hidden = !runs.some(run => ['queued','running'].includes(run.status));
         const activeCount = runs.filter(run => ['queued','running','starting'].includes(run.status)).length;
         if(els.collapsedCount){
             els.collapsedCount.textContent = String(activeCount);
@@ -221,7 +228,6 @@
         refreshIcons();
     }
     function renderResults(){
-        els.resultCount.textContent = String(state.results.length);
         els.results.innerHTML = state.results.length ? state.results.map(result => `
             <article class="sia-result" data-result-run="${escapeHtml(result.run_id)}">
                 <button class="sia-result-image" type="button" data-focus-node="${escapeHtml(result.target_node_id || '')}">
@@ -260,16 +266,10 @@
         state.pendingAction = action;
         els.count.value = String(count);
         els.input.value = prefix;
-        switchTab('create');
+        els.activity.scrollTo({top:0, behavior:'smooth'});
         renderReferences();
         els.input.focus();
         notify('已引用结果，可直接继续创作');
-    }
-    function switchTab(tab){
-        els.root.dataset.tab = tab;
-        els.tabs.forEach(button => button.classList.toggle('active', button.dataset.agentTab === tab));
-        els.views.forEach(view => view.hidden = view.dataset.agentView !== tab);
-        writeSetting('tab', tab);
     }
     function setCollapsed(collapsed){
         els.root.classList.toggle('is-collapsed', collapsed);
@@ -433,8 +433,9 @@
                     context,
                     ratio:els.ratio.value,
                     count:Number(els.count.value) || 1,
-                    quality:els.quality.value
-                    ,action:state.pendingAction
+                    model:els.model.value,
+                    quality:modelPolicy(els.model.value).quality,
+                    action:state.pendingAction
                 })
             });
             state.currentPlan = plan;
@@ -450,7 +451,8 @@
         if(!state.currentPlan) return;
         try {
             const updated = await api(`/api/smart-image-agent/plans/${encodeURIComponent(state.currentPlan.id)}`, {
-                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({[field]:value})
+                method:'PATCH', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({[field]:value, model:field === 'model' ? value : state.currentPlan.model, quality:modelPolicy(field === 'model' ? value : state.currentPlan.model).quality})
             });
             state.currentPlan = updated;
             state.plans.set(updated.id, updated);
@@ -462,7 +464,7 @@
         if(!plan || plan.status !== 'awaiting_confirmation') return;
         try {
             const dismissed = await api(`/api/smart-image-agent/plans/${encodeURIComponent(plan.id)}`, {
-                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'cancelled'})
+                method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'cancelled', model:plan.model, quality:modelPolicy(plan.model).quality})
             });
             state.plans.set(dismissed.id, dismissed);
             state.currentPlan = null;
@@ -484,7 +486,7 @@
             });
             renderPlan();
             renderTasks();
-            switchTab('tasks');
+            els.tasks.closest('.sia-activity-section')?.scrollIntoView({block:'start', behavior:'smooth'});
             processQueue();
         } catch(error) { notify(error.message, 'error'); }
     }
@@ -665,13 +667,9 @@
                     <button class="sia-icon" type="button" data-collapse title="收起图片 Agent"><i data-lucide="chevrons-right"></i></button>
                 </div>
             </header>
-            <nav class="sia-tabs">
-                <button type="button" data-agent-tab="create" class="active"><i data-lucide="sparkles"></i><span>创作</span></button>
-                <button type="button" data-agent-tab="tasks"><i data-lucide="list-checks"></i><span>任务</span><b data-task-badge hidden></b></button>
-                <button type="button" data-agent-tab="results"><i data-lucide="images"></i><span>结果</span><b data-result-count>0</b></button>
-            </nav>
             <div class="sia-collapsed-entry"><button type="button" data-expand title="展开图片 Agent"><i data-lucide="wand-sparkles"></i><b data-collapsed-count>0</b></button></div>
-            <section class="sia-view" data-agent-view="create">
+            <main class="sia-activity" data-activity>
+            <section class="sia-context">
                 <div class="sia-ref-head"><span>图片引用</span><b data-ref-count>0/10</b></div>
                 <div class="sia-refs" data-refs></div>
                 <div class="sia-source-actions">
@@ -687,21 +685,22 @@
                     <button type="button" data-skill="expand">扩图补景</button>
                     <button type="button" data-skill="compose">多图合成</button>
                 </div>
-                <div class="sia-composer">
-                    <textarea data-input rows="4" placeholder="描述要生成或修改的图片，输入 @ 引用画布或素材图片"></textarea>
-                    <div class="sia-mentions" data-mentions hidden></div>
-                    <div class="sia-settings">
-                        <label><span>比例</span><select data-ratio><option value="auto">自动</option><option>1:1</option><option>4:5</option><option>16:9</option><option>9:16</option></select></label>
-                        <label><span>数量</span><input data-count type="number" min="1" max="8" value="1"></label>
-                        <label><span>质量</span><select data-quality><option value="standard">标准</option><option value="pro">高质量</option></select></label>
-                    </div>
-                    <button class="sia-primary" type="button" data-create disabled><i data-lucide="arrow-up"></i><span>生成方案</span></button>
-                </div>
-                <div class="sia-plan" data-plan hidden></div>
             </section>
-            <section class="sia-view" data-agent-view="tasks" hidden><div class="sia-list" data-tasks></div></section>
-            <section class="sia-view" data-agent-view="results" hidden><div class="sia-results" data-results></div></section>
-            <div class="sia-notice" data-notice hidden></div>
+            <section class="sia-activity-section"><div class="sia-plan" data-plan hidden></div></section>
+            <section class="sia-activity-section"><div class="sia-section-title"><span>任务</span></div><div class="sia-list" data-tasks></div></section>
+            <section class="sia-activity-section"><div class="sia-section-title"><span>结果</span></div><div class="sia-results" data-results></div></section>
+            </main>
+            <div class="sia-composer">
+                <textarea data-input rows="4" placeholder="描述要生成或修改的图片，输入 @ 引用画布或素材图片"></textarea>
+                <div class="sia-mentions" data-mentions hidden></div>
+                <div class="sia-settings">
+                    <label class="sia-model-control"><span>模型</span><select data-model>${modelOptions('nano-banana-2')}</select></label>
+                    <label><span>比例</span><select data-ratio><option value="auto">自动</option><option>1:1</option><option>4:5</option><option>16:9</option><option>9:16</option></select></label>
+                    <label><span>数量</span><input data-count type="number" min="1" max="8" value="1"></label>
+                </div>
+                <button class="sia-primary" type="button" data-create disabled><i data-lucide="arrow-up"></i><span>生成方案</span></button>
+                <div class="sia-notice" data-notice hidden></div>
+            </div>
             <div class="sia-asset-picker" data-asset-picker hidden>
                 <div class="sia-picker-head"><strong>选择图片素材</strong><button type="button" data-close-assets title="关闭"><i data-lucide="x"></i></button></div>
                 <input type="search" data-asset-search placeholder="搜索素材">
@@ -712,18 +711,15 @@
         els.root = root;
         els.resizer = root.querySelector('.sia-resizer');
         els.collapse = root.querySelector('[data-collapse]');
-        els.tabs = [...root.querySelectorAll('[data-agent-tab]')];
-        els.views = [...root.querySelectorAll('[data-agent-view]')];
+        els.activity = root.querySelector('[data-activity]');
         els.refs = root.querySelector('[data-refs]');
         els.refCount = root.querySelector('[data-ref-count]');
-        els.taskBadge = root.querySelector('[data-task-badge]');
-        els.resultCount = root.querySelector('[data-result-count]');
         els.collapsedCount = root.querySelector('[data-collapsed-count]');
         els.input = root.querySelector('[data-input]');
         els.mentions = root.querySelector('[data-mentions]');
         els.ratio = root.querySelector('[data-ratio]');
         els.count = root.querySelector('[data-count]');
-        els.quality = root.querySelector('[data-quality]');
+        els.model = root.querySelector('[data-model]');
         els.create = root.querySelector('[data-create]');
         els.plan = root.querySelector('[data-plan]');
         els.tasks = root.querySelector('[data-tasks]');
@@ -734,7 +730,6 @@
         els.assetGrid = root.querySelector('[data-asset-grid]');
         els.assetSearch = root.querySelector('[data-asset-search]');
         els.sessionHistory = root.querySelector('[data-session-history-panel]');
-        els.tabs.forEach(button => button.addEventListener('click', () => switchTab(button.dataset.agentTab)));
         els.collapse.addEventListener('click', () => setCollapsed(!root.classList.contains('is-collapsed')));
         root.querySelector('[data-expand]').addEventListener('click', () => setCollapsed(false));
         root.querySelector('[data-upload]').addEventListener('click', () => els.fileInput.click());
@@ -753,15 +748,14 @@
         });
         root.querySelectorAll('[data-skill]').forEach(button => button.addEventListener('click', () => selectSkill(button.dataset.skill)));
         els.assetSearch.addEventListener('input', () => renderAssetPicker(state.assetCache.filter(item => item.name.toLowerCase().includes(els.assetSearch.value.trim().toLowerCase()))));
-        ['dragenter','dragover'].forEach(type => root.querySelector('[data-agent-view="create"]').addEventListener(type, event => { event.preventDefault(); root.classList.add('is-dragging'); }));
-        root.querySelector('[data-agent-view="create"]').addEventListener('dragleave', () => root.classList.remove('is-dragging'));
-        root.querySelector('[data-agent-view="create"]').addEventListener('drop', event => {
+        ['dragenter','dragover'].forEach(type => root.querySelector('.sia-context').addEventListener(type, event => { event.preventDefault(); root.classList.add('is-dragging'); }));
+        root.querySelector('.sia-context').addEventListener('dragleave', () => root.classList.remove('is-dragging'));
+        root.querySelector('.sia-context').addEventListener('drop', event => {
             event.preventDefault(); root.classList.remove('is-dragging'); uploadFiles(event.dataTransfer.files);
         });
         bindResize();
         applyWidth(readSetting('width', '400'));
         setCollapsed(readSetting('collapsed', '0') === '1');
-        switchTab(readSetting('tab', 'create'));
         renderReferences(); renderTasks(); renderResults();
         refreshIcons();
         const toolbarToggle = document.getElementById('agentToggle');

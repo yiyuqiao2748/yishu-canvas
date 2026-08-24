@@ -474,6 +474,27 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
         self.assertIn(".smart-image-agent [hidden]", styles)
         self.assertIn("display:none!important", styles.replace(" ", ""))
 
+    def test_fixed_composer_uses_the_four_model_policy_and_keeps_activity_scrollable(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+        styles = (self.root / "static" / "css" / "smart-image-agent.css").read_text(encoding="utf-8")
+
+        self.assertIn('class="sia-activity"', app)
+        self.assertIn('class="sia-composer"', app)
+        self.assertIn('model:els.model.value', app)
+        self.assertIn('model:field === \'model\' ? value : state.currentPlan.model', app)
+        self.assertEqual(
+            re.findall(r"\{id:'([^']+)', label:'([^']+)', cost:(\d+), quality:'([^']+)'\}", app),
+            [
+                ("gpt-image-2", "GPT Image 2", "6", "standard"),
+                ("nano-banana-2", "Nano Banana 2", "12", "standard"),
+                ("nano-banana-pro", "Nano Banana Pro", "18", "pro"),
+                ("gpt-image-2-vip", "GPT Image 2 VIP", "20", "vip"),
+            ],
+        )
+        self.assertIn('.sia-activity { flex:1; min-height:0; overflow:auto;', styles)
+        self.assertIn('.sia-composer { flex:0 0 auto;', styles)
+        self.assertIn('.sia-notice { position:absolute; left:12px; right:12px; bottom:calc(100% + 12px);', styles)
+
     def test_reference_limit_is_reported_instead_of_silently_truncating_inputs(self):
         app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
         bridge = (self.root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
