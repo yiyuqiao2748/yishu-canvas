@@ -19,7 +19,7 @@ from smart_image_agent import (
     SMART_IMAGE_AGENT_MODELS,
     resolve_smart_image_agent_model,
 )
-from team_cloud import CurrentUser
+from team_cloud import CurrentUser, DEFAULT_MODEL_BILLING_PRICES
 
 
 class SmartImageAgentStoreTests(unittest.TestCase):
@@ -354,6 +354,61 @@ class SmartImageAgentApiTests(unittest.TestCase):
         confirmed = self.client.post(f"/api/smart-image-agent/plans/{plan['id']}/confirm")
         self.assertEqual(confirmed.status_code, 200)
         self.assertEqual(len(confirmed.json()["runs"]), 4)
+
+    def test_api_confirms_all_four_policy_models_as_queued_runs(self):
+        expected = {
+            "gpt-image-2": 6,
+            "nano-banana-2": 12,
+            "nano-banana-pro": 18,
+            "gpt-image-2-vip": 20,
+        }
+
+        for model, unit_points in expected.items():
+            with self.subTest(model=model):
+                canvas_id = f"canvas-{model}"
+                session = self.client.post(
+                    "/api/smart-image-agent/sessions",
+                    json={"canvas_id": canvas_id},
+                ).json()
+                plan_response = self.client.post(
+                    "/api/smart-image-agent/plans",
+                    json={
+                        "session_id": session["id"],
+                        "message": f"Create with {model}",
+                        "context": {"canvas_id": canvas_id},
+                        "model": model,
+                        "count": 2,
+                    },
+                )
+                self.assertEqual(plan_response.status_code, 200)
+                plan = plan_response.json()
+                self.assertEqual(plan["provider_id"], "custom-api")
+                self.assertEqual(plan["estimated_points"], unit_points * 2)
+
+                confirmed = self.client.post(f"/api/smart-image-agent/plans/{plan['id']}/confirm")
+
+                self.assertEqual(confirmed.status_code, 200)
+                payload = confirmed.json()
+                self.assertEqual(payload["plan"]["status"], "queued")
+                self.assertEqual(len(payload["runs"]), 2)
+                self.assertTrue(all(run["status"] == "queued" for run in payload["runs"]))
+                self.assertTrue(all(run["provider_id"] == "custom-api" for run in payload["runs"]))
+                self.assertTrue(all(run["model"] == model for run in payload["runs"]))
+
+    def test_smart_image_policy_matches_shared_default_billing(self):
+        expected = {
+            model: policy["unit_points"]
+            for model, policy in SMART_IMAGE_AGENT_MODELS.items()
+        }
+
+        for provider_id in ("custom-api", "grsai"):
+            with self.subTest(provider_id=provider_id):
+                actual = {
+                    item["model"]: item["points_cost"]
+                    for item in DEFAULT_MODEL_BILLING_PRICES
+                    if item["provider_id"] == provider_id and item["operation_type"] == "image"
+                }
+                self.assertEqual(actual, expected)
 
     def test_api_accepts_vip_quality_for_create_update_and_dismissal(self):
         session = self.client.post(
@@ -707,6 +762,140 @@ vm.runInContext(`
 
         self.assertIn("/api/smart-image-agent/runs?session_id=", app)
         self.assertNotIn("/api/smart-image-agent/runs?canvas_id=", app)
+
+    def test_session_transitions_clear_transient_composer_state(self):
+        script = r'''
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv.at(-1), 'utf8');
+
+function extractFunction(name) {
+    const asyncStart = source.indexOf(`async function ${name}(`);
+    const start = asyncStart >= 0 ? asyncStart : source.indexOf(`function ${name}(`);
+    assert.notEqual(start, -1, `missing ${name}`);
+    const open = source.indexOf('{', start);
+    let depth = 0;
+    for(let index = open; index < source.length; index++) {
+        if(source[index] === '{') depth++;
+        if(source[index] === '}' && --depth === 0) return source.slice(start, index + 1);
+    }
+    throw new Error(`unclosed ${name}`);
+}
+
+const state = {
+    session:{id:'session-old'}, plans:new Map([['plan-old', {}]]), currentPlan:{id:'plan-old'},
+    runs:[{id:'run-old'}], results:[{run_id:'result-old'}], manualRefs:[{url:'old-ref'}],
+    referenceRoles:new Map([['old-ref', 'edit_target']]), selectedResultGroup:[{run_id:'result-old'}],
+    pendingAction:'create_variants'
+};
+const els = {
+    sessionHistory:{hidden:false}, input:{value:'old prompt', focus(){}},
+};
+const context = {
+    state, els,
+    writeSetting(){},
+    async loadSession(){ state.session = {id:'session-new'}; },
+    renderReferences(){}, renderPlan(){}, renderTasks(){}, renderResults(){}, notify(){}
+};
+vm.createContext(context);
+vm.runInContext([
+    extractFunction('resetSessionTransientState'),
+    extractFunction('switchSession'),
+    extractFunction('createNewSession')
+].join('\n'), context);
+
+function seedTransientState() {
+    state.manualRefs = [{url:'old-ref'}];
+    state.referenceRoles = new Map([['old-ref', 'edit_target']]);
+    state.selectedResultGroup = [{run_id:'result-old'}];
+    state.pendingAction = 'create_variants';
+}
+function assertTransientStateCleared() {
+    assert.equal(state.manualRefs.length, 0);
+    assert.equal(state.referenceRoles.size, 0);
+    assert.equal(state.selectedResultGroup.length, 0);
+    assert.equal(state.pendingAction, '');
+}
+
+(async () => {
+    await vm.runInContext(`switchSession('session-new')`, context);
+    assertTransientStateCleared();
+
+    seedTransientState();
+    state.session = {id:'session-new'};
+    await vm.runInContext('createNewSession()', context);
+    assertTransientStateCleared();
+})().catch(error => { console.error(error); process.exitCode = 1; });
+'''
+        completed = subprocess.run(
+            ["node", "-e", script, str(self.root / "static" / "js" / "smart-image-agent" / "app.js")],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_completed_run_does_not_append_result_to_a_different_session(self):
+        script = r'''
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv.at(-1), 'utf8');
+
+function extractFunction(name) {
+    const asyncStart = source.indexOf(`async function ${name}(`);
+    const start = asyncStart >= 0 ? asyncStart : source.indexOf(`function ${name}(`);
+    assert.notEqual(start, -1, `missing ${name}`);
+    const open = source.indexOf('{', start);
+    let depth = 0;
+    for(let index = open; index < source.length; index++) {
+        if(source[index] === '{') depth++;
+        if(source[index] === '}' && --depth === 0) return source.slice(start, index + 1);
+    }
+    throw new Error(`unclosed ${name}`);
+}
+
+const oldRun = {id:'run-old', plan_id:'plan-old', session_id:'session-old', status:'queued'};
+const state = {
+    session:{id:'session-old'}, plans:new Map([['plan-old', {id:'plan-old'}]]),
+    runs:[oldRun], results:[], activeRuns:0, cancelled:new Set()
+};
+let renderedResults = 0;
+const context = {
+    state,
+    async api(_path, options={}) {
+        return {...oldRun, ...JSON.parse(options.body || '{}')};
+    },
+    renderTasks(){},
+    renderResults(){ renderedResults += 1; },
+    processQueue(){},
+    global:{SmartImageAgentBridge:{
+        async runImageTask() {
+            state.session = {id:'session-new'};
+            state.runs = [];
+            state.results = [{run_id:'result-new', session_id:'session-new'}];
+            return {url:'old-result.png'};
+        },
+        async saveCanvas() {}
+    }}
+};
+vm.createContext(context);
+vm.runInContext(extractFunction('processRun'), context);
+
+(async () => {
+    await vm.runInContext('processRun(state.runs[0])', context);
+    assert.deepEqual(state.results, [{run_id:'result-new', session_id:'session-new'}]);
+    assert.equal(renderedResults, 0);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+'''
+        completed = subprocess.run(
+            ["node", "-e", script, str(self.root / "static" / "js" / "smart-image-agent" / "app.js")],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_backend_namespace_and_supabase_schema_are_isolated(self):
         main_source = (self.root / "main.py").read_text(encoding="utf-8")

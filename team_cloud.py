@@ -47,7 +47,7 @@ DEFAULT_MODEL_BILLING_PRICES = [
     for provider_id in ("grsai", "custom-api")
     for model, points in (
         ("gpt-image-2", 6),
-        ("gpt-image-2-vip", 13),
+        ("gpt-image-2-vip", 20),
         ("nano-banana-pro", 18),
         ("nano-banana-2", 12),
     )

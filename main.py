@@ -70,6 +70,7 @@ from smart_image_agent import (
     ImageAgentSessionUpdate,
     infer_image_action,
     LocalSmartImageAgentStore,
+    SMART_IMAGE_AGENT_MODELS,
     SupabaseSmartImageAgentStore,
 )
 from team_storage import r2_client, save_generated_file_from_path, settings as team_storage_settings
@@ -16900,8 +16901,8 @@ async def confirm_smart_image_agent_plan(
 ):
     plan = await maybe_await(SMART_IMAGE_AGENT_STORE.get_plan(user, plan_id))
     await _smart_image_agent_require_team_scope(user, str(plan.get("team_id") or ""))
-    if plan.get("provider_id") != "custom-api" or plan.get("model") not in {"nano-banana-2", "nano-banana-pro"}:
-        raise HTTPException(status_code=422, detail="Smart Image Agent only supports configured Nano Banana image models")
+    if plan.get("provider_id") != "custom-api" or plan.get("model") not in SMART_IMAGE_AGENT_MODELS:
+        raise HTTPException(status_code=422, detail="Smart Image Agent only supports configured image models")
     if plan.get("team_id"):
         await assert_team_points_available(
             user,

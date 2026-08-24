@@ -323,8 +323,16 @@
         });
         refreshIcons();
     }
+    function resetSessionTransientState(){
+        state.manualRefs = [];
+        state.referenceRoles.clear();
+        state.selectedResultGroup = [];
+        state.pendingAction = '';
+    }
     async function switchSession(sessionId){
         if(!sessionId || sessionId === state.session?.id) return;
+        resetSessionTransientState();
+        renderReferences();
         state.session = null;
         writeSetting('session', sessionId);
         await loadSession(sessionId);
@@ -332,13 +340,12 @@
         notify('已恢复该创作会话', 'success');
     }
     async function createNewSession(){
+        resetSessionTransientState();
         state.session = null;
         state.plans.clear();
         state.currentPlan = null;
         state.runs = [];
         state.results = [];
-        state.manualRefs = [];
-        state.referenceRoles.clear();
         writeSetting('session', '');
         await loadSession();
         renderReferences(); renderPlan(); renderTasks(); renderResults();
@@ -492,6 +499,7 @@
     }
     function runById(id){ return state.runs.find(run => run.id === id); }
     async function processRun(run){
+        const sessionId = run.session_id || state.session?.id;
         state.activeRuns += 1;
         try {
             const started = await api(`/api/smart-image-agent/runs/${encodeURIComponent(run.id)}`, {
@@ -519,8 +527,10 @@
                 method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'succeeded', progress_stage:'completed', result})
             });
             Object.assign(run, completed);
-            state.results.unshift({run_id:run.id, plan_id:run.plan_id, session_id:run.session_id, ...result});
-            renderResults();
+            if(state.session?.id === sessionId){
+                state.results.unshift({run_id:run.id, plan_id:run.plan_id, session_id:run.session_id, ...result});
+                renderResults();
+            }
             await global.SmartImageAgentBridge.saveCanvas();
         } catch(error) {
             if(!state.cancelled.has(run.id)){
