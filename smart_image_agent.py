@@ -76,7 +76,7 @@ class ImageAgentPlanCreate(BaseModel):
     prompt: str = Field("", max_length=12000)
     ratio: str = Field("auto", max_length=20)
     count: int = Field(1, ge=1, le=8)
-    quality: str = Field("standard", pattern="^(standard|pro)$")
+    quality: str = Field("standard", pattern="^(standard|pro|vip)$")
     model: Optional[str] = Field(None, max_length=120)
 
 
@@ -84,7 +84,7 @@ class ImageAgentPlanUpdate(BaseModel):
     prompt: Optional[str] = Field(None, min_length=1, max_length=12000)
     ratio: Optional[str] = Field(None, max_length=20)
     count: Optional[int] = Field(None, ge=1, le=8)
-    quality: Optional[str] = Field(None, pattern="^(standard|pro)$")
+    quality: Optional[str] = Field(None, pattern="^(standard|pro|vip)$")
     model: Optional[str] = Field(None, max_length=120)
     status: Optional[str] = Field(None, pattern="^cancelled$")
 

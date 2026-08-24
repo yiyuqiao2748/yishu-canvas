@@ -354,6 +354,41 @@ class SmartImageAgentApiTests(unittest.TestCase):
         self.assertEqual(confirmed.status_code, 200)
         self.assertEqual(len(confirmed.json()["runs"]), 4)
 
+    def test_api_accepts_vip_quality_for_create_update_and_dismissal(self):
+        session = self.client.post(
+            "/api/smart-image-agent/sessions",
+            json={"canvas_id": "canvas-api"},
+        ).json()
+        vip_payload = {"model": "gpt-image-2-vip", "quality": "vip"}
+        created = self.client.post(
+            "/api/smart-image-agent/plans",
+            json={
+                "session_id": session["id"],
+                "message": "Create a VIP product image",
+                "context": {"canvas_id": "canvas-api"},
+                **vip_payload,
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        plan = created.json()
+        self.assertEqual((plan["model"], plan["quality"], plan["unit_points"], plan["estimated_points"]),
+                         ("gpt-image-2-vip", "vip", 20, 20))
+
+        updated = self.client.patch(
+            f"/api/smart-image-agent/plans/{plan['id']}",
+            json={"prompt": "Make the lighting warmer", **vip_payload},
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual((updated.json()["model"], updated.json()["unit_points"]), ("gpt-image-2-vip", 20))
+
+        dismissed = self.client.patch(
+            f"/api/smart-image-agent/plans/{plan['id']}",
+            json={"status": "cancelled", **vip_payload},
+        )
+        self.assertEqual(dismissed.status_code, 200)
+        self.assertEqual((dismissed.json()["status"], dismissed.json()["model"], dismissed.json()["estimated_points"]),
+                         ("cancelled", "gpt-image-2-vip", 20))
+
     def test_api_run_updates_are_scoped_and_results_are_restored(self):
         session = self.client.post(
             "/api/smart-image-agent/sessions",
