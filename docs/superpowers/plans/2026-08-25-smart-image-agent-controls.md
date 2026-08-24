@@ -1,5 +1,4 @@
 # Smart Image Agent Controls Implementation Plan
-
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add four verified `custom-api` image models and a fixed composer/history/control layout to the Smart Canvas image Agent without changing Classic Canvas.
@@ -286,4 +285,3 @@ git commit -m "feat(smart-image-agent): add verified canvas controls"
 3. A confirmed task records the selected model.
 4. Fit all, zoom out, reset 100%, zoom in, and arrange selected invoke working Smart Canvas behavior.
 5. Classic Canvas receives no model picker, composer, or controls.
-
