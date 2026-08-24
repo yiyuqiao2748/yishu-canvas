@@ -1,5 +1,6 @@
 import asyncio
 import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -557,13 +558,149 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
     def test_smart_bridge_exposes_only_verified_canvas_controls(self):
         smart = (self.root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
         app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+        expected = {"fitAll", "zoomIn", "zoomOut", "resetZoom", "arrangeSelection"}
+        bridge = re.search(
+            r"canvasControls:Object\.freeze\(\{(?P<body>.*?)^\s*\}\),",
+            smart,
+            re.DOTALL | re.MULTILINE,
+        )
 
-        for method in ("fitAll", "zoomIn", "zoomOut", "resetZoom", "arrangeSelection"):
-            self.assertIn(f"{method}:", smart)
-            self.assertIn(f"canvasControls.{method}", app)
+        self.assertIsNotNone(bridge)
+        self.assertEqual(
+            set(re.findall(r"^\s*(\w+)\s*:", bridge.group("body"), re.MULTILINE)),
+            expected,
+        )
+        self.assertEqual(
+            re.findall(r'data-canvas-control="([^"]+)"', app),
+            ["fitAll", "zoomIn", "zoomOut", "resetZoom", "arrangeSelection"],
+        )
+        self.assertEqual(set(re.findall(r"canvasControls\.(\w+)", app)), expected)
 
         classic = (self.root / "static" / "canvas.html").read_text(encoding="utf-8")
         self.assertNotIn("canvasControls", classic)
+
+    def test_canvas_controls_preserve_viewport_center_when_zooming(self):
+        script = r'''
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv.at(-1), 'utf8');
+
+function extractFunction(name) {
+    const start = source.indexOf(`function ${name}(`);
+    assert.notEqual(start, -1, `missing ${name}`);
+    const open = source.indexOf('{', start);
+    let depth = 0;
+    for(let index = open; index < source.length; index++) {
+        if(source[index] === '{') depth++;
+        if(source[index] === '}' && --depth === 0) return source.slice(start, index + 1);
+    }
+    throw new Error(`unclosed ${name}`);
+}
+function extractCanvasControls() {
+    const start = source.indexOf('canvasControls:Object.freeze({');
+    assert.notEqual(start, -1, 'missing canvasControls');
+    const open = source.indexOf('{', start);
+    let depth = 0;
+    for(let index = open; index < source.length; index++) {
+        if(source[index] === '{') depth++;
+        if(source[index] === '}' && --depth === 0) return source.slice(open + 1, index);
+    }
+    throw new Error('unclosed canvasControls');
+}
+
+const context = {
+    assert,
+    viewport:{x:140, y:-80, scale:0.8},
+    shell:{clientWidth:1000, clientHeight:600},
+    applyViewport(){},
+    scheduleSave(){},
+    fitAllNodesViewport(){},
+    arrangeSelectedSmartNodes(){}
+};
+vm.createContext(context);
+vm.runInContext(`${extractFunction('viewportCenter')}\n${extractFunction('centerViewportOnWorldPoint')}\nconst canvasControls = Object.freeze({${extractCanvasControls()}});`, context);
+vm.runInContext(`
+    const center = () => ({
+        x:(shell.clientWidth / 2 - viewport.x) / viewport.scale,
+        y:(shell.clientHeight / 2 - viewport.y) / viewport.scale
+    });
+    const assertStableCenter = (action, expectedScale) => {
+        const before = center();
+        action();
+        assert.ok(Math.abs(viewport.scale - expectedScale) < 1e-9, 'unexpected zoom scale');
+        const after = center();
+        assert.ok(Math.abs(after.x - before.x) < 1e-9, 'world x at viewport center changed');
+        assert.ok(Math.abs(after.y - before.y) < 1e-9, 'world y at viewport center changed');
+    };
+    assertStableCenter(canvasControls.zoomIn, 0.92);
+    assertStableCenter(canvasControls.zoomOut, 0.8);
+    assertStableCenter(canvasControls.resetZoom, 1);
+`, context);
+'''
+        completed = subprocess.run(
+            ["node", "-e", script, str(self.root / "static" / "js" / "smart-canvas.js")],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_arrange_selection_repositions_two_selected_nodes(self):
+        script = r'''
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv.at(-1), 'utf8');
+
+function extractFunction(name) {
+    const start = source.indexOf(`function ${name}(`);
+    assert.notEqual(start, -1, `missing ${name}`);
+    const open = source.indexOf('{', start);
+    let depth = 0;
+    for(let index = open; index < source.length; index++) {
+        if(source[index] === '{') depth++;
+        if(source[index] === '}' && --depth === 0) return source.slice(start, index + 1);
+    }
+    throw new Error(`unclosed ${name}`);
+}
+
+const context = {
+    assert,
+    nodes:[
+        {id:'source', x:520, y:320, w:180, h:110},
+        {id:'result', x:40, y:740, w:180, h:110}
+    ],
+    canvas:{connections:[{from:'source', to:'result'}]},
+    selectedNodeIds:() => ['source', 'result'],
+    smartArrangeAtomicIds:ids => ids,
+    connectedSmartClusterIds:id => [id],
+    nodeRect:node => ({x:node.x, y:node.y, width:node.w, height:node.h}),
+    translateSmartNodeWithMembers:(node, dx, dy) => { node.x += dx; node.y += dy; },
+    pushUndo(){},
+    render(){},
+    scheduleSave(){},
+    toast(){}
+};
+vm.createContext(context);
+vm.runInContext(`${extractFunction('moveSmartNodeAtom')}\n${extractFunction('arrangeSmartIdsByConnections')}\n${extractFunction('arrangeSelectedSmartNodes')}`, context);
+vm.runInContext(`
+    const before = nodes.map(({id, x, y}) => ({id, x, y}));
+    arrangeSelectedSmartNodes();
+    assert.notDeepEqual(nodes.map(({id, x, y}) => ({id, x, y})), before);
+    assert.equal(JSON.stringify(nodes.map(({id, x, y}) => ({id, x, y}))), JSON.stringify([
+        {id:'source', x:40, y:320},
+        {id:'result', x:400, y:320}
+    ]));
+`, context);
+'''
+        completed = subprocess.run(
+            ["node", "-e", script, str(self.root / "static" / "js" / "smart-canvas.js")],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_session_restore_only_resumes_runs_with_loaded_plans(self):
         app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")

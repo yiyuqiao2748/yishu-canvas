@@ -18156,9 +18156,9 @@ window.SmartImageAgentBridge = Object.freeze({
     focusNode:smartImageAgentFocusNode,
     canvasControls:Object.freeze({
         fitAll:() => fitAllNodesViewport(),
-        zoomIn:() => { viewport.scale = Math.min(3, viewport.scale * 1.15); applyViewport(); scheduleSave(); },
-        zoomOut:() => { viewport.scale = Math.max(0.1, viewport.scale / 1.15); applyViewport(); scheduleSave(); },
-        resetZoom:() => { viewport.scale = 1; applyViewport(); scheduleSave(); },
+        zoomIn:() => { const point = viewportCenter(); viewport.scale = Math.min(3, viewport.scale * 1.15); centerViewportOnWorldPoint(point); },
+        zoomOut:() => { const point = viewportCenter(); viewport.scale = Math.max(0.1, viewport.scale / 1.15); centerViewportOnWorldPoint(point); },
+        resetZoom:() => { const point = viewportCenter(); viewport.scale = 1; centerViewportOnWorldPoint(point); },
         arrangeSelection:() => arrangeSelectedSmartNodes()
     }),
     saveCanvas:() => saveCanvas(),
