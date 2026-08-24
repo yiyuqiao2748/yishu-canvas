@@ -1,0 +1,363 @@
+import asyncio
+import tempfile
+import unittest
+from pathlib import Path
+
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+
+from smart_image_agent import (
+    ImageAgentMessageCreate,
+    ImageAgentPlanCreate,
+    ImageAgentPlanUpdate,
+    ImageAgentRunUpdate,
+    ImageAgentSessionCreate,
+    LocalSmartImageAgentStore,
+)
+from team_cloud import CurrentUser
+
+
+class SmartImageAgentStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / "smart_image_agent.json"
+        self.store = LocalSmartImageAgentStore(str(self.path))
+        self.user = CurrentUser(id="user-1", email="artist@example.com", provider="test")
+        self.other_user = CurrentUser(id="user-2", email="other@example.com", provider="test")
+        self.session = self.store.create_session(
+            self.user,
+            ImageAgentSessionCreate(canvas_id="canvas-1", project_id="project-1", team_id="team-1"),
+        )
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def create_plan(self, **overrides):
+        values = {
+            "session_id": self.session["id"],
+            "message": "生成一张东方茶饮海报",
+            "context": {"canvas_id": "canvas-1", "selected_images": []},
+        }
+        values.update(overrides)
+        return self.store.create_plan(self.user, ImageAgentPlanCreate(**values))
+
+    def test_plan_defaults_to_confirmed_nano_banana_route_without_creating_runs(self):
+        plan = self.create_plan()
+
+        self.assertEqual(plan["action"], "generate_image")
+        self.assertEqual(plan["provider_id"], "custom-api")
+        self.assertEqual(plan["model"], "nano-banana-2")
+        self.assertEqual(plan["status"], "awaiting_confirmation")
+        self.assertEqual(plan["estimated_points"], 12)
+        self.assertEqual(self.store.list_runs(self.user, canvas_id="canvas-1"), [])
+
+    def test_high_quality_plan_uses_pro_model_and_never_an_image_fallback(self):
+        plan = self.create_plan(quality="pro", count=2)
+
+        self.assertEqual(plan["provider_id"], "custom-api")
+        self.assertEqual(plan["model"], "nano-banana-pro")
+        self.assertFalse(plan["fallback_used"])
+        self.assertEqual(plan["estimated_points"], 36)
+
+    def test_confirm_creates_one_queued_run_per_requested_image(self):
+        plan = self.create_plan(count=3)
+
+        confirmed = self.store.confirm_plan(self.user, plan["id"])
+
+        self.assertEqual(confirmed["plan"]["status"], "queued")
+        self.assertEqual(len(confirmed["runs"]), 3)
+        self.assertEqual({run["status"] for run in confirmed["runs"]}, {"queued"})
+        self.assertEqual([run["sequence"] for run in confirmed["runs"]], [1, 2, 3])
+
+        repeated = self.store.confirm_plan(self.user, plan["id"])
+        self.assertEqual([run["id"] for run in repeated["runs"]], [run["id"] for run in confirmed["runs"]])
+
+    def test_plan_can_be_edited_before_confirmation_but_not_after(self):
+        plan = self.create_plan()
+        updated = self.store.update_plan(
+            self.user,
+            plan["id"],
+            ImageAgentPlanUpdate(count=4, ratio="4:5", quality="pro"),
+        )
+
+        self.assertEqual(updated["count"], 4)
+        self.assertEqual(updated["ratio"], "4:5")
+        self.assertEqual(updated["model"], "nano-banana-pro")
+        self.assertEqual(updated["estimated_points"], 72)
+
+        self.store.confirm_plan(self.user, plan["id"])
+        with self.assertRaises(HTTPException) as error:
+            self.store.update_plan(self.user, plan["id"], ImageAgentPlanUpdate(count=2))
+        self.assertEqual(error.exception.status_code, 409)
+
+    def test_selected_image_context_infers_edit_and_reference_limit_is_enforced(self):
+        plan = self.create_plan(
+            message="改成雨夜霓虹环境",
+            context={
+                "canvas_id": "canvas-1",
+                "selected_images": [{"node_id": "image-1", "url": "/image.png", "width": 1024, "height": 1024}],
+            },
+        )
+        self.assertEqual(plan["action"], "edit_image")
+        self.assertEqual(plan["source_node_ids"], ["image-1"])
+
+        too_many = [{"node_id": f"image-{index}", "url": f"/{index}.png"} for index in range(11)]
+        with self.assertRaises(HTTPException) as error:
+            self.create_plan(context={"canvas_id": "canvas-1", "selected_images": too_many})
+        self.assertEqual(error.exception.status_code, 422)
+
+    def test_cancel_retry_and_result_state_transitions_are_strict(self):
+        plan = self.create_plan()
+        run = self.store.confirm_plan(self.user, plan["id"])["runs"][0]
+
+        cancelled = self.store.cancel_run(self.user, run["id"])
+        self.assertEqual(cancelled["status"], "cancelled")
+
+        retried = self.store.retry_run(self.user, run["id"])
+        self.assertEqual(retried["status"], "queued")
+        self.assertEqual(retried["attempt"], 2)
+
+        running = self.store.update_run(
+            self.user,
+            run["id"],
+            ImageAgentRunUpdate(status="running"),
+        )
+        self.assertEqual(running["status"], "running")
+
+        succeeded = self.store.update_run(
+            self.user,
+            run["id"],
+            ImageAgentRunUpdate(
+                status="succeeded",
+                result={"url": "/result.png", "preview_url": "/result-512.webp", "target_node_id": "node-result"},
+            ),
+        )
+        self.assertEqual(succeeded["status"], "succeeded")
+        self.assertEqual(succeeded["result"]["target_node_id"], "node-result")
+        self.assertEqual(len(self.store.list_results(self.user, self.session["id"])), 1)
+
+        with self.assertRaises(HTTPException) as error:
+            self.store.cancel_run(self.user, run["id"])
+        self.assertEqual(error.exception.status_code, 409)
+
+    def test_sessions_and_runs_are_scoped_by_user_and_canvas(self):
+        plan = self.create_plan()
+        self.store.confirm_plan(self.user, plan["id"])
+
+        with self.assertRaises(HTTPException) as session_error:
+            self.store.get_session(self.other_user, self.session["id"])
+        self.assertEqual(session_error.exception.status_code, 404)
+
+        self.assertEqual(self.store.list_runs(self.user, canvas_id="canvas-2"), [])
+        self.assertEqual(len(self.store.list_runs(self.user, canvas_id="canvas-1")), 1)
+
+    def test_message_context_keeps_only_persistable_image_references(self):
+        message = self.store.add_message(
+            self.user,
+            self.session["id"],
+            ImageAgentMessageCreate(
+                content="继续修改",
+                context={
+                    "canvas_id": "canvas-1",
+                    "unexpected": {"raw": "do-not-store"},
+                    "selected_images": [{"node_id": "image-1", "url": "/assets/image.png", "width": "1024"}],
+                },
+            ),
+        )
+
+        self.assertNotIn("unexpected", message["context"])
+        self.assertEqual(message["context"]["selected_images"][0]["width"], 1024)
+
+        with self.assertRaises(HTTPException) as error:
+            self.store.add_message(
+                self.user,
+                self.session["id"],
+                ImageAgentMessageCreate(
+                    content="继续修改",
+                    context={"selected_images": [{"node_id": "image-2", "url": "data:image/png;base64,AAAA"}]},
+                ),
+            )
+        self.assertEqual(error.exception.status_code, 422)
+
+
+class SmartImageAgentApiTests(unittest.TestCase):
+    def setUp(self):
+        import main
+
+        self.main = main
+        self.temp = tempfile.TemporaryDirectory()
+        self.store = LocalSmartImageAgentStore(str(Path(self.temp.name) / "agent.json"))
+        self.user = CurrentUser(id="api-user", email="api@example.com", provider="test")
+        self.original_store = main.SMART_IMAGE_AGENT_STORE
+        main.SMART_IMAGE_AGENT_STORE = self.store
+        main.app.dependency_overrides[main.require_user] = lambda: self.user
+        self.client = TestClient(main.app, raise_server_exceptions=False)
+
+    def tearDown(self):
+        self.client.close()
+        self.main.app.dependency_overrides.clear()
+        self.main.SMART_IMAGE_AGENT_STORE = self.original_store
+        self.temp.cleanup()
+
+    def test_api_requires_confirmation_before_runs_exist(self):
+        session_response = self.client.post(
+            "/api/smart-image-agent/sessions",
+            json={"canvas_id": "canvas-api", "project_id": "project-api"},
+        )
+        self.assertEqual(session_response.status_code, 200)
+        session = session_response.json()
+
+        message_response = self.client.post(
+            f"/api/smart-image-agent/sessions/{session['id']}/messages",
+            json={"content": "做四张餐饮封面", "context": {"canvas_id": "canvas-api"}},
+        )
+        self.assertEqual(message_response.status_code, 200)
+
+        plan_response = self.client.post(
+            "/api/smart-image-agent/plans",
+            json={
+                "session_id": session["id"],
+                "message": "做四张餐饮封面",
+                "count": 4,
+                "ratio": "4:5",
+                "context": {"canvas_id": "canvas-api"},
+            },
+        )
+        self.assertEqual(plan_response.status_code, 200)
+        plan = plan_response.json()
+        self.assertEqual(plan["status"], "awaiting_confirmation")
+        self.assertEqual(plan["action"], "generate_image_set")
+
+        runs_before = self.client.get("/api/smart-image-agent/runs?canvas_id=canvas-api").json()
+        self.assertEqual(runs_before, {"runs": []})
+
+        confirmed = self.client.post(f"/api/smart-image-agent/plans/{plan['id']}/confirm")
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertEqual(len(confirmed.json()["runs"]), 4)
+
+    def test_api_run_updates_are_scoped_and_results_are_restored(self):
+        session = self.client.post(
+            "/api/smart-image-agent/sessions",
+            json={"canvas_id": "canvas-api"},
+        ).json()
+        plan = self.client.post(
+            "/api/smart-image-agent/plans",
+            json={"session_id": session["id"], "message": "生成一张海报"},
+        ).json()
+        run = self.client.post(f"/api/smart-image-agent/plans/{plan['id']}/confirm").json()["runs"][0]
+
+        started = self.client.patch(
+            f"/api/smart-image-agent/runs/{run['id']}",
+            json={"status": "running"},
+        )
+        self.assertEqual(started.status_code, 200)
+        completed = self.client.patch(
+            f"/api/smart-image-agent/runs/{run['id']}",
+            json={"status": "succeeded", "result": {"url": "/result.png", "target_node_id": "node-1"}},
+        )
+        self.assertEqual(completed.status_code, 200)
+
+        results = self.client.get(f"/api/smart-image-agent/sessions/{session['id']}/results")
+        self.assertEqual(results.status_code, 200)
+        self.assertEqual(results.json()["results"][0]["target_node_id"], "node-1")
+
+
+class SmartImageAgentStaticIsolationTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1]
+
+    def test_smart_canvas_uses_isolated_loader_while_classic_keeps_legacy_agent(self):
+        smart_html = (self.root / "static" / "smart-canvas.html").read_text(encoding="utf-8")
+        classic_html = (self.root / "static" / "canvas.html").read_text(encoding="utf-8")
+
+        self.assertIn("/static/css/smart-image-agent.css", smart_html)
+        self.assertIn("/static/js/smart-image-agent/loader.js", smart_html)
+        self.assertNotIn('<script src="/static/js/canvas-agent-loader.js', smart_html)
+        self.assertIn('<script src="/static/js/canvas-agent-loader.js', classic_html)
+        self.assertNotIn("smart-image-agent", classic_html)
+
+    def test_smart_bridge_exposes_only_stable_canvas_operations(self):
+        smart_script = (self.root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("window.SmartImageAgentBridge", smart_script)
+        for method in (
+            "getCanvasContext",
+            "getSelection",
+            "subscribeSelection",
+            "createGenerationGroup",
+            "runImageTask",
+            "placeResults",
+            "focusNode",
+            "saveCanvas",
+        ):
+            self.assertIn(f"{method}:", smart_script)
+
+    def test_new_agent_is_image_only_and_requires_explicit_confirmation(self):
+        loader = (self.root / "static" / "js" / "smart-image-agent" / "loader.js").read_text(encoding="utf-8")
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("image_agent", loader)
+        self.assertIn("canvas-agent-loader.js", loader)
+        self.assertIn("/api/smart-image-agent/plans", app)
+        self.assertIn("/confirm", app)
+        self.assertIn("SmartImageAgentBridge.runImageTask", app)
+        self.assertNotIn("canvas-agent/suggest", app)
+        self.assertNotIn("generate_video", app)
+        self.assertNotIn("agnes-video", app.lower())
+
+    def test_create_plan_waits_for_session_initialization(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("data-create disabled", app)
+        self.assertIn("if(!state.session) await ensureSession();", app)
+        self.assertNotIn("panel-right-close", app)
+        self.assertNotIn("panel-right-open", app)
+
+    def test_hidden_agent_controls_cannot_be_forced_visible_by_component_styles(self):
+        styles = (self.root / "static" / "css" / "smart-image-agent.css").read_text(encoding="utf-8")
+
+        self.assertIn(".smart-image-agent [hidden]", styles)
+        self.assertIn("display:none!important", styles.replace(" ", ""))
+
+    def test_reference_limit_is_reported_instead_of_silently_truncating_inputs(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+        bridge = (self.root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("if(references.length > 10)", app)
+        self.assertNotIn("}).slice(0, 10);", app)
+        self.assertNotIn("return references.slice(0, 10);", bridge)
+        self.assertNotIn("filter(item => item.kind === 'image').slice(0, 10)", bridge)
+
+    def test_session_restore_only_resumes_runs_with_loaded_plans(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("/api/smart-image-agent/runs?session_id=", app)
+        self.assertNotIn("/api/smart-image-agent/runs?canvas_id=", app)
+
+    def test_backend_namespace_and_supabase_schema_are_isolated(self):
+        main_source = (self.root / "main.py").read_text(encoding="utf-8")
+        service_source = (self.root / "smart_image_agent.py").read_text(encoding="utf-8")
+        schema = (self.root / "docs" / "supabase" / "team_cloud_schema.sql").read_text(encoding="utf-8")
+
+        for path in (
+            "/api/smart-image-agent/sessions",
+            "/api/smart-image-agent/plans",
+            "/api/smart-image-agent/runs",
+        ):
+            self.assertIn(path, main_source)
+        for table in (
+            "smart_image_agent_sessions",
+            "smart_image_agent_messages",
+            "smart_image_agent_plans",
+            "smart_image_agent_runs",
+        ):
+            self.assertIn(f"create table if not exists public.{table}", schema)
+            self.assertIn(f"grant all on table public.{table} to service_role", schema)
+        self.assertIn('SMART_IMAGE_AGENT_PROVIDER = "custom-api"', service_source)
+        self.assertIn('SMART_IMAGE_AGENT_STANDARD_MODEL = "nano-banana-2"', service_source)
+        self.assertIn('SMART_IMAGE_AGENT_PRO_MODEL = "nano-banana-pro"', service_source)
+        self.assertNotIn("AGENT_FALLBACK_PROVIDER", service_source)
+
+
+if __name__ == "__main__":
+    unittest.main()

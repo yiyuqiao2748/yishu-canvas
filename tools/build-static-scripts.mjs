@@ -8,7 +8,8 @@ const entries = [
   ['static/js/index.js', 'index.min.js'],
   ['static/js/workbench.js', 'workbench.min.js'],
   ['static/js/canvas.js', 'canvas.min.js'],
-  ['static/js/smart-canvas.js', 'smart-canvas.min.js']
+  ['static/js/smart-canvas.js', 'smart-canvas.min.js'],
+  ['static/js/smart-image-agent/app.js', 'smart-image-agent.min.js']
 ];
 
 await mkdir(outputDir, { recursive: true });

@@ -17947,3 +17947,220 @@ window.onload = async () => {
         }
     }, 200);
 };
+
+function smartImageAgentMediaReference(node, image, index=0){
+    if(!node || !image?.url || isVideoMediaItem(image) || isAudioMediaItem(image)) return null;
+    return {
+        node_id:node.id,
+        asset_id:image.asset_id || image.assetId || '',
+        url:smartOriginalMediaUrl(image) || image.url || '',
+        preview_url:smartMediaPreviewUrl(image) || displayMediaUrl(image) || image.url || '',
+        name:image.name || `image-${index + 1}.png`,
+        width:Number(image.width || image.natural_width || 0) || 0,
+        height:Number(image.height || image.natural_height || 0) || 0,
+        prompt:node.runPrompt || node.promptDraftText || '',
+        image_index:index
+    };
+}
+function smartImageAgentSelection(){
+    const ids = selectedNodeIds();
+    const references = [];
+    ids.forEach(id => {
+        const node = nodes.find(item => item.id === id);
+        if(!node) return;
+        const media = isSmartGroupNode(node) ? imagesForNode(node) : (node.images || []);
+        media.forEach((image, index) => {
+            const reference = smartImageAgentMediaReference(node, image, index);
+            if(reference) references.push(reference);
+        });
+    });
+    if(selectedImage.nodeId && Number(selectedImage.index) >= 0){
+        const exact = references.find(item => item.node_id === selectedImage.nodeId && item.image_index === Number(selectedImage.index));
+        if(exact) return [exact];
+    }
+    return references;
+}
+function smartImageAgentCanvasContext(){
+    return {
+        canvas_id:canvasId || '',
+        project_id:canvas?.project || sourceProjectId || '',
+        team_id:TEAM_CLOUD_CANVAS ? currentTeamCloudTeamId() : '',
+        cloud:Boolean(TEAM_CLOUD_CANVAS),
+        viewport:{x:viewport.x, y:viewport.y, scale:viewport.scale},
+        node_count:nodes.length,
+        settings:{ratio:settings.ratio || 'square', resolution:settings.resolution || '1k'}
+    };
+}
+function smartImageAgentSourceNode(plan={}){
+    const sourceIds = Array.isArray(plan.source_node_ids) ? plan.source_node_ids : [];
+    const source = sourceIds.map(id => nodes.find(node => node.id === id)).find(Boolean);
+    if(source) return source;
+    const point = viewportCenter();
+    const promptNode = createPromptNode(point.x - 158, point.y - 120, {skipUndo:true, select:false});
+    promptNode.text = plan.prompt || plan.message || '';
+    promptNode.promptDraftText = promptNode.text;
+    promptNode.promptDraftHtml = escapeHtml(promptNode.text);
+    promptNode.imageAgentPlanId = plan.id || '';
+    return promptNode;
+}
+function smartImageAgentRatioSettings(ratio='auto'){
+    const key = String(ratio || 'auto');
+    const map = {
+        'auto':{ratio:'square'},
+        '1:1':{ratio:'square'},
+        '16:9':{ratio:'wide'},
+        '9:16':{ratio:'story'},
+        '4:3':{ratio:'landscape43'},
+        '3:4':{ratio:'portrait43'},
+        '21:9':{ratio:'ultrawide'}
+    };
+    return map[key] || {ratio:'custom', customRatio:key};
+}
+function smartImageAgentRunMeta(plan, sourceNode, refs){
+    return {
+        prompt:plan.prompt || plan.message || '',
+        displayPrompt:plan.prompt || plan.message || '',
+        promptText:plan.prompt || plan.message || '',
+        promptHtml:escapeHtml(plan.prompt || plan.message || ''),
+        promptRefs:(refs || []).map(item => ({url:item.url || '', name:item.name || '', nodeId:item.node_id || ''})),
+        inputRefs:(refs || []).map(item => ({url:item.url || '', name:item.name || '', nodeId:item.node_id || '', kind:'image'})),
+        sourceNodeId:sourceNode?.id || '',
+        settings:{
+            engine:'api', apiKind:'image', provider_id:plan.provider_id, model:plan.model,
+            ...smartImageAgentRatioSettings(plan.ratio), resolution:'1k', quality:plan.quality || 'standard', count:1
+        },
+        createdAt:Date.now(),
+        imageAgentPlanId:plan.id || ''
+    };
+}
+function smartImageAgentPlaceResults(outputNode, urls, plan, meta){
+    const live = typeof outputNode === 'string' ? nodes.find(node => node.id === outputNode) : outputNode;
+    if(!live) throw new Error('Agent result node no longer exists');
+    finalizePendingNode(live, urls, meta, 'image');
+    live.imageAgentPlanId = plan.id || '';
+    live.imageAgentRunId = plan.run_id || '';
+    render();
+    scheduleSave();
+    return {
+        target_node_id:live.id,
+        source_node_id:meta?.sourceNodeId || '',
+        url:live.images?.[0]?.url || '',
+        preview_url:smartMediaPreviewUrl(live.images?.[0]) || live.images?.[0]?.url || '',
+        width:Number(live.images?.[0]?.width || 0) || 0,
+        height:Number(live.images?.[0]?.height || 0) || 0
+    };
+}
+async function smartImageAgentRunImageTask(run, plan, options={}){
+    if(plan?.provider_id !== 'custom-api' || !['nano-banana-2','nano-banana-pro'].includes(plan?.model)){
+        throw new Error('图片 Agent 仅允许使用已配置的 Nano Banana 模型');
+    }
+    const refs = (plan.references || []).filter(item => item?.url).slice(0, 10);
+    pushUndo();
+    const sourceNode = smartImageAgentSourceNode(plan);
+    const meta = smartImageAgentRunMeta(plan, sourceNode, refs);
+    const outputNode = createPendingOutputFromSource(sourceNode, 1, meta, {connectSource:false, selectOutput:false, refs});
+    outputNode.imageAgentPlanId = plan.id || '';
+    outputNode.imageAgentRunId = run?.id || '';
+    outputNode.running = true;
+    render();
+    scheduleSave();
+    const runSettings = {
+        ...cloneSmartSettings(settings),
+        engine:'api',
+        apiKind:'image',
+        provider_id:plan.provider_id,
+        model:plan.model,
+        ...smartImageAgentRatioSettings(plan.ratio),
+        resolution:'1k',
+        quality:plan.quality || 'standard',
+        count:1
+    };
+    const generationRefs = refs.map((item, index) => ({
+        url:item.url,
+        name:item.name || `image-${index + 1}.png`,
+        nodeId:item.node_id || '',
+        kind:'image'
+    }));
+    try {
+        const generated = await generateUrlsForCurrentSettings(outputNode, plan.prompt || plan.message || '', generationRefs, runSettings);
+        if(!generated?.urls?.length) throw new Error('图片模型没有返回结果');
+        if(options.isCancelled?.()){
+            nodes = nodes.filter(node => node.id !== outputNode.id);
+            if(canvas) canvas.connections = (canvas.connections || []).filter(conn => conn.from !== outputNode.id && conn.to !== outputNode.id);
+            render();
+            scheduleSave();
+            return {cancelled:true};
+        }
+        return smartImageAgentPlaceResults(outputNode, generated.urls, {...plan, run_id:run?.id || ''}, meta);
+    } catch(error){
+        nodes = nodes.filter(node => node.id !== outputNode.id);
+        if(canvas) canvas.connections = (canvas.connections || []).filter(conn => conn.from !== outputNode.id && conn.to !== outputNode.id);
+        selectedId = sourceNode.id;
+        render();
+        scheduleSave();
+        throw error;
+    }
+}
+function smartImageAgentFocusNode(nodeId){
+    const node = nodes.find(item => item.id === nodeId);
+    if(!node) return false;
+    const rect = nodeRect(node);
+    selectedId = node.id;
+    selectedIds = [];
+    selectedImage = {nodeId:'', index:-1};
+    centerViewportOnWorldPoint({x:rect.x + rect.width / 2, y:rect.y + rect.height / 2});
+    render();
+    return true;
+}
+async function smartImageAgentUploadReferences(files=[]){
+    const images = [...files].filter(file => String(file?.type || '').startsWith('image/'));
+    if(!images.length) return [];
+    const form = new FormData();
+    images.forEach(file => form.append('files', file, file.name || 'reference.png'));
+    const response = await postSmartAiUpload(form, '参考图上传失败');
+    return (response.files || []).filter(item => item.kind === 'image');
+}
+async function smartImageAgentSaveToAssetLibrary(result){
+    if(!result?.url) throw new Error('没有可保存的图片');
+    if(TEAM_CLOUD_CANVAS && currentTeamCloudTeamId()){
+        return addUrlItemsToTeamAssetLibrary([{url:result.url, name:result.name || 'agent-result.png'}]);
+    }
+    return addUrlItemsToLocalAssetLibrary([{url:result.url, name:result.name || 'agent-result.png'}]);
+}
+
+window.SmartImageAgentBridge = Object.freeze({
+    getCanvasContext:smartImageAgentCanvasContext,
+    getSelection:smartImageAgentSelection,
+    subscribeSelection:function(callback){
+        if(typeof callback !== 'function') return () => {};
+        let signature = '';
+        const emit = () => {
+            const selection = smartImageAgentSelection();
+            const next = JSON.stringify(selection.map(item => [item.node_id, item.image_index, item.url]));
+            if(next === signature) return;
+            signature = next;
+            callback(selection);
+        };
+        emit();
+        const timer = setInterval(emit, 180);
+        return () => clearInterval(timer);
+    },
+    createGenerationGroup:function(plan){
+        const sourceNode = smartImageAgentSourceNode(plan || {});
+        render();
+        scheduleSave();
+        return {source_node_id:sourceNode.id};
+    },
+    runImageTask:smartImageAgentRunImageTask,
+    placeResults:smartImageAgentPlaceResults,
+    focusNode:smartImageAgentFocusNode,
+    saveCanvas:() => saveCanvas(),
+    uploadReferences:smartImageAgentUploadReferences,
+    saveToAssetLibrary:smartImageAgentSaveToAssetLibrary,
+    searchCanvasImages(query=''){
+        const needle = String(query || '').trim().toLowerCase();
+        return nodes.flatMap(node => (node.images || []).map((image, index) => smartImageAgentMediaReference(node, image, index)).filter(Boolean))
+            .filter(item => !needle || `${item.name} ${item.prompt}`.toLowerCase().includes(needle))
+            .slice(0, 30);
+    }
+});

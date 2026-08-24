@@ -47,8 +47,10 @@ if BASE_IMPORT_DIR not in sys.path:
 
 from team_cloud import (
     CurrentUser,
+    active_store as active_team_store,
     assert_team_points_available,
     close_supabase_auth_client,
+    maybe_await,
     record_team_generation_log,
     record_team_usage_log,
     require_user,
@@ -56,7 +58,18 @@ from team_cloud import (
     resolve_team_api_provider_config,
     router as team_cloud_router,
     settings as team_cloud_settings,
+    supabase_store as team_supabase_store,
     workbench_account_summary,
+)
+from smart_image_agent import (
+    ImageAgentMessageCreate,
+    ImageAgentPlanCreate,
+    ImageAgentPlanUpdate,
+    ImageAgentRunUpdate,
+    ImageAgentSessionCreate,
+    infer_image_action,
+    LocalSmartImageAgentStore,
+    SupabaseSmartImageAgentStore,
 )
 from team_storage import r2_client, save_generated_file_from_path, settings as team_storage_settings
 
@@ -378,6 +391,11 @@ LOCAL_UPLOAD_DIR = os.path.join(ASSETS_DIR, "uploads")
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
 API_ENV_FILE = os.path.join(BASE_DIR, "API", ".env")
 DATA_DIR = os.getenv("YISHU_DATA_DIR", os.path.join(BASE_DIR, "data"))
+SMART_IMAGE_AGENT_STORE = (
+    SupabaseSmartImageAgentStore(team_supabase_store)
+    if team_supabase_store
+    else LocalSmartImageAgentStore(os.path.join(DATA_DIR, "smart_image_agent.json"))
+)
 CONVERSATION_DIR = os.path.join(DATA_DIR, "conversations")
 CANVAS_DIR = os.path.join(DATA_DIR, "canvases")
 MEDIA_PREVIEW_DIR = os.path.join(DATA_DIR, "media_previews")
@@ -16747,6 +16765,176 @@ def resolve_agent_model_route(action, context=None, providers=None, require_cred
     if _agent_provider_supports_model(provider, "chat_models", requested_model):
         return _agent_route_payload(requested_provider, requested_model, False)
     raise HTTPException(status_code=400, detail="未配置 Agent 聊天模型，请配置 modelscope 或 agnes-ai 聊天模型。")
+
+async def _smart_image_agent_require_team_scope(user: CurrentUser, team_id: str) -> None:
+    if not team_id:
+        return
+    teams = await maybe_await(active_team_store().list_user_teams(user))
+    if not any(str(item.get("id") or "") == team_id for item in teams or []):
+        raise HTTPException(status_code=403, detail="You do not have access to this image Agent team")
+
+
+async def _smart_image_agent_enrich_plan(payload: ImageAgentPlanCreate, request: Request) -> ImageAgentPlanCreate:
+    try:
+        route = resolve_agent_model_route("chat", payload.context, require_credentials=True)
+        system_prompt = (
+            "You plan image creation tasks for a Smart Canvas. Return JSON only with keys action, prompt, ratio, count, quality. "
+            "Allowed actions: generate_image, edit_image, compose_images, create_variants, expand_image, "
+            "generate_image_set, organize_results. Do not return video, audio or 3D actions. "
+            "quality must be standard or pro. Keep the user's subject and intent, and write a concise production-ready Chinese prompt."
+        )
+        selected_images = payload.context.get("selected_images") if isinstance(payload.context, dict) else []
+        selected_count = len(selected_images) if isinstance(selected_images, list) else 0
+        deterministic_action = infer_image_action(payload.message, payload.context)
+        if payload.count > 1 and deterministic_action == "generate_image":
+            deterministic_action = "generate_image_set"
+        llm_payload = CanvasLLMRequest(
+            provider=route["provider_id"],
+            model=route["model"],
+            team_id=str(payload.context.get("team_id") or payload.context.get("teamId") or ""),
+            project_id=str(payload.context.get("project_id") or payload.context.get("projectId") or ""),
+            canvas_id=str(payload.context.get("canvas_id") or payload.context.get("canvasId") or ""),
+            message=f"User request: {payload.message}\nSelected image count: {selected_count}\nExpected action: {deterministic_action}",
+            messages=[],
+            images=[],
+            videos=[],
+            system_prompt=system_prompt,
+            ms_model="",
+        )
+        result = await canvas_llm(llm_payload, request)
+        parsed = _extract_agent_json(result.get("text") or "")
+        updates: Dict[str, Any] = {}
+        if not payload.action:
+            updates["action"] = deterministic_action
+        prompt = str(parsed.get("prompt") or "").strip()
+        if prompt and not payload.prompt:
+            updates["prompt"] = prompt[:12000]
+        ratio = str(parsed.get("ratio") or "").strip()
+        if ratio and payload.ratio == "auto":
+            updates["ratio"] = ratio
+        count = parsed.get("count")
+        if payload.count == 1 and isinstance(count, int) and 1 <= count <= 8:
+            updates["count"] = count
+        quality = str(parsed.get("quality") or "").strip().lower()
+        if payload.quality == "standard" and quality in {"standard", "pro"}:
+            updates["quality"] = quality
+        return payload.model_copy(update=updates) if updates else payload
+    except Exception as exc:
+        print(f"[smart-image-agent] planner fallback: {exc}")
+        return payload
+
+
+@app.post("/api/smart-image-agent/sessions")
+async def create_smart_image_agent_session(
+    payload: ImageAgentSessionCreate,
+    user: CurrentUser = Depends(require_user),
+):
+    await _smart_image_agent_require_team_scope(user, payload.team_id)
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.create_session(user, payload))
+
+
+@app.get("/api/smart-image-agent/sessions/{session_id}")
+async def get_smart_image_agent_session(
+    session_id: str,
+    user: CurrentUser = Depends(require_user),
+):
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.get_session(user, session_id))
+
+
+@app.post("/api/smart-image-agent/sessions/{session_id}/messages")
+async def create_smart_image_agent_message(
+    session_id: str,
+    payload: ImageAgentMessageCreate,
+    user: CurrentUser = Depends(require_user),
+):
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.add_message(user, session_id, payload))
+
+
+@app.post("/api/smart-image-agent/plans")
+async def create_smart_image_agent_plan(
+    payload: ImageAgentPlanCreate,
+    request: Request,
+    user: CurrentUser = Depends(require_user),
+):
+    session = await maybe_await(SMART_IMAGE_AGENT_STORE.get_session(user, payload.session_id))
+    await _smart_image_agent_require_team_scope(user, str(session.get("team_id") or ""))
+    enriched = await _smart_image_agent_enrich_plan(payload, request)
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.create_plan(user, enriched))
+
+
+@app.patch("/api/smart-image-agent/plans/{plan_id}")
+async def update_smart_image_agent_plan(
+    plan_id: str,
+    payload: ImageAgentPlanUpdate,
+    user: CurrentUser = Depends(require_user),
+):
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.update_plan(user, plan_id, payload))
+
+
+@app.post("/api/smart-image-agent/plans/{plan_id}/confirm")
+async def confirm_smart_image_agent_plan(
+    plan_id: str,
+    user: CurrentUser = Depends(require_user),
+):
+    plan = await maybe_await(SMART_IMAGE_AGENT_STORE.get_plan(user, plan_id))
+    await _smart_image_agent_require_team_scope(user, str(plan.get("team_id") or ""))
+    if plan.get("provider_id") != "custom-api" or plan.get("model") not in {"nano-banana-2", "nano-banana-pro"}:
+        raise HTTPException(status_code=422, detail="Smart Image Agent only supports configured Nano Banana image models")
+    if plan.get("team_id"):
+        await assert_team_points_available(
+            user,
+            str(plan["team_id"]),
+            "image",
+            str(plan["provider_id"]),
+            str(plan["model"]),
+            int(plan.get("count") or 1),
+        )
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.confirm_plan(user, plan_id))
+
+
+@app.get("/api/smart-image-agent/runs")
+async def list_smart_image_agent_runs(
+    canvas_id: str = "",
+    session_id: str = "",
+    user: CurrentUser = Depends(require_user),
+):
+    runs = await maybe_await(SMART_IMAGE_AGENT_STORE.list_runs(user, canvas_id=canvas_id, session_id=session_id))
+    return {"runs": runs}
+
+
+@app.patch("/api/smart-image-agent/runs/{run_id}")
+async def update_smart_image_agent_run(
+    run_id: str,
+    payload: ImageAgentRunUpdate,
+    user: CurrentUser = Depends(require_user),
+):
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.update_run(user, run_id, payload))
+
+
+@app.post("/api/smart-image-agent/runs/{run_id}/cancel")
+async def cancel_smart_image_agent_run(
+    run_id: str,
+    user: CurrentUser = Depends(require_user),
+):
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.cancel_run(user, run_id))
+
+
+@app.post("/api/smart-image-agent/runs/{run_id}/retry")
+async def retry_smart_image_agent_run(
+    run_id: str,
+    user: CurrentUser = Depends(require_user),
+):
+    return await maybe_await(SMART_IMAGE_AGENT_STORE.retry_run(user, run_id))
+
+
+@app.get("/api/smart-image-agent/sessions/{session_id}/results")
+async def list_smart_image_agent_results(
+    session_id: str,
+    user: CurrentUser = Depends(require_user),
+):
+    results = await maybe_await(SMART_IMAGE_AGENT_STORE.list_results(user, session_id))
+    return {"results": results}
+
 
 def _safe_agent_text(value, max_len=3000):
     if value is None:
