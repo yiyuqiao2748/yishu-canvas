@@ -14,6 +14,8 @@ from smart_image_agent import (
     ImageAgentSessionCreate,
     ImageAgentSessionUpdate,
     LocalSmartImageAgentStore,
+    SMART_IMAGE_AGENT_MODELS,
+    resolve_smart_image_agent_model,
 )
 from team_cloud import CurrentUser
 
@@ -51,6 +53,48 @@ class SmartImageAgentStoreTests(unittest.TestCase):
         self.assertEqual(plan["status"], "awaiting_confirmation")
         self.assertEqual(plan["estimated_points"], 12)
         self.assertEqual(self.store.list_runs(self.user, canvas_id="canvas-1"), [])
+
+    def test_model_policy_contains_exactly_four_verified_routes(self):
+        self.assertEqual(
+            SMART_IMAGE_AGENT_MODELS,
+            {
+                "gpt-image-2": {"provider_id": "custom-api", "quality": "standard", "unit_points": 6},
+                "nano-banana-2": {"provider_id": "custom-api", "quality": "standard", "unit_points": 12},
+                "nano-banana-pro": {"provider_id": "custom-api", "quality": "pro", "unit_points": 18},
+                "gpt-image-2-vip": {"provider_id": "custom-api", "quality": "vip", "unit_points": 20},
+            },
+        )
+
+    def test_resolver_preserves_legacy_quality_defaults_when_model_is_absent(self):
+        self.assertEqual(resolve_smart_image_agent_model(None, "standard"), ("nano-banana-2", "custom-api", "standard", 12))
+        self.assertEqual(resolve_smart_image_agent_model(None, "pro"), ("nano-banana-pro", "custom-api", "pro", 18))
+
+    def test_explicit_model_is_resolved_and_persisted(self):
+        plan = self.create_plan(model="gpt-image-2-vip", quality="standard")
+
+        self.assertEqual(plan["model"], "gpt-image-2-vip")
+        self.assertEqual(plan["provider_id"], "custom-api")
+        self.assertEqual(plan["quality"], "vip")
+        self.assertEqual(plan["unit_points"], 20)
+
+    def test_unknown_model_is_rejected_with_unprocessable_entity(self):
+        with self.assertRaises(HTTPException) as error:
+            self.create_plan(model="unknown-model")
+
+        self.assertEqual(error.exception.status_code, 422)
+
+    def test_updating_model_re_resolves_quality_provider_and_points(self):
+        plan = self.create_plan()
+        updated = self.store.update_plan(
+            self.user,
+            plan["id"],
+            ImageAgentPlanUpdate(model="gpt-image-2"),
+        )
+
+        self.assertEqual(
+            {updated["model"], updated["provider_id"], updated["quality"], updated["unit_points"]},
+            {"gpt-image-2", "custom-api", "standard", 6},
+        )
 
     def test_high_quality_plan_uses_pro_model_and_never_an_image_fallback(self):
         plan = self.create_plan(quality="pro", count=2)

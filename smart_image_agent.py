@@ -37,6 +37,12 @@ SMART_IMAGE_AGENT_STANDARD_MODEL = "nano-banana-2"
 SMART_IMAGE_AGENT_PRO_MODEL = "nano-banana-pro"
 SMART_IMAGE_AGENT_STANDARD_POINTS = 12
 SMART_IMAGE_AGENT_PRO_POINTS = 18
+SMART_IMAGE_AGENT_MODELS = {
+    "gpt-image-2": {"provider_id": "custom-api", "quality": "standard", "unit_points": 6},
+    "nano-banana-2": {"provider_id": "custom-api", "quality": "standard", "unit_points": 12},
+    "nano-banana-pro": {"provider_id": "custom-api", "quality": "pro", "unit_points": 18},
+    "gpt-image-2-vip": {"provider_id": "custom-api", "quality": "vip", "unit_points": 20},
+}
 SMART_IMAGE_AGENT_MAX_REFERENCES = 10
 SMART_IMAGE_AGENT_REFERENCE_ROLES = {"primary", "reference", "edit_target"}
 
@@ -71,6 +77,7 @@ class ImageAgentPlanCreate(BaseModel):
     ratio: str = Field("auto", max_length=20)
     count: int = Field(1, ge=1, le=8)
     quality: str = Field("standard", pattern="^(standard|pro)$")
+    model: Optional[str] = Field(None, max_length=120)
 
 
 class ImageAgentPlanUpdate(BaseModel):
@@ -78,6 +85,7 @@ class ImageAgentPlanUpdate(BaseModel):
     ratio: Optional[str] = Field(None, max_length=20)
     count: Optional[int] = Field(None, ge=1, le=8)
     quality: Optional[str] = Field(None, pattern="^(standard|pro)$")
+    model: Optional[str] = Field(None, max_length=120)
     status: Optional[str] = Field(None, pattern="^cancelled$")
 
 
@@ -86,6 +94,18 @@ class ImageAgentRunUpdate(BaseModel):
     result: Dict[str, Any] = Field(default_factory=dict)
     error: str = Field("", max_length=4000)
     progress_stage: str = Field("", max_length=40)
+
+
+def resolve_smart_image_agent_model(model: Optional[str], quality: Optional[str]) -> tuple[str, str, str, int]:
+    requested_model = str(model or "").strip()
+    if requested_model:
+        policy = SMART_IMAGE_AGENT_MODELS.get(requested_model)
+        if policy is None:
+            raise HTTPException(status_code=422, detail="Unsupported image Agent model")
+        return requested_model, policy["provider_id"], policy["quality"], policy["unit_points"]
+    legacy_model = SMART_IMAGE_AGENT_PRO_MODEL if quality == "pro" else SMART_IMAGE_AGENT_STANDARD_MODEL
+    policy = SMART_IMAGE_AGENT_MODELS[legacy_model]
+    return legacy_model, policy["provider_id"], policy["quality"], policy["unit_points"]
 
 
 def infer_image_action(message: str, context: Dict[str, Any]) -> str:
@@ -356,8 +376,7 @@ class LocalSmartImageAgentStore:
             if payload.ratio not in SMART_IMAGE_AGENT_RATIOS:
                 raise HTTPException(status_code=422, detail="Unsupported image ratio")
             references = assign_reference_roles(references, action)
-            model = SMART_IMAGE_AGENT_PRO_MODEL if payload.quality == "pro" else SMART_IMAGE_AGENT_STANDARD_MODEL
-            unit_points = SMART_IMAGE_AGENT_PRO_POINTS if payload.quality == "pro" else SMART_IMAGE_AGENT_STANDARD_POINTS
+            model, provider_id, quality, unit_points = resolve_smart_image_agent_model(payload.model, payload.quality)
             now = utc_now()
             plan = {
                 "id": str(uuid.uuid4()),
@@ -373,8 +392,8 @@ class LocalSmartImageAgentStore:
                 "source_node_ids": [item["node_id"] for item in references if item.get("node_id")],
                 "ratio": payload.ratio,
                 "count": payload.count,
-                "quality": payload.quality,
-                "provider_id": SMART_IMAGE_AGENT_PROVIDER,
+                "quality": quality,
+                "provider_id": provider_id,
                 "model": model,
                 "fallback_used": False,
                 "unit_points": unit_points,
@@ -407,11 +426,16 @@ class LocalSmartImageAgentStore:
             changes = payload.model_dump(exclude_none=True)
             if "ratio" in changes and changes["ratio"] not in SMART_IMAGE_AGENT_RATIOS:
                 raise HTTPException(status_code=422, detail="Unsupported image ratio")
-            for key in ("prompt", "ratio", "count", "quality"):
+            for key in ("prompt", "ratio", "count"):
                 if key in changes:
                     plan[key] = changes[key]
-            plan["model"] = SMART_IMAGE_AGENT_PRO_MODEL if plan["quality"] == "pro" else SMART_IMAGE_AGENT_STANDARD_MODEL
-            plan["unit_points"] = SMART_IMAGE_AGENT_PRO_POINTS if plan["quality"] == "pro" else SMART_IMAGE_AGENT_STANDARD_POINTS
+            model, provider_id, quality, unit_points = resolve_smart_image_agent_model(
+                changes.get("model"), changes.get("quality", plan.get("quality") or "standard")
+            )
+            plan["model"] = model
+            plan["provider_id"] = provider_id
+            plan["quality"] = quality
+            plan["unit_points"] = unit_points
             plan["estimated_points"] = plan["unit_points"] * plan["count"]
             plan["updated_at"] = utc_now()
             self._write(data)
@@ -675,8 +699,7 @@ class SupabaseSmartImageAgentStore:
         if payload.ratio not in SMART_IMAGE_AGENT_RATIOS:
             raise HTTPException(status_code=422, detail="Unsupported image ratio")
         references = assign_reference_roles(references, action)
-        model = SMART_IMAGE_AGENT_PRO_MODEL if payload.quality == "pro" else SMART_IMAGE_AGENT_STANDARD_MODEL
-        unit_points = SMART_IMAGE_AGENT_PRO_POINTS if payload.quality == "pro" else SMART_IMAGE_AGENT_STANDARD_POINTS
+        model, provider_id, quality, unit_points = resolve_smart_image_agent_model(payload.model, payload.quality)
         now = utc_now()
         body = {
             "id": str(uuid.uuid4()),
@@ -692,8 +715,8 @@ class SupabaseSmartImageAgentStore:
             "source_node_ids": [item["node_id"] for item in references if item.get("node_id")],
             "ratio": payload.ratio,
             "count": payload.count,
-            "quality": payload.quality,
-            "provider_id": SMART_IMAGE_AGENT_PROVIDER,
+            "quality": quality,
+            "provider_id": provider_id,
             "model": model,
             "fallback_used": False,
             "unit_points": unit_points,
@@ -731,9 +754,11 @@ class SupabaseSmartImageAgentStore:
             raise HTTPException(status_code=422, detail="Unsupported image ratio")
         quality = changes.get("quality", plan.get("quality") or "standard")
         count = int(changes.get("count", plan.get("count") or 1))
-        unit_points = SMART_IMAGE_AGENT_PRO_POINTS if quality == "pro" else SMART_IMAGE_AGENT_STANDARD_POINTS
+        model, provider_id, quality, unit_points = resolve_smart_image_agent_model(changes.get("model"), quality)
         changes.update({
-            "model": SMART_IMAGE_AGENT_PRO_MODEL if quality == "pro" else SMART_IMAGE_AGENT_STANDARD_MODEL,
+            "model": model,
+            "provider_id": provider_id,
+            "quality": quality,
             "unit_points": unit_points,
             "estimated_points": unit_points * count,
             "updated_at": utc_now(),
