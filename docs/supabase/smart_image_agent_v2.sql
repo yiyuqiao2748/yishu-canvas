@@ -33,7 +33,7 @@ create table if not exists public.smart_image_agent_plans (
   action text not null,
   message text not null default '',
   prompt text not null default '',
-  references jsonb not null default '[]'::jsonb,
+  "references" jsonb not null default '[]'::jsonb,
   source_node_ids jsonb not null default '[]'::jsonb,
   ratio text not null default 'auto',
   count integer not null default 1 check (count between 1 and 8),

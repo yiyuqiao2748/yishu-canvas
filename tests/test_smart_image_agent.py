@@ -338,6 +338,7 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
         main_source = (self.root / "main.py").read_text(encoding="utf-8")
         service_source = (self.root / "smart_image_agent.py").read_text(encoding="utf-8")
         schema = (self.root / "docs" / "supabase" / "team_cloud_schema.sql").read_text(encoding="utf-8")
+        migration = (self.root / "docs" / "supabase" / "smart_image_agent_v2.sql").read_text(encoding="utf-8")
 
         for path in (
             "/api/smart-image-agent/sessions",
@@ -353,6 +354,9 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
         ):
             self.assertIn(f"create table if not exists public.{table}", schema)
             self.assertIn(f"grant all on table public.{table} to service_role", schema)
+            self.assertIn(f"create table if not exists public.{table}", migration)
+        self.assertIn('"references" jsonb not null default \'[]\'::jsonb', schema)
+        self.assertIn('"references" jsonb not null default \'[]\'::jsonb', migration)
         self.assertIn('SMART_IMAGE_AGENT_PROVIDER = "custom-api"', service_source)
         self.assertIn('SMART_IMAGE_AGENT_STANDARD_MODEL = "nano-banana-2"', service_source)
         self.assertIn('SMART_IMAGE_AGENT_PRO_MODEL = "nano-banana-pro"', service_source)
