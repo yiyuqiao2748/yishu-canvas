@@ -43,6 +43,7 @@ SMART_IMAGE_AGENT_MODELS = {
     "nano-banana-pro": {"provider_id": "custom-api", "quality": "pro", "unit_points": 18},
     "gpt-image-2-vip": {"provider_id": "custom-api", "quality": "vip", "unit_points": 20},
 }
+SMART_IMAGE_AGENT_RESOLUTIONS = ("1k", "2k", "4k")
 SMART_IMAGE_AGENT_MAX_REFERENCES = 10
 SMART_IMAGE_AGENT_REFERENCE_ROLES = {"primary", "reference", "edit_target"}
 
@@ -75,6 +76,7 @@ class ImageAgentPlanCreate(BaseModel):
     action: str = Field("", max_length=80)
     prompt: str = Field("", max_length=12000)
     ratio: str = Field("auto", max_length=20)
+    resolution: str = Field("1k", max_length=8)
     count: int = Field(1, ge=1, le=8)
     quality: str = Field("standard", pattern="^(standard|pro|vip)$")
     model: Optional[str] = Field(None, max_length=120)
@@ -83,6 +85,7 @@ class ImageAgentPlanCreate(BaseModel):
 class ImageAgentPlanUpdate(BaseModel):
     prompt: Optional[str] = Field(None, min_length=1, max_length=12000)
     ratio: Optional[str] = Field(None, max_length=20)
+    resolution: Optional[str] = Field(None, max_length=8)
     count: Optional[int] = Field(None, ge=1, le=8)
     quality: Optional[str] = Field(None, pattern="^(standard|pro|vip)$")
     model: Optional[str] = Field(None, max_length=120)
@@ -375,6 +378,8 @@ class LocalSmartImageAgentStore:
                 raise HTTPException(status_code=409, detail="Finish or dismiss the current image plan before creating another")
             if payload.ratio not in SMART_IMAGE_AGENT_RATIOS:
                 raise HTTPException(status_code=422, detail="Unsupported image ratio")
+            if payload.resolution not in SMART_IMAGE_AGENT_RESOLUTIONS:
+                raise HTTPException(status_code=422, detail="Unsupported image resolution")
             references = assign_reference_roles(references, action)
             model, provider_id, quality, unit_points = resolve_smart_image_agent_model(payload.model, payload.quality)
             now = utc_now()
@@ -391,6 +396,7 @@ class LocalSmartImageAgentStore:
                 "references": references,
                 "source_node_ids": [item["node_id"] for item in references if item.get("node_id")],
                 "ratio": payload.ratio,
+                "resolution": payload.resolution,
                 "count": payload.count,
                 "quality": quality,
                 "provider_id": provider_id,
@@ -426,7 +432,9 @@ class LocalSmartImageAgentStore:
             changes = payload.model_dump(exclude_none=True)
             if "ratio" in changes and changes["ratio"] not in SMART_IMAGE_AGENT_RATIOS:
                 raise HTTPException(status_code=422, detail="Unsupported image ratio")
-            for key in ("prompt", "ratio", "count"):
+            if "resolution" in changes and changes["resolution"] not in SMART_IMAGE_AGENT_RESOLUTIONS:
+                raise HTTPException(status_code=422, detail="Unsupported image resolution")
+            for key in ("prompt", "ratio", "resolution", "count"):
                 if key in changes:
                     plan[key] = changes[key]
             selected_model = (
@@ -705,6 +713,8 @@ class SupabaseSmartImageAgentStore:
             raise HTTPException(status_code=409, detail="Finish or dismiss the current image plan before creating another")
         if payload.ratio not in SMART_IMAGE_AGENT_RATIOS:
             raise HTTPException(status_code=422, detail="Unsupported image ratio")
+        if payload.resolution not in SMART_IMAGE_AGENT_RESOLUTIONS:
+            raise HTTPException(status_code=422, detail="Unsupported image resolution")
         references = assign_reference_roles(references, action)
         model, provider_id, quality, unit_points = resolve_smart_image_agent_model(payload.model, payload.quality)
         now = utc_now()
@@ -721,6 +731,7 @@ class SupabaseSmartImageAgentStore:
             "references": references,
             "source_node_ids": [item["node_id"] for item in references if item.get("node_id")],
             "ratio": payload.ratio,
+            "resolution": payload.resolution,
             "count": payload.count,
             "quality": quality,
             "provider_id": provider_id,
@@ -759,6 +770,8 @@ class SupabaseSmartImageAgentStore:
         changes = payload.model_dump(exclude_none=True)
         if "ratio" in changes and changes["ratio"] not in SMART_IMAGE_AGENT_RATIOS:
             raise HTTPException(status_code=422, detail="Unsupported image ratio")
+        if "resolution" in changes and changes["resolution"] not in SMART_IMAGE_AGENT_RESOLUTIONS:
+            raise HTTPException(status_code=422, detail="Unsupported image resolution")
         quality = changes.get("quality", plan.get("quality") or "standard")
         count = int(changes.get("count", plan.get("count") or 1))
         selected_model = (

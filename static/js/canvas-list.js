@@ -15,6 +15,7 @@ const TEAM_CLOUD_MODE_KEY = 'teamCloudMode';
 const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
 const TEAM_CLOUD_PROJECT_KEY = 'teamCloudCurrentProjectId';
 const TEAM_CLOUD_ACCESS_TOKEN_KEY = 'teamCloudAccessToken';
+const TEAM_CLOUD_WORKSPACE_CACHE_PREFIX = 'teamCloudWorkspace:v1';
 const WORKBENCH_DRAFTS_KEY = 'workbenchCanvasDrafts:v1';
 const WORKBENCH_PENDING_DRAFT_KEY = 'workbenchCanvasDraftPending:v1';
 
@@ -360,75 +361,143 @@ function mapCloudCanvas(canvas){
         id: canvas.id,
         title: canvas.title || L('未命名画布','Untitled canvas'),
         project: canvas.project_id,
-        kind: normalizeCloudCanvasKind(data.kind),
+        kind: normalizeCloudCanvasKind(canvas.kind || data.kind),
         visibility: normalizeCloudCanvasVisibility(canvas.visibility || data.visibility),
         icon: data.icon || 'sparkles',
-        node_count: Array.isArray(data.nodes) ? data.nodes.length : 0,
+        node_count: Number.isFinite(Number(canvas.node_count)) ? Number(canvas.node_count) : (Array.isArray(data.nodes) ? data.nodes.length : 0),
         board_x: data.board_x,
         board_y: data.board_y,
         is_cloud: true,
     };
 }
 
+function cachedCloudUserId(){
+    try {
+        const token = localStorage.getItem(TEAM_CLOUD_ACCESS_TOKEN_KEY) || '';
+        const payload = token.split('.')[1] || '';
+        if(!payload) return '';
+        const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+        return String(JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')))?.sub || '');
+    } catch(e){
+        return '';
+    }
+}
+
+function cloudWorkspaceCacheKey(teamId){
+    const userId = String(teamCloud.user?.id || cachedCloudUserId() || '');
+    const selectedTeamId = String(teamId || teamCloud.teamId || '');
+    return userId && selectedTeamId ? `${TEAM_CLOUD_WORKSPACE_CACHE_PREFIX}:${userId}:${selectedTeamId}` : '';
+}
+
+function readCloudWorkspaceCache(teamId){
+    const key = cloudWorkspaceCacheKey(teamId);
+    if(!key) return null;
+    try {
+        const cached = JSON.parse(sessionStorage.getItem(key) || 'null');
+        return cached && typeof cached === 'object' ? cached : null;
+    } catch(e){
+        return null;
+    }
+}
+
+function clearCloudWorkspaceCache(teamId){
+    const key = cloudWorkspaceCacheKey(teamId);
+    if(!key) return;
+    try { sessionStorage.removeItem(key); } catch(e){}
+}
+
+function clearCloudWorkspaceAfterAuthFailure(teamId){
+    clearCloudWorkspaceCache(teamId);
+    try { localStorage.removeItem(TEAM_CLOUD_ACCESS_TOKEN_KEY); } catch(e){}
+    teamCloud.enabled = false;
+    teamCloud.user = null;
+    teamCloud.teamId = '';
+    teamCloud.role = '';
+    projects = [];
+    canvases = [];
+    currentProjectId = '';
+    renderProjects();
+    renderBoard();
+    refreshTrashCount();
+}
+
+function writeCloudWorkspaceCache(payload){
+    if(!teamCloud.enabled || !teamCloud.teamId || !teamCloud.user?.id) return;
+    const key = cloudWorkspaceCacheKey(teamCloud.teamId);
+    if(!key) return;
+    const snapshot = payload || {
+        user: teamCloud.user,
+        teams: [{ id:teamCloud.teamId, role:teamCloud.role }],
+        selected_team: { id:teamCloud.teamId, role:teamCloud.role },
+        projects: projects.map(({is_cloud, ...project}) => project),
+        canvases: canvases.map(canvas => ({ ...canvas, project_id:canvas.project })),
+        trash_count: 0,
+    };
+    try { sessionStorage.setItem(key, JSON.stringify(snapshot)); } catch(e){}
+}
+
+function applyCloudWorkspace(data, options = {}){
+    const teams = Array.isArray(data?.teams) ? data.teams : [];
+    const selectedTeam = data?.selected_team || teams.find(team => team.id === teamCloud.teamId) || teams[0];
+    if(!selectedTeam) return false;
+    teamCloud.enabled = true;
+    teamCloud.user = data.user || teamCloud.user;
+    teamCloud.teamId = selectedTeam.id;
+    teamCloud.role = String(selectedTeam.role || '').toLowerCase();
+    const privateFilterButton = visibilityFilterButtons.find(btn => btn.dataset.visibilityFilter === 'private');
+    if(privateFilterButton){
+        privateFilterButton.textContent = teamCloudCanManage() ? L('全部私有','All private') : L('我的私有','My private');
+    }
+    projects = (data.projects || []).map(mapCloudProject);
+    canvases = (data.canvases || []).map(mapCloudCanvas).filter(cloudCanvasVisibleToCurrentUser);
+    projects.forEach(project => {
+        project.canvas_count = canvases.filter(canvas => canvas.project === project.id).length;
+    });
+    if(projects.length && !projects.find(project => project.id === currentProjectId)){
+        currentProjectId = localStorage.getItem(TEAM_CLOUD_PROJECT_KEY) || projects[0].id;
+        if(!projects.find(project => project.id === currentProjectId)) currentProjectId = projects[0].id;
+    }
+    if(!projects.length) currentProjectId = '';
+    if(currentProjectId) rememberProjectId(currentProjectId);
+    localStorage.setItem(TEAM_CLOUD_MODE_KEY, '1');
+    localStorage.setItem(TEAM_CLOUD_TEAM_KEY, selectedTeam.id);
+    renderProjects();
+    renderBoard();
+    if(options.resetView) resetView();
+    refreshTrashCount();
+    return true;
+}
+
+function renderCachedCloudWorkspace(){
+    const rememberedTeamId = localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || '';
+    const cached = readCloudWorkspaceCache(rememberedTeamId);
+    return cached ? applyCloudWorkspace(cached, { resetView:true }) : false;
+}
+
 async function loadCloudAll(){
     if(!cloudModeRequested()) return false;
+    const rememberedTeamId = localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || '';
+    const renderedCache = renderCachedCloudWorkspace();
     try {
-        const me = await cloudApi('/me');
-        const teams = me.teams || [];
-        if(!teams.length){
+        const query = rememberedTeamId ? `?team_id=${encodeURIComponent(rememberedTeamId)}` : '';
+        const workspace = await cloudApi(`/workspace${query}`);
+        if(!workspace.selected_team){
             teamCloud.enabled = false;
             return false;
         }
-        const rememberedTeamId = localStorage.getItem(TEAM_CLOUD_TEAM_KEY) || '';
-        const selectedTeam = teams.find(t => t.id === rememberedTeamId) || teams[0];
-        teamCloud.enabled = true;
-        teamCloud.user = me.user;
-        teamCloud.teamId = selectedTeam.id;
-        teamCloud.role = String(selectedTeam.role || '').toLowerCase();
-        const privateFilterButton = visibilityFilterButtons.find(btn => btn.dataset.visibilityFilter === 'private');
-        if(privateFilterButton){
-            privateFilterButton.textContent = teamCloudCanManage() ? L('全部私有','All private') : L('我的私有','My private');
-        }
-        localStorage.setItem(TEAM_CLOUD_MODE_KEY, '1');
-        localStorage.setItem(TEAM_CLOUD_TEAM_KEY, selectedTeam.id);
-
-        const projectData = await cloudApi(`/teams/${encodeURIComponent(selectedTeam.id)}/projects`);
-        projects = (projectData.projects || []).map(mapCloudProject);
-        if(!projects.length){
-            canvases = [];
-            currentProjectId = '';
-            renderProjects();
-            renderBoard();
-            refreshTrashCount();
-            return true;
-        }
-
-        if(!projects.find(p => p.id === currentProjectId)){
-            currentProjectId = localStorage.getItem(TEAM_CLOUD_PROJECT_KEY) || projects[0].id;
-            if(!projects.find(p => p.id === currentProjectId)) currentProjectId = projects[0].id;
-        }
-        rememberProjectId(currentProjectId);
-
-        const canvasGroups = await Promise.all(projects.map(async p => {
-            const data = await cloudApi(`/projects/${encodeURIComponent(p.id)}/canvases`);
-            return (data.canvases || []).map(mapCloudCanvas);
-        }));
-        canvases = canvasGroups.flat().filter(cloudCanvasVisibleToCurrentUser);
-        projects.forEach(p => {
-            p.canvas_count = canvases.filter(c => c.project === p.id).length;
-        });
-        renderProjects();
-        renderBoard();
-        resetView();
-        refreshTrashCount();
+        applyCloudWorkspace(workspace, { resetView:!renderedCache });
         await maybeAutoCreateWorkbenchCanvas();
         return true;
     } catch(e){
-        if(e?.status !== 401 && e?.status !== 403) console.error(e);
+        if(e?.status === 401 || e?.status === 403){
+            clearCloudWorkspaceAfterAuthFailure(rememberedTeamId);
+            setStatus(L('登录后可查看团队云端画布','Sign in to view team cloud canvases'));
+            return true;
+        }
+        console.error(e);
+        if(renderedCache) return true;
         teamCloud.enabled = false;
-        setStatus((e?.status === 401 || e?.status === 403)
-            ? L('登录后可查看团队云端画布','Sign in to view team cloud canvases')
-            : L('团队云端加载失败','Team cloud load failed'));
+        setStatus(L('团队云端加载失败','Team cloud load failed'));
         return false;
     }
 }
@@ -661,6 +730,7 @@ function renderBoard(){
     boardEmptyHint.classList.toggle('hidden', items.length > 0);
     updatePasteBtn();
     refreshIcons();
+    writeCloudWorkspaceCache();
 }
 
 function buildCard(c){

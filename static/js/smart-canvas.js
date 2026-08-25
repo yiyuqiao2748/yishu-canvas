@@ -305,6 +305,10 @@ let gridJoinGroupId = '';
 let imageEditZoom = 1.0;
 let imageEditBaseW = 0;
 let imageEditBaseH = 0;
+const SMART_EDITOR_IMAGE_CACHE_MAX = 3;
+const SMART_EDITOR_IMAGE_CACHE_BYTES = 96 * 1024 * 1024;
+const smartEditorImageCache = new Map();
+let smartEditorImageCacheBytes = 0;
 let previewZoom = 1.0;
 let previewPan = {x:0, y:0};
 let previewPanDrag = null;
@@ -11514,6 +11518,32 @@ function requestSmartEditorOriginal(){
     img.dataset.editorQuick = '';
     if(img.getAttribute('src') !== original) img.src = original;
 }
+function rememberSmartEditorImage(url, sourceImage){
+    if(!url || !sourceImage?.naturalWidth || !sourceImage?.naturalHeight) return;
+    const estimatedBytes = sourceImage.naturalWidth * sourceImage.naturalHeight * 4;
+    const previous = smartEditorImageCache.get(url);
+    if(previous) smartEditorImageCacheBytes -= previous.bytes;
+    const keeper = new Image();
+    keeper.decoding = 'async';
+    keeper.src = url;
+    keeper.decode?.().catch(() => {});
+    smartEditorImageCache.set(url, {image:keeper, bytes:estimatedBytes, usedAt:Date.now()});
+    smartEditorImageCacheBytes += estimatedBytes;
+    while(smartEditorImageCache.size > SMART_EDITOR_IMAGE_CACHE_MAX || smartEditorImageCacheBytes > SMART_EDITOR_IMAGE_CACHE_BYTES){
+        const oldestKey = smartEditorImageCache.keys().next().value;
+        const oldest = smartEditorImageCache.get(oldestKey);
+        smartEditorImageCache.delete(oldestKey);
+        smartEditorImageCacheBytes -= Number(oldest?.bytes || 0);
+    }
+}
+function touchSmartEditorImage(url){
+    const cached = smartEditorImageCache.get(url);
+    if(!cached) return null;
+    smartEditorImageCache.delete(url);
+    cached.usedAt = Date.now();
+    smartEditorImageCache.set(url, cached);
+    return cached;
+}
 function openImageEditor(nodeId, imageIndex=0){
     const node = nodes.find(n => n.id === nodeId);
     const image = imageForDisplay(node?.images?.[imageIndex]);
@@ -11578,6 +11608,8 @@ function openImageEditor(nodeId, imageIndex=0){
             targetImage.natural_h = img.naturalHeight;
             scheduleSave();
         }
+        if(loadedPrimary) rememberSmartEditorImage(primaryEditorSrc, img);
+        img.style.visibility = '';
         imageEditBaseW = img.clientWidth; imageEditBaseH = img.clientHeight;
         updateZoomLabel(); syncImageResizeControls(); resizeEditDrawCanvas(); resetEditDrawingHistory(); clearEditDrawing(true); resetCropBox();
         if(!imageEditModeTouched) setImageEditMode('preview');
@@ -11593,11 +11625,11 @@ function openImageEditor(nodeId, imageIndex=0){
     // 裁剪/涂抹等导出操作照常可用。而带 crossOrigin 会让浏览器对“缩略图已无 CORS 缓存的同源图”重新发起
     // CORS 请求并失败——表现就是预览先闪一下（命中缓存）随即变成破损图。
     img.removeAttribute('crossorigin');
-    const quickEditorSrc = smartMediaPreviewUrl(image, 2048);
-    if(quickEditorSrc && quickEditorSrc !== primaryEditorSrc){
-        img.dataset.editorQuick = '1';
-        img.src = quickEditorSrc;
+    const cachedEditorImage = touchSmartEditorImage(primaryEditorSrc);
+    if(cachedEditorImage && img.getAttribute('src') === primaryEditorSrc && img.complete && img.naturalWidth){
+        queueMicrotask(() => img.onload?.());
     } else {
+        img.style.visibility = 'hidden';
         img.src = primaryEditorSrc;
     }
     setImageEditMode('preview');
@@ -11610,7 +11642,7 @@ function closeImageEditor(){
     document.querySelector('.image-edit-panel')?.classList.remove('video-preview-mode');
     const img = document.getElementById('cropImage');
     const previewVideo = document.getElementById('previewCurrentVideo');
-    img.onload = null; img.onerror = null; img.removeAttribute('src'); delete img.dataset.proxyFallbackTried; delete img.dataset.editorSrcToken; delete img.dataset.editorQuick; img.style.width = ''; img.style.height = ''; img.style.maxWidth = ''; img.style.maxHeight = '';
+    img.onload = null; img.onerror = null; delete img.dataset.proxyFallbackTried; delete img.dataset.editorSrcToken; delete img.dataset.editorQuick; img.style.width = ''; img.style.height = ''; img.style.maxWidth = ''; img.style.maxHeight = ''; img.style.visibility = '';
     img.style.position = ''; img.style.left = ''; img.style.top = '';
     if(previewVideo){
         previewVideo.pause?.();
@@ -17931,15 +17963,18 @@ window.onload = async () => {
     loadPromptPresets();
     loadPromptTemplateGroups();
     loadPromptTemplateOverrides();
-    await loadPromptTemplates();
+    const promptTemplatesPromise = loadPromptTemplates();
     if(window.StudioI18n) window.StudioI18n.apply();
     if(window.lucide) lucide.createIcons();
-    connectAssetLibrarySyncSocket();
-    await loadConfig();
-    await loadAssetLibrary();
+    const configPromise = loadConfig();
     await loadCanvas();
-    syncApiKindToggleVisibility();
-    render();
+    setTimeout(() => {
+        connectAssetLibrarySyncSocket();
+        void Promise.allSettled([promptTemplatesPromise, configPromise, loadAssetLibrary()]).then(() => {
+            syncApiKindToggleVisibility();
+            renderDynamicParams();
+        });
+    }, 0);
     // 初始化 Agent 面板（延迟加载，不阻塞画布渲染）
     setTimeout(function(){
         if(window.AgentMemory && window.AgentLearning && typeof refreshAgentSkillsPanel === 'function'){
@@ -17974,7 +18009,7 @@ function smartImageAgentSelection(){
             if(reference) references.push(reference);
         });
     });
-    if(selectedImage.nodeId && Number(selectedImage.index) >= 0){
+    if(ids.length <= 1 && selectedImage.nodeId && Number(selectedImage.index) >= 0){
         const exact = references.find(item => item.node_id === selectedImage.nodeId && item.image_index === Number(selectedImage.index));
         if(exact) return [exact];
     }
@@ -18027,7 +18062,7 @@ function smartImageAgentRunMeta(plan, sourceNode, refs){
         sourceNodeId:sourceNode?.id || '',
         settings:{
             engine:'api', apiKind:'image', provider_id:plan.provider_id, model:plan.model,
-            ...smartImageAgentRatioSettings(plan.ratio), resolution:'1k', quality:plan.quality || 'standard', count:1
+            ...smartImageAgentRatioSettings(plan.ratio), resolution:plan.resolution || '1k', quality:plan.quality || 'standard', count:1
         },
         createdAt:Date.now(),
         imageAgentPlanId:plan.id || ''
@@ -18071,7 +18106,7 @@ async function smartImageAgentRunImageTask(run, plan, options={}){
         provider_id:plan.provider_id,
         model:plan.model,
         ...smartImageAgentRatioSettings(plan.ratio),
-        resolution:'1k',
+        resolution:plan.resolution || '1k',
         quality:plan.quality || 'standard',
         count:1
     };

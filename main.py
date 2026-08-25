@@ -71,6 +71,8 @@ from smart_image_agent import (
     infer_image_action,
     LocalSmartImageAgentStore,
     SMART_IMAGE_AGENT_MODELS,
+    SMART_IMAGE_AGENT_RESOLUTIONS,
+    SMART_IMAGE_AGENT_STANDARD_MODEL,
     SupabaseSmartImageAgentStore,
 )
 from team_storage import r2_client, save_generated_file_from_path, settings as team_storage_settings
@@ -401,7 +403,8 @@ SMART_IMAGE_AGENT_STORE = (
 CONVERSATION_DIR = os.path.join(DATA_DIR, "conversations")
 CANVAS_DIR = os.path.join(DATA_DIR, "canvases")
 MEDIA_PREVIEW_DIR = os.path.join(DATA_DIR, "media_previews")
-HTML_CACHE_CONTROL = "public, max-age=0, s-maxage=300, must-revalidate"
+HTML_CACHE_CONTROL = "public, max-age=0, must-revalidate"
+HTML_CDN_CACHE_CONTROL = "public, max-age=300"
 DIST_CACHE_CONTROL = "public, max-age=31536000, s-maxage=2592000, immutable"
 STATIC_CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604800"
 MEDIA_PREVIEW_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, s-maxage=2592000, immutable"}
@@ -494,6 +497,7 @@ JIMENG_LOGIN_SESSION = {
 PROVIDER_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{2,40}$")
 SUPPORTED_PROVIDER_PROTOCOLS = {"openai", "apimart", "gemini", "grok", "gemini-cli", "volcengine", "runninghub", "jimeng", "codex"}
 SUPPORTED_IMAGE_REQUEST_MODES = {"openai", "openai-json", "openai-video-proxy", "openai-responses", "openai-async-image"}
+SUPPORTED_IMAGE_EDIT_MODES = {"multipart_edits", "generations_image_urls", "unsupported"}
 RUNNINGHUB_DEFAULT_BASE_URL = "https://www.runninghub.cn"
 RUNNINGHUB_OPENAPI_BASE_URL = "https://www.runninghub.cn/openapi/v2"
 RUNNINGHUB_MODEL_REGISTRY_URL = "https://raw.githubusercontent.com/HM-RunningHub/ComfyUI_RH_OpenAPI/main/models_registry.json"
@@ -1396,6 +1400,10 @@ def normalize_image_request_mode(value):
     mode = str(value or "").strip().lower()
     return mode if mode in SUPPORTED_IMAGE_REQUEST_MODES else "openai"
 
+def normalize_image_edit_mode(value):
+    mode = str(value or "").strip().lower()
+    return mode if mode in SUPPORTED_IMAGE_EDIT_MODES else "multipart_edits"
+
 def is_tudou_base_url(base_url=""):
     base = str(base_url or "").strip().lower()
     try:
@@ -1452,6 +1460,7 @@ def normalize_provider(item):
     if protocol not in SUPPORTED_PROVIDER_PROTOCOLS:
         protocol = "openai"
     image_request_mode = detect_image_request_mode(base_url, item.get("image_models") or []) or normalize_image_request_mode(item.get("image_request_mode"))
+    image_edit_mode = normalize_image_edit_mode(item.get("image_edit_mode"))
     if is_tudou_base_url(base_url):
         image_request_mode = "openai"
     image_generation_endpoint = normalize_endpoint_override(item.get("image_generation_endpoint"), "文生图端口")
@@ -1478,6 +1487,7 @@ def normalize_provider(item):
         "base_url": base_url,
         "protocol": protocol,
         "image_request_mode": image_request_mode,
+        "image_edit_mode": image_edit_mode,
         "image_generation_endpoint": image_generation_endpoint,
         "image_edit_endpoint": image_edit_endpoint,
         "enabled": bool(item.get("enabled", True)),
@@ -1663,6 +1673,7 @@ class CacheControlledStaticFiles(StaticFiles):
         query_string = scope.get("query_string", b"")
         if normalized.lower().endswith(".html"):
             response.headers["Cache-Control"] = HTML_CACHE_CONTROL
+            response.headers["CDN-Cache-Control"] = HTML_CDN_CACHE_CONTROL
         elif normalized.startswith("dist/") or b"v=" in query_string:
             response.headers["Cache-Control"] = DIST_CACHE_CONTROL
         else:
@@ -1847,7 +1858,10 @@ def static_html_response(filename: str):
     return Response(
         versioned_static_html(html),
         media_type="text/html; charset=utf-8",
-        headers={"Cache-Control": HTML_CACHE_CONTROL},
+        headers={
+            "Cache-Control": HTML_CACHE_CONTROL,
+            "CDN-Cache-Control": HTML_CDN_CACHE_CONTROL,
+        },
     )
 
 STATIC_PROMPT_TEMPLATE_MD = os.path.join(STATIC_DIR, "system-prompts", "infinite-canvas-prompt-templates.md")
@@ -2824,6 +2838,7 @@ class ApiProviderPayload(BaseModel):
     base_url: str = ""
     protocol: str = "openai"
     image_request_mode: str = "openai"
+    image_edit_mode: str = "multipart_edits"
     image_generation_endpoint: str = ""
     image_edit_endpoint: str = ""
     enabled: bool = True
@@ -11881,6 +11896,12 @@ async def generate_ai_image(prompt, size, quality, model, reference_images=None,
     refs = [ref for ref in (reference_images or []) if ref.get("url")]
     mask_refs = [ref for ref in refs if str(ref.get("role") or "").strip().lower() == "mask" or str(ref.get("name") or "").lower().endswith("_mask.png")]
     image_refs = [ref for ref in refs if ref not in mask_refs]
+    image_edit_mode = normalize_image_edit_mode(provider.get("image_edit_mode"))
+    if image_refs and image_edit_mode == "unsupported":
+        raise HTTPException(
+            status_code=400,
+            detail=f"{provider.get('name') or provider['id']} 当前不支持参考图生成，请更换已验证的模型或联系管理员配置参考图协议。",
+        )
     request_timeout = httpx.Timeout(connect=20.0, read=1800.0, write=120.0, pool=20.0) if (is_gpt2 or is_apimart or image_request_mode in {"openai-json", "openai-video-proxy", "openai-responses", "openai-async-image"}) else AI_REQUEST_TIMEOUT
     async with upstream_async_client(timeout=request_timeout) as client:
         response = None
@@ -11988,6 +12009,22 @@ async def generate_ai_image(prompt, size, quality, model, reference_images=None,
             async_images = [item for item in async_images if item]
             if async_images:
                 body["images"] = async_images
+            response = await client.post(gen_url, headers=api_headers(provider=provider, model=model), json=body)
+        elif image_refs and image_edit_mode == "generations_image_urls":
+            body = {
+                "model": model,
+                "prompt": prompt,
+                "n": 1,
+                "size": size,
+                "image_urls": [
+                    reference_to_data_url(ref, max_size=1536)
+                    for ref in image_refs[:ONLINE_IMAGE_REFERENCE_MAX]
+                ],
+            }
+            if quality:
+                body["quality"] = quality
+            if resolution:
+                body["resolution"] = str(resolution).strip()
             response = await client.post(gen_url, headers=api_headers(provider=provider, model=model), json=body)
         elif is_apimart:
             apimart_size, resolution = apimart_size_resolution(size)
@@ -16824,6 +16861,23 @@ async def _smart_image_agent_enrich_plan(payload: ImageAgentPlanCreate, request:
     except Exception as exc:
         print(f"[smart-image-agent] planner fallback: {exc}")
         return payload
+
+
+@app.get("/api/smart-image-agent/capabilities")
+async def get_smart_image_agent_capabilities(user: CurrentUser = Depends(require_user)):
+    return {
+        "default_model": SMART_IMAGE_AGENT_STANDARD_MODEL,
+        "default_resolution": "1k",
+        "models": [
+            {
+                "id": model,
+                **policy,
+                "resolutions": list(SMART_IMAGE_AGENT_RESOLUTIONS),
+                "supports_references": True,
+            }
+            for model, policy in SMART_IMAGE_AGENT_MODELS.items()
+        ],
+    }
 
 
 @app.post("/api/smart-image-agent/sessions")

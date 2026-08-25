@@ -205,12 +205,14 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(index_response.status_code, 200)
         self.assertEqual(
             index_response.headers["Cache-Control"],
-            "public, max-age=0, s-maxage=300, must-revalidate",
+            "public, max-age=0, must-revalidate",
         )
+        self.assertEqual(index_response.headers["CDN-Cache-Control"], "public, max-age=300")
         self.assertEqual(
             static_html_response.headers["Cache-Control"],
-            "public, max-age=0, s-maxage=300, must-revalidate",
+            "public, max-age=0, must-revalidate",
         )
+        self.assertEqual(static_html_response.headers["CDN-Cache-Control"], "public, max-age=300")
         self.assertEqual(dist_response.status_code, 200)
         self.assertEqual(
             dist_response.headers["Cache-Control"],
@@ -787,6 +789,107 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result[0]["type"], "url")
         route.assert_awaited_once_with("一只狗", "4096x4096", "nano-banana-2", [], provider, "1:1", "4k")
+
+    def test_provider_image_edit_mode_defaults_to_multipart(self):
+        provider = main.normalize_provider({
+            "id": "custom-api-2",
+            "name": "OAIREGBOX",
+            "base_url": "https://example.test/v1",
+            "protocol": "openai",
+            "image_models": ["gpt-image-2"],
+        })
+
+        self.assertEqual(provider["image_edit_mode"], "multipart_edits")
+
+    def test_api_settings_exposes_reference_image_protocol_control(self):
+        root = Path(main.__file__).resolve().parent
+        html = (root / "static" / "api-settings.html").read_text(encoding="utf-8")
+        script = (root / "static" / "js" / "api-settings.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="imageEditModeInput"', html)
+        self.assertIn('value="generations_image_urls"', html)
+        self.assertIn("image_edit_mode:item.image_edit_mode || 'multipart_edits'", script)
+
+    async def test_generation_image_urls_mode_uses_generations_for_reference_images(self):
+        class FakeResponse:
+            status_code = 200
+            text = '{"data":[{"url":"https://example.test/out.png"}]}'
+
+            def json(self):
+                return {"data": [{"url": "https://example.test/out.png"}]}
+
+            def raise_for_status(self):
+                return None
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return False
+
+            async def post(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                return FakeResponse()
+
+        _path, source_url = self.generated_file("reference.png")
+        provider = {
+            "id": "custom-api-2",
+            "name": "OAIREGBOX",
+            "base_url": "https://example.test/v1",
+            "protocol": "openai",
+            "image_request_mode": "openai",
+            "image_edit_mode": "generations_image_urls",
+            "api_key": "test-key",
+        }
+        fake_client = FakeClient()
+
+        with patch.object(main, "upstream_async_client", return_value=fake_client):
+            image, _raw = await main.generate_ai_image(
+                "保留人物，改成雨夜霓虹",
+                "1024x1024",
+                "",
+                "gpt-image-2",
+                [{"url": source_url, "name": "reference.png"}],
+                "custom-api-2",
+                provider_config=provider,
+            )
+
+        self.assertEqual(image["value"], "https://example.test/out.png")
+        self.assertEqual(len(fake_client.calls), 1)
+        request_url, request_options = fake_client.calls[0]
+        self.assertEqual(request_url, "https://example.test/v1/images/generations")
+        self.assertNotIn("files", request_options)
+        self.assertEqual(len(request_options["json"]["image_urls"]), 1)
+
+    async def test_unsupported_image_edit_mode_fails_before_upstream_request(self):
+        _path, source_url = self.generated_file("reference.png")
+        provider = {
+            "id": "custom-api-2",
+            "name": "OAIREGBOX",
+            "base_url": "https://example.test/v1",
+            "protocol": "openai",
+            "image_request_mode": "openai",
+            "image_edit_mode": "unsupported",
+            "api_key": "test-key",
+        }
+
+        with self.assertRaises(main.HTTPException) as caught:
+            await main.generate_ai_image(
+                "保留人物，改成雨夜霓虹",
+                "1024x1024",
+                "",
+                "gpt-image-2",
+                [{"url": source_url, "name": "reference.png"}],
+                "custom-api-2",
+                provider_config=provider,
+            )
+
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertIn("不支持参考图", str(caught.exception.detail))
 
     async def test_grsai_four_k_uses_async_without_switching_model(self):
         class FakeResponse:

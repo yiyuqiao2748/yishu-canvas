@@ -39,8 +39,9 @@ create table if not exists public.smart_image_agent_plans (
   "references" jsonb not null default '[]'::jsonb,
   source_node_ids jsonb not null default '[]'::jsonb,
   ratio text not null default 'auto',
+  resolution text not null default '1k' check (resolution in ('1k', '2k', '4k')),
   count integer not null default 1 check (count between 1 and 8),
-  quality text not null default 'standard' check (quality in ('standard', 'pro')),
+  quality text not null default 'standard' check (quality in ('standard', 'pro', 'vip')),
   provider_id text not null default 'custom-api',
   model text not null,
   fallback_used boolean not null default false,
@@ -84,6 +85,11 @@ alter table public.smart_image_agent_sessions add column if not exists title tex
 alter table public.smart_image_agent_sessions add column if not exists last_activity_at timestamptz not null default now();
 alter table public.smart_image_agent_sessions add column if not exists archived_at timestamptz;
 alter table public.smart_image_agent_runs add column if not exists progress_stage text not null default 'queued';
+alter table public.smart_image_agent_plans add column if not exists resolution text not null default '1k';
+alter table public.smart_image_agent_plans drop constraint if exists smart_image_agent_plans_resolution_check;
+alter table public.smart_image_agent_plans add constraint smart_image_agent_plans_resolution_check check (resolution in ('1k', '2k', '4k'));
+alter table public.smart_image_agent_plans drop constraint if exists smart_image_agent_plans_quality_check;
+alter table public.smart_image_agent_plans add constraint smart_image_agent_plans_quality_check check (quality in ('standard', 'pro', 'vip'));
 
 create index if not exists idx_smart_image_agent_sessions_history on public.smart_image_agent_sessions(user_id, canvas_id, archived_at, last_activity_at desc);
 with ranked_smart_image_agent_plans as (

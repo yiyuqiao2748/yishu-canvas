@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import HTTPException, Response
 
@@ -89,6 +90,34 @@ class TeamCloudStoreTests(unittest.TestCase):
         self.assertEqual(saved["title"], "Storyboard v2")
         self.assertEqual(saved["version"], 2)
         self.assertEqual(saved["data"]["nodes"], [{"id": "n1"}])
+
+    def test_workspace_returns_all_visible_canvas_summaries_without_node_data(self):
+        team = self.store.create_team(self.owner, "Design Lab")
+        first_project = self.store.create_project(self.owner, team["id"], "Launch Board")
+        second_project = self.store.create_project(self.owner, team["id"], "Campaign")
+        first = self.store.create_canvas(
+            self.owner,
+            first_project["id"],
+            "Storyboard",
+            {"kind": "smart", "nodes": [{"id": "n1"}, {"id": "n2"}], "connections": []},
+        )
+        second = self.store.create_canvas(
+            self.owner,
+            second_project["id"],
+            "Moodboard",
+            {"kind": "classic", "nodes": [{"id": "n3"}], "connections": []},
+        )
+
+        workspace = self.store.workspace(self.owner, team["id"])
+
+        self.assertEqual({item["id"] for item in workspace["projects"]}, {first_project["id"], second_project["id"]})
+        summaries = {item["id"]: item for item in workspace["canvases"]}
+        self.assertEqual(summaries[first["id"]]["kind"], "smart")
+        self.assertEqual(summaries[first["id"]]["node_count"], 2)
+        self.assertEqual(summaries[second["id"]]["kind"], "classic")
+        self.assertEqual(summaries[second["id"]]["node_count"], 1)
+        self.assertNotIn("data", summaries[first["id"]])
+        self.assertEqual(workspace["trash_count"], 0)
 
     def test_delete_canvas_requires_admin_and_removes_versions(self):
         team = self.store.create_team(self.owner, "Design Lab")
@@ -670,6 +699,46 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(email, "yiwei@example.com")
 
+    async def test_username_login_mapping_uses_bounded_ttl_cache(self):
+        team_cloud._username_email_cache.clear()
+        profile_lookup = AsyncMock(return_value={"email": "Yiwei@Example.com", "username": "yiwei"})
+
+        with patch.object(team_cloud, "get_user_profile_by_username", profile_lookup):
+            first = await team_cloud.resolve_auth_identifier_email("YiWei")
+            second = await team_cloud.resolve_auth_identifier_email("yiwei")
+
+        self.assertEqual(first, "yiwei@example.com")
+        self.assertEqual(second, first)
+        profile_lookup.assert_awaited_once_with("yiwei")
+
+    async def test_login_records_identifier_auth_profile_and_response_timings(self):
+        response = Response()
+        request = SimpleNamespace(state=SimpleNamespace(server_timings=[]))
+        auth_mock = AsyncMock(return_value={
+            "access_token": "session-token",
+            "user": {
+                "id": "user-1",
+                "email": "person@example.com",
+                "email_confirmed_at": "2026-08-09T00:00:00Z",
+                "user_metadata": {"username": "yiwei", "display_name": "Yiwei"},
+            },
+        })
+
+        with patch.object(team_cloud, "resolve_auth_identifier_email", AsyncMock(return_value="person@example.com")), \
+             patch.object(team_cloud, "supabase_auth_request", auth_mock):
+            payload = await team_cloud.login(
+                team_cloud.AuthEmailPasswordRequest(identifier="person@example.com", password="secret-123"),
+                response,
+                request,
+            )
+
+        self.assertTrue(payload["session_ready"])
+        timings = ",".join(request.state.server_timings)
+        self.assertIn("auth_identifier;dur=", timings)
+        self.assertIn("supabase_auth;dur=", timings)
+        self.assertIn("auth_profile;dur=", timings)
+        self.assertIn("auth_response;dur=", timings)
+
     async def test_team_api_model_fetch_requires_key(self):
         with self.assertRaises(HTTPException) as error:
             await team_cloud.fetch_team_api_models_from_config({
@@ -1148,7 +1217,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         script = (root / "static" / "js" / "canvas-list.js").read_text(encoding="utf-8")
 
         self.assertIn("function normalizeCloudCanvasKind", script)
-        self.assertIn("kind: normalizeCloudCanvasKind(data.kind)", script)
+        self.assertIn("kind: normalizeCloudCanvasKind(canvas.kind || data.kind)", script)
         self.assertNotIn("kind: data.kind || 'smart'", script)
 
     def test_asset_preview_images_do_not_start_native_url_drag(self):
@@ -1178,7 +1247,7 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("visibility: normalizeCloudCanvasVisibility", script)
         self.assertIn("function cloudCanvasVisibleToCurrentUser", script)
         self.assertIn("if(teamCloudCanManage()) return true", script)
-        self.assertIn("canvasGroups.flat().filter(cloudCanvasVisibleToCurrentUser)", script)
+        self.assertIn("(data.canvases || []).map(mapCloudCanvas).filter(cloudCanvasVisibleToCurrentUser)", script)
         self.assertIn("function publishCanvasToTeam", script)
         self.assertIn("/publish", script)
 
@@ -1514,6 +1583,10 @@ class TeamCloudStaticUiTests(unittest.TestCase):
         self.assertIn("function workbenchMediaPreviewUrl", workbench_script)
         self.assertIn("/api/media-preview?w=", workbench_script)
         self.assertIn("fetchJson('/api/workbench/summary')", workbench_script)
+        self.assertIn("let workbenchSummaryRequest = null", workbench_script)
+        self.assertIn("async function refreshWorkbenchSummary", workbench_script)
+        self.assertIn("workbenchAuthRevision += 1", workbench_script)
+        self.assertIn("applyWorkbenchAuthState({ user: data.user", workbench_script)
         self.assertNotIn("await loadCurrentUser();\n            if(authModalMode === 'admin')", workbench_script)
         self.assertIn("Promise.all", workbench_script)
         self.assertIn("const preview = workbenchMediaPreviewUrl(url, 512);", workbench_script)
@@ -1522,6 +1595,31 @@ class TeamCloudStaticUiTests(unittest.TestCase):
 
         login_source = team_cloud_py.split('@router.post("/auth/login")', 1)[1].split('@router.post("/auth/recover")', 1)[0]
         self.assertEqual(login_source.count("get_user_profile_by_user_id(str(user.get(\"id\") or \"\"))"), 0)
+
+    def test_canvas_list_uses_cached_workspace_before_background_refresh(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "canvas-list.js").read_text(encoding="utf-8")
+
+        self.assertIn("cloudApi(`/workspace${query}`)", script)
+        self.assertIn("sessionStorage.getItem", script)
+        self.assertIn("sessionStorage.setItem", script)
+        self.assertIn("renderCachedCloudWorkspace", script)
+        self.assertIn("function clearCloudWorkspaceAfterAuthFailure", script)
+        self.assertIn("if(e?.status === 401 || e?.status === 403)", script)
+        self.assertIn("sessionStorage.removeItem(key)", script)
+        self.assertIn("localStorage.removeItem(TEAM_CLOUD_ACCESS_TOKEN_KEY)", script)
+        self.assertNotIn("Promise.all(projects.map(async p =>", script)
+
+    def test_supabase_schema_supports_workspace_summaries_and_agent_resolutions(self):
+        root = Path(__file__).resolve().parents[1]
+        schema = (root / "docs" / "supabase" / "team_cloud_schema.sql").read_text(encoding="utf-8")
+
+        self.assertIn("add column if not exists kind text", schema)
+        self.assertIn("add column if not exists node_count integer", schema)
+        self.assertIn("idx_user_profiles_username_lower", schema)
+        self.assertIn("jsonb_array_length(data->'nodes')", schema)
+        self.assertIn("quality in ('standard', 'pro', 'vip')", schema)
+        self.assertIn("resolution in ('1k', '2k', '4k')", schema)
 
     def test_production_pages_use_precompiled_static_assets(self):
         root = Path(__file__).resolve().parents[1]
@@ -1596,6 +1694,35 @@ class TeamCloudStaticUiTests(unittest.TestCase):
             self.assertIn("performance.mark('canvas-data-ready')", source)
             self.assertIn("performance.mark('first-node-rendered')", source)
             self.assertIn("performance.mark('first-image-loaded')", source)
+
+    def test_smart_canvas_loads_canvas_before_assets_without_duplicate_boot_render(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+        boot = script.split("window.onload = async () => {", 1)[1].split("function smartImageAgentMediaReference", 1)[0]
+
+        self.assertLess(boot.index("await loadCanvas()"), boot.index("loadAssetLibrary()"))
+        self.assertNotIn("await loadAssetLibrary()", boot)
+        self.assertNotIn("await loadCanvas();\n    syncApiKindToggleVisibility();\n    render();", boot)
+
+    def test_smart_image_preview_keeps_original_decoded_between_opens(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+        open_source = script.split("function openImageEditor", 1)[1].split("function closeImageEditor", 1)[0]
+        close_source = script.split("function closeImageEditor", 1)[1].split("function clampCrop", 1)[0]
+
+        self.assertIn("SMART_EDITOR_IMAGE_CACHE_MAX", script)
+        self.assertIn("rememberSmartEditorImage", open_source)
+        self.assertIn("img.src = primaryEditorSrc", open_source)
+        self.assertNotIn("const quickEditorSrc", open_source)
+        self.assertNotIn("img.removeAttribute('src')", close_source)
+
+    def test_smart_agent_multi_selection_uses_selected_id_count(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+        selection = script.split("function smartImageAgentSelection", 1)[1].split("function smartImageAgentCanvasContext", 1)[0]
+
+        self.assertIn("if(ids.length <= 1", selection)
+        self.assertNotIn("nodeIds.length", selection)
 
     def test_canvas_previews_do_not_implicitly_download_original_images(self):
         root = Path(__file__).resolve().parents[1]

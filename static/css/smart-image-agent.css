@@ -109,7 +109,7 @@ body.smart-image-agent-v2-open.smart-image-agent-v2-collapsed .shell { width:cal
 .sia-ref button svg { width:11px; height:11px; }
 .sia-empty-ref,.sia-empty { grid-column:1/-1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; min-height:62px; color:#657080; font-size:11px; text-align:center; }
 .sia-empty-ref svg,.sia-empty svg { width:20px; height:20px; }
-.sia-source-actions { display:flex; gap:6px; margin:8px 0 12px; }
+.sia-source-actions { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 12px; }
 .sia-source-actions button,.sia-task-actions button {
     height:30px;
     display:inline-flex;
@@ -142,7 +142,7 @@ body.smart-image-agent-v2-open.smart-image-agent-v2-collapsed .shell { width:cal
 .sia-composer:focus-within { border-color:rgba(255,107,95,.65); box-shadow:0 0 0 2px rgba(255,107,95,.08); }
 .sia-composer textarea { width:100%; min-height:72px; resize:none; color:#edf0f4; background:transparent; border:0; outline:0; font-size:12px; line-height:1.55; }
 .sia-composer textarea::placeholder { color:#636d7c; }
-.sia-settings { display:grid; grid-template-columns:minmax(0,1fr) 74px; gap:6px; margin:8px 0; }
+.sia-settings { display:grid; grid-template-columns:minmax(0,1fr) 74px 64px; gap:6px; margin:8px 0; }
 .sia-settings label,.sia-plan-controls label { min-width:0; display:flex; flex-direction:column; gap:4px; color:#707b8a; font-size:9px; font-weight:750; }
 .sia-model-control { grid-column:1/-1; }
 .sia-settings select,.sia-settings input,.sia-plan-controls select,.sia-plan-controls input {
@@ -183,7 +183,7 @@ body.smart-image-agent-v2-open.smart-image-agent-v2-collapsed .shell { width:cal
 .sia-plan p { max-height:72px; overflow:auto; margin:9px 0; color:#aeb6c2; font-size:11px; line-height:1.5; }
 .sia-plan-references { display:flex; flex-wrap:wrap; gap:5px; margin:0 0 9px; }
 .sia-plan-references span { padding:3px 6px; color:#a9c8e9; background:rgba(94,154,217,.12); border:1px solid rgba(94,154,217,.24); border-radius:5px; font-size:9px; }
-.sia-plan-controls { display:grid; grid-template-columns:minmax(0,1fr) 74px; gap:6px; }
+.sia-plan-controls { display:grid; grid-template-columns:minmax(0,1fr) 74px 64px; gap:6px; }
 .sia-plan-cost { display:flex; align-items:center; justify-content:space-between; margin:10px 0 8px; color:#788394; font-size:10px; }
 .sia-plan-cost strong { color:#f0b764; }
 .sia-list { display:flex; flex-direction:column; gap:8px; }

@@ -10,6 +10,7 @@ const idInput = document.getElementById('idInput');
 const baseInput = document.getElementById('baseInput');
 const protocolInput = document.getElementById('protocolInput');
 const imageRequestModeInput = document.getElementById('imageRequestModeInput');
+const imageEditModeInput = document.getElementById('imageEditModeInput');
 const imageEditRouteInput = document.getElementById('imageEditRouteInput');
 const keyInput = document.getElementById('keyInput');
 const keyHint = document.getElementById('keyHint');
@@ -858,6 +859,7 @@ function syncEditor(){
             ? lockedApi.image_request_mode
             : (imageRequestModeInput?.value || item.image_request_mode)
     );
+    item.image_edit_mode = normalizeImageEditMode(imageEditModeInput?.value || item.image_edit_mode);
     item.image_edit_route = normalizeImageEditRoute(
         item.id === 'modelscope' || item.id === 'runninghub' || item.id === 'volcengine' || CLI_PROTOCOLS.has(selectedProtocol)
             ? 'general'
@@ -2553,6 +2555,10 @@ function renderEditor(){
         imageRequestModeInput.disabled = Boolean(lockedApi) || item.id === 'modelscope' || item.id === 'runninghub' || item.id === 'volcengine' || CLI_PROTOCOLS.has(String(protocolInput?.value || item.protocol || '').toLowerCase());
         imageRequestModeInput.title = lockedApi ? '推荐平台使用固定图片协议' : '';
     }
+    if(imageEditModeInput){
+        imageEditModeInput.value = normalizeImageEditMode(item.image_edit_mode);
+        imageEditModeInput.disabled = item.id === 'modelscope' || item.id === 'runninghub' || item.id === 'volcengine' || CLI_PROTOCOLS.has(String(protocolInput?.value || item.protocol || '').toLowerCase());
+    }
     if(imageEditRouteInput){
         imageEditRouteInput.value = normalizeImageEditRoute(item.image_edit_route);
         imageEditRouteInput.disabled = item.id === 'modelscope' || item.id === 'runninghub' || item.id === 'volcengine' || CLI_PROTOCOLS.has(String(protocolInput?.value || item.protocol || '').toLowerCase());
@@ -2929,6 +2935,10 @@ function currentProviderApiKey(item){
 function normalizeImageRequestMode(value){
     const mode = String(value || '').trim().toLowerCase();
     return ['openai', 'openai-json', 'openai-video-proxy', 'openai-responses', 'openai-async-image'].includes(mode) ? mode : 'openai';
+}
+function normalizeImageEditMode(value){
+    const mode = String(value || '').trim().toLowerCase();
+    return ['multipart_edits', 'generations_image_urls', 'unsupported'].includes(mode) ? mode : 'multipart_edits';
 }
 function normalizeImageEditRoute(value){
     const route = String(value || '').trim().toLowerCase();
@@ -3815,6 +3825,7 @@ async function saveProviders(){
                 ? 'openai'
                 : item.image_request_mode
         );
+        item.image_edit_mode = normalizeImageEditMode(item.image_edit_mode);
         item.image_edit_route = normalizeImageEditRoute(
             item.id === 'modelscope' || item.id === 'runninghub' || item.id === 'volcengine' || isCliProtocol
                 ? 'general'
@@ -3868,6 +3879,7 @@ async function saveProviders(){
                 base_url:item.base_url,
                 protocol:(item.id === 'modelscope') ? 'openai' : item.id === 'runninghub' ? 'runninghub' : item.id === 'volcengine' ? 'volcengine' : (item.protocol || 'openai'),
                 image_request_mode:item.image_request_mode || 'openai',
+                image_edit_mode:item.image_edit_mode || 'multipart_edits',
                 image_edit_route:item.image_edit_route || 'general',
                 image_generation_endpoint:item.image_generation_endpoint || '',
                 image_edit_endpoint:item.image_edit_endpoint || '',
@@ -3974,6 +3986,10 @@ window.onload = async () => {
             return;
         }
         item.image_request_mode = normalizeImageRequestMode(imageRequestModeInput.value);
+    });
+    if(imageEditModeInput) imageEditModeInput.addEventListener('change', () => {
+        const item = provider();
+        if(item) item.image_edit_mode = normalizeImageEditMode(imageEditModeInput.value);
     });
     if(imageEditRouteInput) imageEditRouteInput.addEventListener('change', () => {
         const item = provider();

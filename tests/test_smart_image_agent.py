@@ -67,6 +67,25 @@ class SmartImageAgentStoreTests(unittest.TestCase):
             },
         )
 
+    def test_plan_resolution_is_validated_persisted_and_editable(self):
+        plan = self.create_plan(resolution="2k")
+        self.assertEqual(plan["resolution"], "2k")
+
+        updated = self.store.update_plan(
+            self.user,
+            plan["id"],
+            ImageAgentPlanUpdate(resolution="4k"),
+        )
+        self.assertEqual(updated["resolution"], "4k")
+
+        with self.assertRaises(HTTPException) as raised:
+            self.store.update_plan(
+                self.user,
+                plan["id"],
+                ImageAgentPlanUpdate(resolution="8k"),
+            )
+        self.assertEqual(raised.exception.status_code, 422)
+
     def test_resolver_preserves_legacy_quality_defaults_when_model_is_absent(self):
         self.assertEqual(resolve_smart_image_agent_model(None, "standard"), ("nano-banana-2", "custom-api", "standard", 12))
         self.assertEqual(resolve_smart_image_agent_model(None, "pro"), ("nano-banana-pro", "custom-api", "pro", 18))
@@ -410,6 +429,23 @@ class SmartImageAgentApiTests(unittest.TestCase):
                 }
                 self.assertEqual(actual, expected)
 
+    def test_capabilities_expose_models_points_and_resolutions(self):
+        response = self.client.get("/api/smart-image-agent/capabilities")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["default_model"], "nano-banana-2")
+        self.assertEqual(payload["default_resolution"], "1k")
+        self.assertEqual(
+            {item["id"]: item["unit_points"] for item in payload["models"]},
+            {
+                "gpt-image-2": 6,
+                "nano-banana-2": 12,
+                "nano-banana-pro": 18,
+                "gpt-image-2-vip": 20,
+            },
+        )
+        self.assertTrue(all(item["resolutions"] == ["1k", "2k", "4k"] for item in payload["models"]))
+
     def test_api_accepts_vip_quality_for_create_update_and_dismissal(self):
         session = self.client.post(
             "/api/smart-image-agent/sessions",
@@ -594,6 +630,15 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
         self.assertNotIn("}).slice(0, 10);", app)
         self.assertNotIn("return references.slice(0, 10);", bridge)
         self.assertNotIn("filter(item => item.kind === 'image').slice(0, 10)", bridge)
+
+    def test_agent_composer_adds_selected_canvas_images_and_resolution(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+        smart = (self.root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("data-add-selection", app)
+        self.assertIn("data-resolution", app)
+        self.assertIn("resolution:plan.resolution", smart)
+        self.assertIn("resolution:plan.resolution || '1k'", smart)
 
     def test_smart_image_agent_generation_guard_allows_exact_policy_models(self):
         smart_script = (self.root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")

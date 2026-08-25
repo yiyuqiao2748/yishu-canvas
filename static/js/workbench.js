@@ -6,6 +6,8 @@
     const TEAM_CLOUD_TEAM_KEY = 'teamCloudCurrentTeamId';
     let currentWorkbenchUser = null;
     let currentWorkbenchTeams = [];
+    let workbenchSummaryRequest = null;
+    let workbenchAuthRevision = 0;
     let authModalMode = 'user';
     let authSignupAwaitingVerification = false;
     let authPendingSignupEmail = '';
@@ -329,17 +331,34 @@
     }
 
     async function loadWorkbenchSummary() {
+        if(workbenchSummaryRequest) return workbenchSummaryRequest;
+        const revision = workbenchAuthRevision;
+        const request = (async () => {
+            try {
+                const data = await fetchJson('/api/workbench/summary');
+                return revision === workbenchAuthRevision ? applyWorkbenchSummary(data) : data;
+            } catch(e) {
+                if(revision !== workbenchAuthRevision) return null;
+                await Promise.all([
+                    loadWorkbenchVersion(),
+                    loadCurrentUser(),
+                    loadRecentCanvasBackground(),
+                    loadAssetBackground(),
+                ]);
+                return null;
+            }
+        })();
+        workbenchSummaryRequest = request;
         try {
-            return applyWorkbenchSummary(await fetchJson('/api/workbench/summary'));
-        } catch(e) {
-            await Promise.all([
-                loadWorkbenchVersion(),
-                loadCurrentUser(),
-                loadRecentCanvasBackground(),
-                loadAssetBackground(),
-            ]);
-            return null;
+            return await request;
+        } finally {
+            if(workbenchSummaryRequest === request) workbenchSummaryRequest = null;
         }
+    }
+
+    async function refreshWorkbenchSummary() {
+        if(workbenchSummaryRequest) await workbenchSummaryRequest.catch(() => null);
+        return loadWorkbenchSummary();
     }
 
     function scheduleWorkbenchSummary() {
@@ -507,6 +526,8 @@
             }
             if(!data.session_ready) throw new Error('登录未成功，请检查账号状态。');
             storeTeamAccessToken(data.access_token || '');
+            workbenchAuthRevision += 1;
+            applyWorkbenchAuthState({ user: data.user, teams: currentWorkbenchTeams });
             authSignupAwaitingVerification = false;
             authPendingSignupEmail = '';
             if(authModalMode === 'admin') {
@@ -521,7 +542,7 @@
             }
             closeAuthModal();
             setStatus(isSignup ? '注册成功' : '登录成功');
-            void loadWorkbenchSummary();
+            void refreshWorkbenchSummary();
         } catch(e) {
             setAuthMessage(e.message || (isSignup ? '注册失败，请检查邮箱验证码。' : '账号或密码不正确。'), 'error');
         } finally {

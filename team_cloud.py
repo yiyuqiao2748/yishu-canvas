@@ -1,5 +1,6 @@
 import base64
 import asyncio
+from collections import OrderedDict
 import datetime
 import hashlib
 import json
@@ -33,6 +34,8 @@ TEAM_SESSION_ONLINE_WINDOW_SECONDS = int(os.getenv("TEAM_SESSION_ONLINE_WINDOW_S
 TEAM_CONFIG_CACHE_SECONDS = int(os.getenv("TEAM_CONFIG_CACHE_SECONDS", "60"))
 TEAM_ADMIN_USAGE_LIMIT = int(os.getenv("TEAM_ADMIN_USAGE_LIMIT", "1000"))
 TEAM_AUTH_VERIFICATION_RESEND_SECONDS = int(os.getenv("TEAM_AUTH_VERIFICATION_RESEND_SECONDS", "60"))
+TEAM_AUTH_USERNAME_CACHE_SECONDS = int(os.getenv("TEAM_AUTH_USERNAME_CACHE_SECONDS", "600"))
+TEAM_AUTH_USERNAME_CACHE_MAX_ENTRIES = int(os.getenv("TEAM_AUTH_USERNAME_CACHE_MAX_ENTRIES", "512"))
 
 DEFAULT_OPERATION_POINTS = {
     "image": 0,
@@ -100,6 +103,7 @@ router = APIRouter(prefix="/api/team-cloud", tags=["team-cloud"])
 CF_ACCESS_CERTS_CACHE_TTL = 60 * 60
 _cf_access_certs_cache: Dict[str, Any] = {"expires_at": 0.0, "keys": []}
 _verification_resend_times: Dict[str, float] = {}
+_username_email_cache: "OrderedDict[str, Tuple[str, float]]" = OrderedDict()
 _supabase_auth_client: Optional[httpx.AsyncClient] = None
 _supabase_auth_client_lock = asyncio.Lock()
 
@@ -1326,6 +1330,38 @@ class LocalTeamStore:
                 if project.get("created_by") == user.id or project.get("id") in visible_project_ids
             ]
 
+    def workspace(
+        self,
+        user: CurrentUser,
+        team_id: str,
+        member: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        with self.lock:
+            data = self._read()
+            member = member or self._require_member(data, user.id, team_id)
+            visible_canvases = [
+                canvas
+                for canvas in data["canvases"]
+                if canvas.get("team_id") == team_id and record_is_visible_to_user(canvas, user, member)
+            ]
+            visible_project_ids = {canvas.get("project_id") for canvas in visible_canvases}
+            projects = [
+                project
+                for project in data["projects"]
+                if project.get("team_id") == team_id
+                and not project.get("archived_at")
+                and (
+                    member.get("role") in {"owner", "admin"}
+                    or project.get("created_by") == user.id
+                    or project.get("id") in visible_project_ids
+                )
+            ]
+            return {
+                "projects": projects,
+                "canvases": [self._canvas_summary(canvas) for canvas in visible_canvases],
+                "trash_count": 0,
+            }
+
     def create_project(self, user: CurrentUser, team_id: str, name: str, description: str = "") -> Dict[str, Any]:
         clean_name = name.strip()
         if not clean_name:
@@ -1395,6 +1431,8 @@ class LocalTeamStore:
                 "project_id": project["id"],
                 "title": clean_title,
                 "data": canvas_data or {},
+                "kind": str((canvas_data or {}).get("kind") or "classic"),
+                "node_count": len((canvas_data or {}).get("nodes") or []) if isinstance((canvas_data or {}).get("nodes"), list) else 0,
                 "version": 1,
                 "visibility": "private",
                 "created_by": user.id,
@@ -1450,6 +1488,8 @@ class LocalTeamStore:
             if payload.base_version is not None and payload.base_version != canvas.get("version"):
                 raise HTTPException(status_code=409, detail={"message": "画布已被更新，请刷新后再保存", "canvas": canvas})
             canvas["data"] = payload.data or {}
+            canvas["kind"] = str(canvas["data"].get("kind") or canvas.get("kind") or "classic")
+            canvas["node_count"] = len(canvas["data"].get("nodes") or []) if isinstance(canvas["data"].get("nodes"), list) else 0
             if payload.title is not None:
                 canvas["title"] = payload.title.strip() or canvas["title"]
             canvas["version"] = int(canvas.get("version") or 1) + 1
@@ -2091,7 +2131,7 @@ class LocalTeamStore:
         return None
 
     def _canvas_summary(self, canvas: Dict[str, Any]) -> Dict[str, Any]:
-        return {key: canvas.get(key) for key in (
+        summary = {key: canvas.get(key) for key in (
             "id",
             "team_id",
             "project_id",
@@ -2103,6 +2143,14 @@ class LocalTeamStore:
             "created_at",
             "updated_at",
         )}
+        data = canvas.get("data") if isinstance(canvas.get("data"), dict) else {}
+        summary["kind"] = str(canvas.get("kind") or data.get("kind") or "classic")
+        summary["node_count"] = int(
+            canvas.get("node_count")
+            if canvas.get("node_count") is not None
+            else len(data.get("nodes") or []) if isinstance(data.get("nodes"), list) else 0
+        )
+        return summary
 
     def _canvas_version_row(self, canvas: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -2336,6 +2384,35 @@ class SupabaseTeamStore:
             if project.get("created_by") == user.id or project.get("id") in visible_project_ids
         ]
 
+    async def workspace(
+        self,
+        user: CurrentUser,
+        team_id: str,
+        member: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        member = member or await self._require_member(user.id, team_id)
+        visibility_filter = ""
+        if member.get("role") not in {"owner", "admin"}:
+            visibility_filter = f"&or=(visibility.eq.team,created_by.eq.{quote(user.id, safe='')})"
+        projects, canvases = await asyncio.gather(
+            self._request(
+                "GET",
+                f"/projects?team_id=eq.{quote(team_id, safe='')}&archived_at=is.null&order=updated_at.desc&select=*",
+            ),
+            self._request(
+                "GET",
+                f"/canvases?team_id=eq.{quote(team_id, safe='')}{visibility_filter}&order=updated_at.desc&select=id,team_id,project_id,title,version,visibility,kind,node_count,created_by,updated_by,created_at,updated_at",
+            ),
+        )
+        if member.get("role") not in {"owner", "admin"}:
+            visible_project_ids = {canvas.get("project_id") for canvas in canvases or []}
+            projects = [
+                project
+                for project in projects or []
+                if project.get("created_by") == user.id or project.get("id") in visible_project_ids
+            ]
+        return {"projects": projects or [], "canvases": canvases or [], "trash_count": 0}
+
     async def create_project(self, user: CurrentUser, team_id: str, name: str, description: str = "") -> Dict[str, Any]:
         await self._require_member(user.id, team_id)
         rows = await self._request(
@@ -2365,7 +2442,7 @@ class SupabaseTeamStore:
             visibility_filter = f"&or=(visibility.eq.team,created_by.eq.{quote(user.id, safe='')})"
         return await self._request(
             "GET",
-            f"/canvases?team_id=eq.{project['team_id']}&project_id=eq.{project_id}{visibility_filter}&order=updated_at.desc&select=id,team_id,project_id,title,version,visibility,created_by,updated_by,created_at,updated_at",
+            f"/canvases?team_id=eq.{project['team_id']}&project_id=eq.{project_id}{visibility_filter}&order=updated_at.desc&select=id,team_id,project_id,title,version,visibility,kind,node_count,created_by,updated_by,created_at,updated_at",
         )
 
     async def create_canvas(self, user: CurrentUser, project_id: str, title: str, canvas_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -2378,6 +2455,8 @@ class SupabaseTeamStore:
                 "project_id": project_id,
                 "title": title.strip() or "未命名画布",
                 "data": canvas_data or {},
+                "kind": str((canvas_data or {}).get("kind") or "classic"),
+                "node_count": len((canvas_data or {}).get("nodes") or []) if isinstance((canvas_data or {}).get("nodes"), list) else 0,
                 "version": 1,
                 "visibility": "private",
                 "created_by": user.id,
@@ -2420,6 +2499,8 @@ class SupabaseTeamStore:
         next_version = int(canvas.get("version") or 1) + 1
         patch = {
             "data": payload.data or {},
+            "kind": str((payload.data or {}).get("kind") or canvas.get("kind") or "classic"),
+            "node_count": len((payload.data or {}).get("nodes") or []) if isinstance((payload.data or {}).get("nodes"), list) else 0,
             "version": next_version,
             "updated_by": user.id,
             "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -3185,6 +3266,14 @@ def active_store():
     return supabase_store or local_store
 
 
+def team_cloud_version() -> str:
+    try:
+        with open(os.path.join(BASE_DIR, "VERSION"), "r", encoding="utf-8") as handle:
+            return (handle.read().strip().splitlines() or [""])[0]
+    except OSError:
+        return ""
+
+
 def require_profile_store() -> SupabaseTeamStore:
     if not supabase_store:
         raise HTTPException(status_code=503, detail="Supabase 用户资料表未配置")
@@ -3326,10 +3415,22 @@ async def resolve_auth_identifier_email(identifier: str) -> str:
     if looks_like_email(identifier):
         return auth_email_required(identifier)
     username = normalize_username(identifier)
+    now = time.monotonic()
+    cached = _username_email_cache.get(username)
+    if cached and cached[1] > now:
+        _username_email_cache.move_to_end(username)
+        return cached[0]
+    if cached:
+        _username_email_cache.pop(username, None)
     profile = await get_user_profile_by_username(username)
     if not profile or not profile.get("email"):
         raise HTTPException(status_code=401, detail="账号或密码错误")
-    return normalize_email(profile["email"])
+    email = normalize_email(profile["email"])
+    _username_email_cache[username] = (email, now + TEAM_AUTH_USERNAME_CACHE_SECONDS)
+    _username_email_cache.move_to_end(username)
+    while len(_username_email_cache) > TEAM_AUTH_USERNAME_CACHE_MAX_ENTRIES:
+        _username_email_cache.popitem(last=False)
+    return email
 
 
 async def legacy_admin_login_without_email_verification(user_id: str, email: str, profile: Optional[Dict[str, Any]]) -> bool:
@@ -3700,17 +3801,35 @@ async def verification_resend(payload: AuthVerificationResendRequest, request: R
     return {"ok": True, "message": "验证码已重新发送。"}
 
 
+def record_request_timing(request: Optional[Request], name: str, started: float) -> None:
+    if not request:
+        return
+    timings = getattr(getattr(request, "state", None), "server_timings", None)
+    if isinstance(timings, list):
+        timings.append(f"{name};dur={(time.perf_counter() - started) * 1000:.1f}")
+
+
 @router.post("/auth/login")
-async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[str, Any]:
+async def login(
+    payload: AuthEmailPasswordRequest,
+    response: Response,
+    request: Request = None,
+) -> Dict[str, Any]:
+    login_started = time.perf_counter()
+    stage_started = time.perf_counter()
     email = await resolve_auth_identifier_email(auth_identifier(payload))
+    record_request_timing(request, "auth_identifier", stage_started)
+    stage_started = time.perf_counter()
     data = await supabase_auth_request("token?grant_type=password", {
         "email": email,
         "password": payload.password,
     })
+    record_request_timing(request, "supabase_auth", stage_started)
     if not data.get("access_token"):
         raise HTTPException(status_code=401, detail="登录失败")
     user = data.get("user") or {}
     user_id = str(user.get("id") or "")
+    stage_started = time.perf_counter()
     if not supabase_user_email_confirmed(user):
         profile = await get_user_profile_by_user_id(user_id)
         if profile and await legacy_admin_login_without_email_verification(user_id, email, profile):
@@ -3719,6 +3838,8 @@ async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[s
             payload_out["legacy_email_verification_bypassed"] = True
             payload_out["user"]["username"] = profile.get("username") or ""
             payload_out["user"]["display_name"] = profile.get("display_name") or profile.get("username") or ""
+            record_request_timing(request, "auth_profile", stage_started)
+            record_request_timing(request, "auth_response", login_started)
             return payload_out
         clear_auth_cookie(response)
         raise HTTPException(status_code=403, detail="请先完成邮箱验证码验证")
@@ -3744,6 +3865,8 @@ async def login(payload: AuthEmailPasswordRequest, response: Response) -> Dict[s
     elif profile:
         payload_out["user"]["username"] = profile.get("username") or ""
         payload_out["user"]["display_name"] = profile.get("display_name") or profile.get("username") or ""
+    record_request_timing(request, "auth_profile", stage_started)
+    record_request_timing(request, "auth_response", login_started)
     return payload_out
 
 
@@ -3795,6 +3918,42 @@ async def team_cloud_me(user: CurrentUser = Depends(require_user)) -> Dict[str, 
     user = await enrich_user_profile(user)
     teams = await maybe_await(active_store().list_user_teams(user))
     return {"user": user.model_dump(), "teams": teams}
+
+
+@router.get("/workspace")
+async def team_cloud_workspace(
+    team_id: str = "",
+    user: CurrentUser = Depends(require_user),
+) -> Dict[str, Any]:
+    user, teams = await asyncio.gather(
+        enrich_user_profile(user),
+        maybe_await(active_store().list_user_teams(user)),
+    )
+    selected_team = next((team for team in teams if str(team.get("id") or "") == team_id), None)
+    if not selected_team:
+        selected_team = teams[0] if teams else None
+    if not selected_team:
+        return {
+            "user": user.model_dump(),
+            "teams": [],
+            "selected_team": None,
+            "projects": [],
+            "canvases": [],
+            "trash_count": 0,
+            "version": team_cloud_version(),
+        }
+    workspace = await maybe_await(
+        active_store().workspace(user, str(selected_team.get("id") or ""), selected_team)
+    )
+    return {
+        "user": user.model_dump(),
+        "teams": teams,
+        "selected_team": selected_team,
+        "projects": workspace.get("projects") or [],
+        "canvases": workspace.get("canvases") or [],
+        "trash_count": int(workspace.get("trash_count") or 0),
+        "version": team_cloud_version(),
+    }
 
 
 async def workbench_account_summary(request: Request) -> Dict[str, Any]:

@@ -15,6 +15,7 @@
         sessions:[],
         selectionRefs:[],
         manualRefs:[],
+        capabilities:null,
         referenceRoles:new Map(),
         selectedResultGroup:[],
         pendingAction:'',
@@ -79,7 +80,7 @@
     }
     function combinedRefs(){
         const seen = new Set();
-        return [...state.selectionRefs, ...state.manualRefs].filter(item => {
+        return state.manualRefs.filter(item => {
             const key = `${item.node_id || ''}|${item.asset_id || ''}|${item.url || ''}`;
             if(!item.url || seen.has(key)) return false;
             seen.add(key);
@@ -111,6 +112,7 @@
     }
     function renderReferences(){
         const refs = combinedRefs();
+        const candidateCount = state.selectionRefs.filter(item => item?.url).length;
         els.refs.innerHTML = refs.length ? refs.map((item, index) => `
             <div class="sia-ref" data-ref-index="${index}">
                 <img src="${escapeHtml(item.preview_url || item.url)}" alt="${escapeHtml(referenceLabel(item, index))}">
@@ -122,8 +124,10 @@
                 </select>
                 <button type="button" data-remove-ref="${index}" title="移除参考图"><i data-lucide="x"></i></button>
             </div>
-        `).join('') : '<div class="sia-empty-ref"><i data-lucide="image-plus"></i><span>选中画布图片或添加参考图</span></div>';
+        `).join('') : `<div class="sia-empty-ref"><i data-lucide="image-plus"></i><span>${candidateCount ? `已选中 ${candidateCount} 张画布图片，点击添加到引用` : '选中画布图片或添加参考图'}</span></div>`;
         els.refCount.textContent = `${refs.length}/10`;
+        if(els.addSelection) els.addSelection.disabled = candidateCount === 0;
+        if(els.clearRefs) els.clearRefs.disabled = refs.length === 0;
         els.refCount.classList.toggle('is-over-limit', refs.length > 10);
         if(refs.length > 10) notify(`已引用 ${refs.length} 张图片，请减少到 10 张后再生成`, 'error');
         els.refs.querySelectorAll('[data-remove-ref]').forEach(button => {
@@ -131,7 +135,6 @@
                 const target = refs[Number(button.dataset.removeRef)];
                 state.referenceRoles.delete(referenceKey(target));
                 state.manualRefs = state.manualRefs.filter(item => referenceKey(item) !== referenceKey(target));
-                state.selectionRefs = state.selectionRefs.filter(item => referenceKey(item) !== referenceKey(target));
                 renderReferences();
             });
         });
@@ -151,7 +154,9 @@
         }[action] || '图片创作';
     }
     function modelPolicy(model){
-        return IMAGE_MODELS.find(item => item.id === model) || IMAGE_MODELS[1];
+        return state.capabilities?.models?.find(item => item.id === model)
+            || IMAGE_MODELS.find(item => item.id === model)
+            || IMAGE_MODELS[1];
     }
     function modelOptions(selected){
         return IMAGE_MODELS.map(item => `<option value="${item.id}" ${item.id === selected ? 'selected' : ''}>${item.label} · ${item.cost} 灵感点</option>`).join('');
@@ -179,6 +184,9 @@
                 <label class="sia-model-control"><span>模型</span><select data-plan-field="model">${modelOptions(plan.model)}</select></label>
                 <label><span>比例</span><select data-plan-field="ratio">
                     ${['auto','1:1','4:5','16:9','9:16','4:3','3:4','21:9'].map(value => `<option value="${value}" ${value === plan.ratio ? 'selected' : ''}>${value === 'auto' ? '自动' : value}</option>`).join('')}
+                </select></label>
+                <label><span>分辨率</span><select data-plan-field="resolution">
+                    ${(modelPolicy(plan.model).resolutions || ['1k','2k','4k']).map(value => `<option value="${value}" ${value === (plan.resolution || '1k') ? 'selected' : ''}>${value.toUpperCase()}</option>`).join('')}
                 </select></label>
                 <label><span>数量</span><input data-plan-field="count" type="number" min="1" max="8" value="${Number(plan.count) || 1}"></label>
             </div>
@@ -261,8 +269,10 @@
     function continueFromResult(result, prefix, action='', count=1){
         state.selectedResultGroup = state.results.filter(item => item.plan_id === result.plan_id)
             .sort((left, right) => Number(left.sequence || 0) - Number(right.sequence || 0));
-        state.manualRefs = [{...result, node_id:result.target_node_id, name:'上一轮结果', role:'edit_target'}];
-        state.referenceRoles.set(referenceKey(state.manualRefs[0]), 'edit_target');
+        const editTarget = {...result, node_id:result.target_node_id, name:'上一轮结果', role:'edit_target'};
+        state.manualRefs = state.manualRefs.filter(item => (state.referenceRoles.get(referenceKey(item)) || item.role) !== 'edit_target');
+        addManualReferences(editTarget);
+        state.referenceRoles.set(referenceKey(editTarget), 'edit_target');
         state.pendingAction = action;
         els.count.value = String(count);
         els.input.value = prefix;
@@ -417,8 +427,10 @@
         if(resultMatch && state.selectedResultGroup.length){
             const selected = state.selectedResultGroup[Number(resultMatch[1]) - 1];
             if(selected){
-                state.manualRefs = [{...selected, node_id:selected.target_node_id, name:`第 ${resultMatch[1]} 张结果`, role:'edit_target'}];
-                state.referenceRoles.set(referenceKey(state.manualRefs[0]), 'edit_target');
+                const editTarget = {...selected, node_id:selected.target_node_id, name:`第 ${resultMatch[1]} 张结果`, role:'edit_target'};
+                state.manualRefs = state.manualRefs.filter(item => (state.referenceRoles.get(referenceKey(item)) || item.role) !== 'edit_target');
+                addManualReferences(editTarget);
+                state.referenceRoles.set(referenceKey(editTarget), 'edit_target');
                 renderReferences();
             }
         }
@@ -439,6 +451,7 @@
                     message,
                     context,
                     ratio:els.ratio.value,
+                    resolution:els.resolution.value,
                     count:Number(els.count.value) || 1,
                     model:els.model.value,
                     quality:modelPolicy(els.model.value).quality,
@@ -702,8 +715,10 @@
                 <div class="sia-ref-head"><span>图片引用</span><b data-ref-count>0/10</b></div>
                 <div class="sia-refs" data-refs></div>
                 <div class="sia-source-actions">
+                    <button type="button" data-add-selection><i data-lucide="plus"></i><span>添加选中图片</span></button>
                     <button type="button" data-upload><i data-lucide="upload"></i><span>上传图片</span></button>
                     <button type="button" data-assets><i data-lucide="library"></i><span>素材库</span></button>
+                    <button type="button" data-clear-refs><i data-lucide="trash-2"></i><span>清空</span></button>
                     <input type="file" accept="image/*" multiple hidden data-file-input>
                 </div>
                 <div class="sia-quick">
@@ -725,6 +740,7 @@
                 <div class="sia-settings">
                     <label class="sia-model-control"><span>模型</span><select data-model>${modelOptions('nano-banana-2')}</select></label>
                     <label><span>比例</span><select data-ratio><option value="auto">自动</option><option>1:1</option><option>4:5</option><option>16:9</option><option>9:16</option></select></label>
+                    <label><span>分辨率</span><select data-resolution><option value="1k">1K</option><option value="2k">2K</option><option value="4k">4K</option></select></label>
                     <label><span>数量</span><input data-count type="number" min="1" max="8" value="1"></label>
                 </div>
                 <button class="sia-primary" type="button" data-create disabled><i data-lucide="arrow-up"></i><span>生成方案</span></button>
@@ -747,6 +763,7 @@
         els.input = root.querySelector('[data-input]');
         els.mentions = root.querySelector('[data-mentions]');
         els.ratio = root.querySelector('[data-ratio]');
+        els.resolution = root.querySelector('[data-resolution]');
         els.count = root.querySelector('[data-count]');
         els.model = root.querySelector('[data-model]');
         els.create = root.querySelector('[data-create]');
@@ -759,9 +776,19 @@
         els.assetGrid = root.querySelector('[data-asset-grid]');
         els.assetSearch = root.querySelector('[data-asset-search]');
         els.sessionHistory = root.querySelector('[data-session-history-panel]');
+        els.addSelection = root.querySelector('[data-add-selection]');
+        els.clearRefs = root.querySelector('[data-clear-refs]');
         els.collapse.addEventListener('click', () => setCollapsed(!root.classList.contains('is-collapsed')));
         root.querySelector('[data-expand]').addEventListener('click', () => setCollapsed(false));
         root.querySelector('[data-upload]').addEventListener('click', () => els.fileInput.click());
+        els.addSelection.addEventListener('click', () => {
+            if(addManualReferences(state.selectionRefs)) notify(`已添加 ${state.selectionRefs.length} 张画布图片`, 'success');
+        });
+        els.clearRefs.addEventListener('click', () => {
+            state.manualRefs = [];
+            state.referenceRoles.clear();
+            renderReferences();
+        });
         root.querySelector('[data-assets]').addEventListener('click', openAssetPicker);
         root.querySelector('[data-close-assets]').addEventListener('click', () => { els.assetPicker.hidden = true; });
         root.querySelector('[data-new-session]').addEventListener('click', createNewSession);
@@ -797,6 +824,11 @@
         if(!global.SmartImageAgentBridge){ console.error('[smart-image-agent] bridge unavailable'); return; }
         state.initialized = true;
         buildUi();
+        api('/api/smart-image-agent/capabilities').then(capabilities => {
+            state.capabilities = capabilities;
+            const selected = els.model.value;
+            els.model.innerHTML = modelOptions(selected);
+        }).catch(() => {});
         state.unsubscribe = global.SmartImageAgentBridge.subscribeSelection(selection => {
             state.selectionRefs = Array.isArray(selection) ? selection : [];
             renderReferences();

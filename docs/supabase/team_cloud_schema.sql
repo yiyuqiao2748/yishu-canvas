@@ -72,6 +72,8 @@ create table if not exists public.canvases (
   data jsonb not null default '{}'::jsonb,
   version integer not null default 1,
   visibility text not null default 'team' check (visibility in ('private', 'team')),
+  kind text not null default 'classic' check (kind in ('classic', 'smart')),
+  node_count integer not null default 0 check (node_count >= 0),
   created_by uuid not null,
   updated_by uuid not null,
   created_at timestamptz not null default now(),
@@ -263,8 +265,9 @@ create table if not exists public.smart_image_agent_plans (
   "references" jsonb not null default '[]'::jsonb,
   source_node_ids jsonb not null default '[]'::jsonb,
   ratio text not null default 'auto',
+  resolution text not null default '1k' check (resolution in ('1k', '2k', '4k')),
   count integer not null default 1 check (count between 1 and 8),
-  quality text not null default 'standard' check (quality in ('standard', 'pro')),
+  quality text not null default 'standard' check (quality in ('standard', 'pro', 'vip')),
   provider_id text not null default 'custom-api',
   model text not null,
   fallback_used boolean not null default false,
@@ -300,10 +303,12 @@ create table if not exists public.smart_image_agent_runs (
 
 create index if not exists idx_team_members_user_id on public.team_members(user_id);
 create index if not exists idx_user_profiles_username on public.user_profiles(username);
+create index if not exists idx_user_profiles_username_lower on public.user_profiles(lower(username));
 create index if not exists idx_pending_user_profiles_email on public.pending_user_profiles(email);
 create index if not exists idx_pending_user_profiles_username on public.pending_user_profiles(username);
 create index if not exists idx_projects_team_id on public.projects(team_id);
 create index if not exists idx_canvases_project_id on public.canvases(project_id);
+create index if not exists idx_canvases_team_project_updated on public.canvases(team_id, project_id, updated_at desc);
 create index if not exists idx_assets_team_id on public.assets(team_id);
 create index if not exists idx_generation_logs_team_id on public.generation_logs(team_id);
 create index if not exists idx_api_usage_logs_user_time on public.api_usage_logs(user_id, created_at desc);
@@ -330,6 +335,20 @@ alter table public.api_providers add column if not exists updated_by uuid;
 alter table public.api_usage_logs add column if not exists provider_points_charged integer not null default 0;
 alter table public.api_usage_logs add column if not exists estimated_cost_cny numeric(12,4) not null default 0;
 alter table public.canvases add column if not exists visibility text not null default 'team';
+alter table public.canvases add column if not exists kind text not null default 'classic';
+alter table public.canvases add column if not exists node_count integer not null default 0;
+update public.canvases
+set kind = case when lower(coalesce(data->>'kind', kind, 'classic')) = 'smart' then 'smart' else 'classic' end,
+    node_count = case when jsonb_typeof(data->'nodes') = 'array' then jsonb_array_length(data->'nodes') else 0 end;
+alter table public.canvases drop constraint if exists canvases_kind_check;
+alter table public.canvases add constraint canvases_kind_check check (kind in ('classic', 'smart'));
+alter table public.canvases drop constraint if exists canvases_node_count_check;
+alter table public.canvases add constraint canvases_node_count_check check (node_count >= 0);
+alter table public.smart_image_agent_plans add column if not exists resolution text not null default '1k';
+alter table public.smart_image_agent_plans drop constraint if exists smart_image_agent_plans_resolution_check;
+alter table public.smart_image_agent_plans add constraint smart_image_agent_plans_resolution_check check (resolution in ('1k', '2k', '4k'));
+alter table public.smart_image_agent_plans drop constraint if exists smart_image_agent_plans_quality_check;
+alter table public.smart_image_agent_plans add constraint smart_image_agent_plans_quality_check check (quality in ('standard', 'pro', 'vip'));
 alter table public.assets add column if not exists visibility text not null default 'team';
 create index if not exists idx_smart_image_agent_sessions_history on public.smart_image_agent_sessions(user_id, canvas_id, archived_at, last_activity_at desc);
 with ranked_smart_image_agent_plans as (
