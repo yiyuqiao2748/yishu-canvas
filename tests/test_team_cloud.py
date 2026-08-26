@@ -739,6 +739,39 @@ class TeamCloudAuthRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("auth_profile;dur=", timings)
         self.assertIn("auth_response;dur=", timings)
 
+    async def test_admin_login_returns_verified_team_roles_without_bootstrap(self):
+        response = Response()
+        request = SimpleNamespace(state=SimpleNamespace(server_timings=[]))
+        auth_mock = AsyncMock(return_value={
+            "access_token": "session-token",
+            "user": {
+                "id": "owner-1",
+                "email": "owner@example.com",
+                "email_confirmed_at": "2026-08-09T00:00:00Z",
+                "user_metadata": {"username": "owner", "display_name": "Owner"},
+            },
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = LocalTeamStore(str(Path(tmp) / "team_cloud.json"))
+            store.create_team(CurrentUser(id="owner-1", email="owner@example.com"), "Design Lab")
+            with patch.object(team_cloud, "resolve_auth_identifier_email", AsyncMock(return_value="owner@example.com")), \
+                 patch.object(team_cloud, "supabase_auth_request", auth_mock), \
+                 patch.object(team_cloud, "active_store", return_value=store):
+                payload = await team_cloud.login(
+                    team_cloud.AuthEmailPasswordRequest(
+                        identifier="owner@example.com",
+                        password="secret-123",
+                        admin_login=True,
+                    ),
+                    response,
+                    request,
+                )
+
+        self.assertTrue(payload["is_admin"])
+        self.assertEqual(payload["teams"][0]["role"], "owner")
+        self.assertIn("auth_roles;dur=", ",".join(request.state.server_timings))
+
     async def test_team_api_model_fetch_requires_key(self):
         with self.assertRaises(HTTPException) as error:
             await team_cloud.fetch_team_api_models_from_config({
@@ -1595,6 +1628,15 @@ class TeamCloudStaticUiTests(unittest.TestCase):
 
         login_source = team_cloud_py.split('@router.post("/auth/login")', 1)[1].split('@router.post("/auth/recover")', 1)[0]
         self.assertEqual(login_source.count("get_user_profile_by_user_id(str(user.get(\"id\") or \"\"))"), 0)
+
+    def test_admin_login_does_not_wait_for_full_bootstrap(self):
+        root = Path(__file__).resolve().parents[1]
+        workbench_script = (root / "static" / "js" / "workbench.js").read_text(encoding="utf-8")
+
+        self.assertIn("admin_login: authModalMode === 'admin'", workbench_script)
+        admin_login_source = workbench_script.split("if(authModalMode === 'admin')", 1)[1].split("closeAuthModal();", 1)[0]
+        self.assertIn("if(!data.is_admin)", admin_login_source)
+        self.assertNotIn("await loadCurrentUser()", admin_login_source)
 
     def test_canvas_list_uses_cached_workspace_before_background_refresh(self):
         root = Path(__file__).resolve().parents[1]

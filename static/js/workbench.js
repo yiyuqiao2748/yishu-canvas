@@ -521,7 +521,11 @@
                 data = await fetchJson('/api/team-cloud/auth/login', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ identifier, password }),
+                    body: JSON.stringify({
+                        identifier,
+                        password,
+                        admin_login: authModalMode === 'admin',
+                    }),
                 });
             }
             if(!data.session_ready) throw new Error('登录未成功，请检查账号状态。');
@@ -531,11 +535,11 @@
             authSignupAwaitingVerification = false;
             authPendingSignupEmail = '';
             if(authModalMode === 'admin') {
-                await loadCurrentUser();
-                if(!hasApiSettingsAccess()) {
+                if(!data.is_admin) {
                     setAuthMessage('当前账户不是管理员，不能进入 API 设置。', 'error');
                     return;
                 }
+                try { performance.mark('admin-auth-ready'); } catch(e) {}
                 closeAuthModal();
                 openPage('api-settings');
                 return;

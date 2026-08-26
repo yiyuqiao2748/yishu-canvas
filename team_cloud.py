@@ -141,6 +141,7 @@ class AuthEmailPasswordRequest(BaseModel):
     identifier: Optional[str] = Field(None, min_length=3, max_length=254)
     username: Optional[str] = Field(None, min_length=3, max_length=32)
     password: str = Field(..., min_length=6, max_length=128)
+    admin_login: bool = False
 
 
 class AuthSignupVerifyRequest(BaseModel):
@@ -3809,6 +3810,26 @@ def record_request_timing(request: Optional[Request], name: str, started: float)
         timings.append(f"{name};dur={(time.perf_counter() - started) * 1000:.1f}")
 
 
+async def append_admin_login_access(
+    payload_out: Dict[str, Any],
+    request: Optional[Request],
+    started: float,
+) -> Dict[str, Any]:
+    user_data = payload_out.get("user") if isinstance(payload_out.get("user"), dict) else {}
+    user = CurrentUser(
+        id=str(user_data.get("id") or ""),
+        email=normalize_email(str(user_data.get("email") or "")),
+        username=str(user_data.get("username") or ""),
+        display_name=str(user_data.get("display_name") or user_data.get("username") or ""),
+        provider="supabase",
+    )
+    teams = await maybe_await(active_store().list_user_teams(user))
+    payload_out["teams"] = teams
+    payload_out["is_admin"] = any(str(team.get("role") or "").lower() in {"owner", "admin"} for team in teams or [])
+    record_request_timing(request, "auth_roles", started)
+    return payload_out
+
+
 @router.post("/auth/login")
 async def login(
     payload: AuthEmailPasswordRequest,
@@ -3838,6 +3859,8 @@ async def login(
             payload_out["legacy_email_verification_bypassed"] = True
             payload_out["user"]["username"] = profile.get("username") or ""
             payload_out["user"]["display_name"] = profile.get("display_name") or profile.get("username") or ""
+            if payload.admin_login:
+                await append_admin_login_access(payload_out, request, stage_started)
             record_request_timing(request, "auth_profile", stage_started)
             record_request_timing(request, "auth_response", login_started)
             return payload_out
@@ -3865,6 +3888,8 @@ async def login(
     elif profile:
         payload_out["user"]["username"] = profile.get("username") or ""
         payload_out["user"]["display_name"] = profile.get("display_name") or profile.get("username") or ""
+    if payload.admin_login:
+        await append_admin_login_access(payload_out, request, stage_started)
     record_request_timing(request, "auth_profile", stage_started)
     record_request_timing(request, "auth_response", login_started)
     return payload_out
