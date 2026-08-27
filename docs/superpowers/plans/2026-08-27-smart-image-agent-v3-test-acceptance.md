@@ -252,8 +252,8 @@ Expected: 相同 \`approval_key\` 重试不重复创建 runs；events sequence �
 Open the local/test canvas twice:
 
 \`\`\`text
-/smart-canvas
-/smart-canvas?image_agent=v3
+/static/smart-canvas.html
+/static/smart-canvas.html?image_agent=v3
 \`\`\`
 
 Expected: 第一条路径加载默认 v2 bundle；第二条路径加载 \`smart-image-agent-v3.min.js\`，展示四个模型和“先确认方案，再执行生成”，且生成/编辑/变体/扩图等操作仅经已验证 bridge 调用。

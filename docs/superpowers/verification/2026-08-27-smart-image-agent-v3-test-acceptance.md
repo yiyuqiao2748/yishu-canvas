@@ -19,15 +19,17 @@
 
 ## Task 3
 
-- team allow-list: NOT RUN — 尚未配置测试服务与单个测试团队。
-- v3 API lifecycle: NOT RUN — 尚未启动连接测试 Supabase 的应用服务。
-- SSE and idempotency: NOT RUN。
-- v2/v3 loader isolation: PASS — 已由 56 项本地契约测试覆盖。
-- browser smoke test: NOT RUN。
+- team allow-list: PASS — 唯一启用团队为 `Smart Image Agent v3 Test`；未列入白名单的测试团队创建 execution 返回 HTTP 403。
+- v3 API lifecycle: PASS — 白名单团队的 execution 初始为 `awaiting_confirmation` 且 `runs=[]`；确认后变为 `queued`；确认前取消变为 `cancelled`；反馈 `rated:5` 已持久化。
+- SSE and idempotency: PASS — 对同一 `approval_key` 重试确认仍返回同一 run；SSE 返回 5 条不重复、递增 sequence 的事件。
+- v2/v3 loader isolation: PASS — 56 项本地契约测试覆盖；本地页面、loader、v2 bundle 与 v3 bundle 均返回 HTTP 200，loader 按 `image_agent=v3` 选择 v3 bundle，默认选择 v2 bundle。
+- browser smoke test: PASS — 手动打开 `http://127.0.0.1:3000/static/smart-canvas.html?image_agent=v3`，确认 v3 外壳显示“图片创作导演”“先确认方案，再执行生成”与生成方案入口；v3 静态实现声明四个模型选项。
+
+说明：验收计划中原写的 `/smart-canvas` 在当前应用中为 404；真实页面路径为 `/static/smart-canvas.html`，已据此完成浏览器验证。API 验收只验证队列、事件与幂等，不调用外部图像模型或生成资产。
 
 ## Final result
 
-- overall: UNCONFIRMED — 数据库 migration 通过；灰度 API 与浏览器验收延期。
+- overall: PASS — 本地/测试环境的 v3 migration、单团队灰度 API、SSE/幂等、loader 隔离与浏览器 smoke 均通过。
 - production accessed: no。
-- test rollout reset: not applicable — 未开启测试团队白名单。
-- evidence: unittest 56/56、静态构建、`migration list` Local/Remote 一致、`db lint --linked --level error` 无 schema error。
+- test rollout reset: yes — 清空 `SMART_IMAGE_AGENT_V3_ENABLED_TEAMS` 并保持 `SMART_IMAGE_AGENT_V3_ALLOW_ALL=0` 后，原白名单团队创建 execution 返回 HTTP 403。
+- evidence: unittest 56/56、静态构建、`migration list` Local/Remote 一致、`db lint --linked --level error` 无 schema error、API lifecycle/SSE 命令输出、浏览器截图。
