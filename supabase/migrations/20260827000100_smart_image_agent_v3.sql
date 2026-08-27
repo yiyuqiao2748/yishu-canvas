@@ -181,4 +181,3 @@ grant all on table public.smart_image_agent_executions to service_role;
 grant all on table public.smart_image_agent_events to service_role;
 grant all on table public.smart_image_agent_feedback to service_role;
 grant execute on function public.smart_image_agent_v3_approve_execution(uuid, uuid, uuid) to service_role;
-
