@@ -30,3 +30,11 @@
 - root cause: CONFIRMED — `static/js/smart-canvas.js` 对单任务提交的 `n` 为 `1`，但 `main.py` 的无参考图 `gpt-image-2` 分支构造上游请求体时未发送 `n: 1`。该 Provider 默认返回两项，后端的 `extract_images(raw_item)` 与前端结果落图逻辑均按全部结果保留。
 - billing: 【无法确认】Provider 的实际计费条目未暴露在本地或团队日志中；为避免低估，验收上限按两张资产处理。
 - action: STOP — 未执行编辑或四图批量；在实现并验证“单次请求最多接受期望数量结果”的修复前，不进行任何进一步付费调用。
+
+## Task 4：本地输出上限修复
+
+- code: PASS — 无参考图 `gpt-image-2` 上游请求现在显式发送 `n: 1`；每次 `generate_one()` 仅保存提取结果中的第一项。
+- focused regression: PASS — `py -m unittest tests.test_gpt_image_output_cap`：2 tests，验证请求参数与模拟双图响应只落一图。
+- broader regression: PASS — `tests.test_smart_image_agent` 56 tests、`tests.test_canvas_log_cleanup` 46 tests、`npm run build:scripts` 与 `git diff --check` 均通过。
+- external calls after fix: `0` — 所有修复验证使用本地 mock；没有读取 Provider key 或生成新图片。
+- deployment state: PENDING RESTART — 本地服务在修复前已启动；下一次真实验证前必须由用户重启该服务进程，使其加载此修复。
