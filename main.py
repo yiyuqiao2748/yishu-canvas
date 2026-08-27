@@ -12042,7 +12042,7 @@ async def generate_ai_image(prompt, size, quality, model, reference_images=None,
                 body["image_urls"] = [reference_to_data_url(ref, max_size=1536) for ref in image_refs[:ONLINE_IMAGE_REFERENCE_MAX]]
             response = await client.post(gen_url, headers=api_headers(provider=provider, model=model), json=body)
         elif is_gpt2 and not image_refs and not mask_refs:
-            body = {"model": model, "prompt": prompt, "size": size}
+            body = {"model": model, "prompt": prompt, "size": size, "n": 1}
             if quality:
                 body["quality"] = quality
             response = await client.post(gen_url, headers=api_headers(provider=provider, model=model), json=body)
@@ -14737,6 +14737,7 @@ async def build_online_image_result(payload: OnlineImageRequest, request: Option
             image_items = extract_images(raw_item) if isinstance(raw_item, dict) else [image_data]
         except HTTPException:
             image_items = [image_data]
+        image_items = image_items[:1]
         local_urls = []
         local_items = []
         for item in image_items:
