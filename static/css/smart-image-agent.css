@@ -71,17 +71,28 @@ body.smart-image-agent-v2-open.smart-image-agent-v2-collapsed .shell { width:cal
     border-bottom:1px solid rgba(255,255,255,.08);
 }
 .sia-canvas-controls button {
-    width:28px;
-    height:28px;
+    width:auto;
+    min-width:52px;
+    height:32px;
+    padding:0 8px;
     display:grid;
     place-items:center;
     color:#aeb7c4;
     background:rgba(255,255,255,.045);
     border:1px solid rgba(255,255,255,.08);
     border-radius:5px;
+    font-size:12px;
+    font-weight:700;
+    white-space:nowrap;
 }
 .sia-canvas-controls button:hover { color:#fff; background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.18); }
 .sia-canvas-controls svg { width:15px; height:15px; }
+.sia-section-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 8px; color:#dce2ea; font-size:13px; font-weight:800; }
+.sia-section-head > span { color:#8d98a8; font-size:12px; }
+.sia-section-head button { min-height:30px; padding:0 9px; color:#cbd3de; background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.1); border-radius:5px; font-size:12px; font-weight:700; white-space:nowrap; }
+.sia-reference-actions { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 4px; }
+.sia-reference-actions button,.sia-reference-actions .sia-secondary { width:auto; min-height:32px; margin:0; padding:0 10px; display:inline-flex; align-items:center; color:#cbd3de; background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.1); border-radius:5px; font-size:12px; font-weight:700; }
+.sia-reference-actions .sia-secondary { cursor:pointer; }
 .sia-activity { flex:1; min-height:0; overflow:auto; padding:14px; scrollbar-width:thin; scrollbar-color:#3c424c transparent; }
 .sia-context,.sia-activity-section { min-width:0; }
 .sia-activity-section { margin-top:16px; }
@@ -139,9 +150,12 @@ body.smart-image-agent-v2-open.smart-image-agent-v2-collapsed .shell { width:cal
 }
 .sia-quick button:hover { color:#fff; border-color:#505864; }
 .sia-composer { flex:0 0 auto; position:relative; margin:0; padding:10px; background:#181b20; border-top:1px solid #2b3038; z-index:7; }
+.sia-composer-label { display:block; margin:0 0 7px; color:#eef1f6; font-size:13px; font-weight:800; }
 .sia-composer:focus-within { border-color:rgba(255,107,95,.65); box-shadow:0 0 0 2px rgba(255,107,95,.08); }
-.sia-composer textarea { width:100%; min-height:72px; resize:none; color:#edf0f4; background:transparent; border:0; outline:0; font-size:12px; line-height:1.55; }
+.sia-composer textarea { box-sizing:border-box; width:100%; min-height:76px; padding:9px 10px; resize:vertical; color:#edf0f4; background:#111318; border:1px solid #303640; border-radius:6px; outline:0; font-size:13px; line-height:1.55; }
 .sia-composer textarea::placeholder { color:#636d7c; }
+.sia-composer-controls { display:grid; grid-template-columns:minmax(0,1fr) 96px 58px; gap:7px; margin:9px 0; }
+.sia-composer-controls select,.sia-composer-controls input { width:100%; min-width:0; height:34px; padding:0 8px; color:#e8edf4; background:#111318; border:1px solid #303640; border-radius:5px; font-size:12px; }
 .sia-settings { display:grid; grid-template-columns:minmax(0,1fr) 74px 64px; gap:6px; margin:8px 0; }
 .sia-settings label,.sia-plan-controls label { min-width:0; display:flex; flex-direction:column; gap:4px; color:#707b8a; font-size:9px; font-weight:750; }
 .sia-model-control { grid-column:1/-1; }
@@ -178,8 +192,16 @@ body.smart-image-agent-v2-open.smart-image-agent-v2-collapsed .shell { width:cal
 .sia-secondary:hover { color:#f2f4f7; border-color:#657080; }
 .sia-plan { margin-top:12px; padding:11px; background:#15181d; border:1px solid #30353e; border-radius:8px; }
 .sia-plan-head { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; }
+.sia-plan-section-title { margin:0 0 7px; color:#eef1f6; font-size:13px; font-weight:800; }
+.sia-plan-head { font-size:12px; }
 .sia-plan-head span { color:#fff; font-weight:800; }
-.sia-plan-head strong { color:#80d1b0; font-size:9px; font-weight:750; }
+.sia-plan-head strong { color:#80d1b0; font-size:12px; font-weight:750; }
+.sia-activity [data-plan] { margin-top:14px; padding:11px; background:#15181d; border:1px solid #30353e; border-radius:8px; }
+.sia-activity [data-plan] textarea { box-sizing:border-box; width:100%; min-height:72px; margin:8px 0; padding:8px 9px; color:#dce2ea; background:#101217; border:1px solid #303640; border-radius:5px; font-size:12px; line-height:1.5; }
+.sia-activity [data-plan] textarea:disabled { color:#aeb8c5; opacity:1; }
+.sia-plan-controls { grid-template-columns:minmax(0,1fr) 78px 64px; }
+.sia-plan-controls label { font-size:11px; }
+.sia-plan-cost { font-size:12px; }
 .sia-plan p { max-height:72px; overflow:auto; margin:9px 0; color:#aeb6c2; font-size:11px; line-height:1.5; }
 .sia-plan-references { display:flex; flex-wrap:wrap; gap:5px; margin:0 0 9px; }
 .sia-plan-references span { padding:3px 6px; color:#a9c8e9; background:rgba(94,154,217,.12); border:1px solid rgba(94,154,217,.24); border-radius:5px; font-size:9px; }
@@ -205,7 +227,7 @@ body.smart-image-agent-v2-open.smart-image-agent-v2-collapsed .shell { width:cal
 .sia-result-actions button,.sia-result-actions a { display:grid; place-items:center; color:#8f99a8; background:transparent; border-right:1px solid #292e36; text-decoration:none; }
 .sia-result-actions button:hover,.sia-result-actions a:hover { color:#fff; background:rgba(255,255,255,.05); }
 .sia-result-actions svg { width:14px; height:14px; }
-.sia-notice { position:absolute; left:12px; right:12px; bottom:calc(100% + 12px); z-index:6; padding:9px 10px; color:#dfe4eb; background:#222730; border:1px solid #363d48; border-radius:6px; box-shadow:0 12px 34px rgba(0,0,0,.35); font-size:10px; }
+.sia-notice { position:absolute; left:12px; right:12px; bottom:calc(100% + 12px); z-index:6; padding:9px 10px; color:#dfe4eb; background:#222730; border:1px solid #363d48; border-radius:6px; box-shadow:0 12px 34px rgba(0,0,0,.35); font-size:12px; }
 .sia-notice[data-kind="error"] { color:#ffd4d1; border-color:rgba(230,93,85,.55); background:#321d1e; }
 .sia-notice[data-kind="success"] { color:#c8f5df; border-color:rgba(71,186,140,.5); background:#152923; }
 .sia-mentions { position:absolute; left:10px; right:10px; bottom:calc(100% + 6px); z-index:8; max-height:228px; overflow:auto; padding:5px; background:#111318; border:1px solid #353b46; border-radius:6px; box-shadow:0 16px 38px rgba(0,0,0,.42); }
