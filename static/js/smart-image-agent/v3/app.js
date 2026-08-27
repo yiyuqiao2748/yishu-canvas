@@ -33,6 +33,12 @@ import { createShell } from './shell.js';
         clearTimeout(notify.timer);
         if(message) notify.timer = setTimeout(() => { els.notice.hidden = true; }, 4200);
     }
+    function syncWorkspaceState(){
+        const completedRuns = (state.execution?.runs || []).filter(run => run.status === 'succeeded' && run.result?.url);
+        els.root.dataset.executionState = state.execution?.status || 'idle';
+        els.root.classList.toggle('has-results', completedRuns.length > 0);
+        els.workspaceStage.hidden = !state.execution && els.referencePanel.hidden;
+    }
     function render(){
         renderPlanCard(els, state.execution, {update:updatePlan, approve:approve, cancel:cancel});
         renderActivity(els, state.execution, state.events);
@@ -42,6 +48,7 @@ import { createShell } from './shell.js';
             'expand-image':run => continueFromResult(run, '扩图并补全背景'),
             'save-result':saveResult
         });
+        syncWorkspaceState();
     }
     function executionKey(){ return `smartImageAgentV3:${bridge.context().canvas_id || 'local'}:execution`; }
     function sessionKey(){ return `smartImageAgentV3:${bridge.context().canvas_id || 'local'}:session`; }
@@ -156,9 +163,16 @@ import { createShell } from './shell.js';
         bridge = createBridgeAdapter(global); els = createShell();
         state.context = createContextController(bridge, els, notify);
         Object.entries(bridge.canvasControls).forEach(([name, action]) => els.root.querySelector(`[data-canvas="${name}"]`)?.addEventListener('click', action));
+        els.toggleReferences.addEventListener('click', () => {
+            const open = els.referencePanel.hidden;
+            els.referencePanel.hidden = !open;
+            els.toggleReferences.setAttribute('aria-expanded', String(open));
+            syncWorkspaceState();
+        });
         els.details.addEventListener('click', () => { els.eventDetails.open = !els.eventDetails.open; });
         bindComposer(els, create);
         global.SmartImageAgentV3App.initialized = true;
+        syncWorkspaceState();
         try { await ensureSession(); await restore(); } catch(error) { notify(error.message, 'error'); }
     }
     global.SmartImageAgentV3App = {init, initialized:false};

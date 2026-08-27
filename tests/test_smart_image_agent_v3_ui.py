@@ -31,7 +31,7 @@ def run_node(script: str) -> str:
 
 FAKE_DOM = """
 class FakeNode {
-  constructor(){ this.listeners={}; this.dataset={}; this.value=''; this.hidden=true; this.disabled=false; this.textContent=''; this.open=false; this.files=[]; this.innerHTML=''; }
+  constructor(){ this.listeners={}; this.dataset={}; this.value=''; this.hidden=true; this.disabled=false; this.textContent=''; this.open=false; this.files=[]; this.innerHTML=''; this.classList={toggle(){}}; }
   addEventListener(type, handler){ (this.listeners[type] ||= []).push(handler); }
   async trigger(type){ for(const handler of this.listeners[type] || []) await handler({target:this, metaKey:false, ctrlKey:false, key:''}); }
   querySelector(){ return new FakeNode(); }
@@ -101,6 +101,20 @@ if(!root.innerHTML.includes('aria-label="当前方案"') || !root.innerHTML.incl
         self.assertIn(".sia-canvas-controls button", css)
         self.assertIn("white-space:nowrap", css)
         self.assertIn(".sia-composer-controls", css)
+
+    def test_shell_uses_a_bottom_workspace_dock(self):
+        source = SHELL_PATH.read_text(encoding="utf-8")
+        self.assertIn("smart-image-agent-v3-workspace", source)
+        self.assertIn("smart-image-agent-workspace", source)
+        self.assertIn("data-toggle-references", source)
+        self.assertIn("data-reference-panel", source)
+
+    def test_workspace_css_preserves_canvas_width_and_has_compact_stages(self):
+        css = CSS_PATH.read_text(encoding="utf-8")
+        self.assertIn("body.smart-image-agent-v3-workspace .shell", css)
+        self.assertIn(".smart-image-agent-workspace", css)
+        self.assertIn(".sia-workspace-stage", css)
+        self.assertIn(".sia-workspace-composer", css)
 
 
 if __name__ == "__main__":

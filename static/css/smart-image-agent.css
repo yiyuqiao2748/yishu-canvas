@@ -282,3 +282,67 @@ body.smart-image-agent-v2-open.smart-image-agent-v2-collapsed .shell { width:cal
     .sia-refs { grid-template-columns:repeat(4,minmax(0,1fr)); }
     .sia-results { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+/* v3 workspace: keep the canvas wide and surface only the active creation stage. */
+body.smart-image-agent-v3-workspace .shell { width:100vw; }
+.smart-image-agent-workspace {
+    inset:auto auto 20px 50%;
+    width:min(760px,calc(100vw - 48px));
+    min-width:0;
+    max-width:none;
+    max-height:calc(100vh - 116px);
+    transform:translateX(-50%);
+    border:1px solid rgba(255,255,255,.13);
+    border-radius:14px;
+    box-shadow:0 18px 54px rgba(0,0,0,.42);
+    overflow:hidden;
+}
+.sia-workspace-header {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    min-height:48px;
+    padding:8px 12px;
+    border-bottom:1px solid rgba(255,255,255,.08);
+}
+.sia-workspace-header .sia-brand strong { font-size:14px; }
+.sia-workspace-header .sia-brand span { font-size:11px; }
+.sia-workspace-actions,.sia-workspace-actions > button,.sia-workspace-header .sia-canvas-controls { display:flex; align-items:center; gap:6px; }
+.sia-workspace-actions > button { height:30px; padding:0 9px; color:#cbd3de; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:6px; font-size:12px; font-weight:700; white-space:nowrap; }
+.sia-workspace-actions > button span { color:#8d98a8; font-size:11px; }
+.sia-workspace-header .sia-canvas-controls { padding:0; border:0; }
+.sia-workspace-header .sia-canvas-controls button { min-width:42px; height:30px; padding:0 7px; }
+.sia-workspace-stage { max-height:min(42vh,400px); overflow:auto; padding:12px; scrollbar-width:thin; scrollbar-color:#3c424c transparent; }
+.smart-image-agent-workspace[data-execution-state="idle"] .sia-activity-section,.smart-image-agent-workspace[data-execution-state="idle"] .sia-results-section { display:none; }
+.sia-workspace-stage .sia-reference-section { margin-bottom:12px; }
+.sia-workspace-stage [data-plan] { margin-top:0; }
+.sia-workspace-stage .sia-activity-section { margin-top:12px; }
+.sia-workspace-stage .sia-results-section { margin-top:12px; }
+.sia-workspace-stage .sia-results { display:flex; gap:8px; overflow:auto; padding-bottom:2px; }
+.sia-workspace-stage .sia-result { flex:0 0 220px; }
+.sia-workspace-stage .sia-result-actions { grid-template-columns:repeat(2,minmax(0,1fr)); height:auto; }
+.sia-workspace-stage .sia-result-actions button { min-height:30px; padding:4px; border-bottom:1px solid #292e36; font-size:11px; white-space:normal; }
+.sia-workspace-composer { display:grid; grid-template-columns:minmax(0,1fr) 150px; gap:8px; padding:12px; border-top:1px solid rgba(255,255,255,.1); background:rgba(20,23,28,.98); }
+.sia-workspace-composer .sia-composer-label,.sia-workspace-composer textarea { grid-column:1/-1; }
+.sia-workspace-composer .sia-composer-label { margin:0; }
+.sia-workspace-composer textarea { min-height:68px; resize:vertical; }
+.sia-workspace-composer .sia-composer-controls { margin:0; }
+.sia-workspace-composer .sia-primary { height:34px; align-self:stretch; }
+.sia-workspace-composer [data-notice] { grid-column:1/-1; }
+
+@media (max-width:760px) {
+    body.smart-image-agent-v3-workspace .shell { width:100vw; height:100vh; }
+    .smart-image-agent-workspace { inset:auto 0 0; width:100%; max-height:76vh; border-right:0; border-bottom:0; border-left:0; border-radius:14px 14px 0 0; transform:none; }
+    .sia-workspace-header { align-items:flex-start; }
+    .sia-workspace-actions { justify-content:flex-end; flex-wrap:wrap; }
+    .sia-workspace-header .sia-canvas-controls { flex-wrap:wrap; justify-content:flex-end; }
+    .sia-workspace-composer { grid-template-columns:1fr; }
+}
+
+@media (max-width:500px) {
+    .smart-image-agent-workspace { max-height:82vh; }
+    .sia-workspace-header .sia-brand span,.sia-workspace-header .sia-canvas-controls { display:none; }
+    .sia-workspace-header { min-height:42px; }
+    .sia-workspace-composer .sia-composer-controls { grid-template-columns:1fr 1fr 60px; }
+}
