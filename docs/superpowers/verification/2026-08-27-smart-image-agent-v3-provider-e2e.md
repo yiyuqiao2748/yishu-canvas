@@ -22,3 +22,11 @@
 - project: PASS — 创建隔离测试项目 `Provider E2E 2026-08-28`，ID 为 `f24e7314-ab1f-4d90-8cd6-22ca6ec3cc30`。
 - canvas: PASS — 创建空 Smart Canvas，ID 为 `e9e88682-51b3-4eb0-8479-22c3bce6f702`。
 - paid images attempted: `0 / 6`。
+
+## Task 3：真实文生图的安全停止
+
+- request: UNEXPECTED — UI 选择 `gpt-image-2`、数量 `1`，且只确认了一次；团队日志记录一条成功的 `custom-api` / `gpt-image-2` 调用。
+- canvas result: UNEXPECTED — 画布返回同一输出节点中的两条不同图片 URL，而不是一条；因此按实际资产保守计为 `2 / 6`。
+- root cause: CONFIRMED — `static/js/smart-canvas.js` 对单任务提交的 `n` 为 `1`，但 `main.py` 的无参考图 `gpt-image-2` 分支构造上游请求体时未发送 `n: 1`。该 Provider 默认返回两项，后端的 `extract_images(raw_item)` 与前端结果落图逻辑均按全部结果保留。
+- billing: 【无法确认】Provider 的实际计费条目未暴露在本地或团队日志中；为避免低估，验收上限按两张资产处理。
+- action: STOP — 未执行编辑或四图批量；在实现并验证“单次请求最多接受期望数量结果”的修复前，不进行任何进一步付费调用。
