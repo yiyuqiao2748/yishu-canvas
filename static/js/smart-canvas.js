@@ -18126,7 +18126,7 @@ async function smartImageAgentRunImageTask(run, plan, options={}){
             scheduleSave();
             return {cancelled:true};
         }
-        return smartImageAgentPlaceResults(outputNode, generated.urls, {...plan, run_id:run?.id || ''}, meta);
+        return smartImageAgentPlaceResults(outputNode, generated.urls.slice(0, 1), {...plan, run_id:run?.id || ''}, meta);
     } catch(error){
         nodes = nodes.filter(node => node.id !== outputNode.id);
         if(canvas) canvas.connections = (canvas.connections || []).filter(conn => conn.from !== outputNode.id && conn.to !== outputNode.id);
