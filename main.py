@@ -75,6 +75,15 @@ from smart_image_agent import (
     SMART_IMAGE_AGENT_STANDARD_MODEL,
     SupabaseSmartImageAgentStore,
 )
+from smart_image_agent_v3 import (
+    ImageAgentV3Approval,
+    ImageAgentV3ExecutionCreate,
+    ImageAgentV3FeedbackCreate,
+    ImageAgentV3PlanUpdate,
+    LocalSmartImageAgentV3Store,
+    SupabaseSmartImageAgentV3Store,
+    is_smart_image_agent_v3_rollout_enabled,
+)
 from team_storage import r2_client, save_generated_file_from_path, settings as team_storage_settings
 
 QUIET_ACCESS_PATHS = {
@@ -399,6 +408,11 @@ SMART_IMAGE_AGENT_STORE = (
     SupabaseSmartImageAgentStore(team_supabase_store)
     if team_supabase_store
     else LocalSmartImageAgentStore(os.path.join(DATA_DIR, "smart_image_agent.json"))
+)
+SMART_IMAGE_AGENT_V3_STORE = (
+    SupabaseSmartImageAgentV3Store(team_supabase_store, SMART_IMAGE_AGENT_STORE)
+    if team_supabase_store
+    else LocalSmartImageAgentV3Store(os.path.join(DATA_DIR, "smart_image_agent_v3.json"), SMART_IMAGE_AGENT_STORE)
 )
 CONVERSATION_DIR = os.path.join(DATA_DIR, "conversations")
 CANVAS_DIR = os.path.join(DATA_DIR, "canvases")
@@ -842,6 +856,7 @@ def reload_env_globals():
     避免保存后需要重启才能生效。"""
     global MODELSCOPE_API_KEY, AI_API_KEY, AI_BASE_URL
     global IMAGE_MODELS, CHAT_MODELS, VIDEO_MODELS, MODELSCOPE_CHAT_MODELS
+    global AGENT_CHAT_PROVIDER, AGENT_CHAT_MODEL
     MODELSCOPE_API_KEY = os.getenv("MODELSCOPE_API_KEY", "")
     AI_API_KEY = os.getenv("COMFLY_API_KEY", "")
     AI_BASE_URL = os.getenv("COMFLY_BASE_URL", "https://ai.comfly.chat").rstrip("/")
@@ -864,6 +879,8 @@ def reload_env_globals():
     ])
     _configured = [m.strip() for m in os.getenv("MODELSCOPE_CHAT_MODELS", "").split(",") if m.strip()]
     MODELSCOPE_CHAT_MODELS = list(dict.fromkeys([m for m in [*MODELSCOPE_DEFAULT_CHAT_MODELS, *_configured] if m]))
+    AGENT_CHAT_PROVIDER = os.getenv("AGENT_CHAT_PROVIDER", "modelscope").strip() or "modelscope"
+    AGENT_CHAT_MODEL = os.getenv("AGENT_CHAT_MODEL", MODELSCOPE_DEFAULT_CHAT_MODEL).strip() or MODELSCOPE_DEFAULT_CHAT_MODEL
 
 CHAT_MODELS = model_list("CHAT_MODELS", CHAT_MODEL, ["gpt-4o-mini", "gemini-3.1-flash-image-preview-2k"])
 IMAGE_MODELS = model_list("IMAGE_MODELS", IMAGE_MODEL, ["nano-banana-pro"])
@@ -2862,6 +2879,11 @@ class ApiProviderPayload(BaseModel):
     clear_wallet_key: bool = False
     clear_volcengine_access_key_id: bool = False
     clear_volcengine_secret_access_key: bool = False
+
+class AgentChatRouteUpdate(BaseModel):
+    team_id: str = ""
+    provider_id: str = Field(min_length=1, max_length=120)
+    model: str = Field(min_length=1, max_length=300)
 
 class ChatRequest(BaseModel):
     conversation_id: str = ""
@@ -16806,6 +16828,59 @@ def resolve_agent_model_route(action, context=None, providers=None, require_cred
         return _agent_route_payload(requested_provider, requested_model, False)
     raise HTTPException(status_code=400, detail="未配置 Agent 聊天模型，请配置 modelscope 或 agnes-ai 聊天模型。")
 
+def _agent_chat_route_selectable_providers(providers=None):
+    providers = providers if providers is not None else load_api_providers()
+    items = []
+    for provider in providers:
+        if not provider.get("enabled", True) or not _agent_provider_has_key(provider):
+            continue
+        chat_models = [str(model or "").strip() for model in (provider.get("chat_models") or []) if str(model or "").strip()]
+        if chat_models:
+            items.append({
+                "id": str(provider.get("id") or "").strip(),
+                "name": str(provider.get("name") or provider.get("id") or "").strip(),
+                "chat_models": chat_models,
+                "has_key": True,
+            })
+    return items
+
+def _agent_chat_route_response(providers=None):
+    return {
+        "provider_id": AGENT_CHAT_PROVIDER,
+        "model": AGENT_CHAT_MODEL,
+        "fallback_provider_id": AGENT_FALLBACK_PROVIDER,
+        "fallback_model": AGENT_FALLBACK_CHAT_MODEL,
+        "providers": _agent_chat_route_selectable_providers(providers),
+    }
+
+@app.get("/api/smart-image-agent/v3/admin/chat-route")
+async def get_smart_image_agent_v3_chat_route(
+    team_id: str = "",
+    user: CurrentUser = Depends(require_user),
+):
+    await resolve_admin_team(user, team_id)
+    return _agent_chat_route_response()
+
+@app.put("/api/smart-image-agent/v3/admin/chat-route")
+async def save_smart_image_agent_v3_chat_route(
+    payload: AgentChatRouteUpdate,
+    user: CurrentUser = Depends(require_user),
+):
+    await resolve_admin_team(user, payload.team_id)
+    providers = load_api_providers()
+    provider = _agent_provider_from_list(providers, payload.provider_id)
+    if not provider:
+        raise HTTPException(status_code=400, detail="请选择已启用的聊天平台")
+    if not _agent_provider_supports_model(provider, "chat_models", payload.model):
+        raise HTTPException(status_code=400, detail="请选择该平台已导入的聊天模型")
+    if not _agent_provider_has_key(provider):
+        raise HTTPException(status_code=400, detail="该平台未配置服务端 API Key")
+    update_env_values({"AGENT_CHAT_PROVIDER": provider["id"], "AGENT_CHAT_MODEL": payload.model})
+    reload_env_globals()
+    API_CONFIG_CACHE["data"] = None
+    API_CONFIG_CACHE["expires_at"] = 0
+    return _agent_chat_route_response(load_api_providers())
+
 async def _smart_image_agent_require_team_scope(user: CurrentUser, team_id: str) -> None:
     if not team_id:
         return
@@ -17013,6 +17088,127 @@ async def list_smart_image_agent_results(
 ):
     results = await maybe_await(SMART_IMAGE_AGENT_STORE.list_results(user, session_id, canvas_id))
     return {"results": results}
+
+
+async def _smart_image_agent_v3_execution_for_user(user: CurrentUser, execution_id: str) -> Dict[str, Any]:
+    execution = await maybe_await(SMART_IMAGE_AGENT_V3_STORE.get_execution(user, execution_id))
+    await _smart_image_agent_require_team_scope(user, str(execution.get("team_id") or ""))
+    return execution
+
+
+def _smart_image_agent_v3_rollout_allowed(team_id: str) -> bool:
+    return is_smart_image_agent_v3_rollout_enabled(
+        team_id,
+        os.getenv("SMART_IMAGE_AGENT_V3_ENABLED_TEAMS", ""),
+        os.getenv("SMART_IMAGE_AGENT_V3_ALLOW_ALL", "").strip().lower() in {"1", "true", "yes"},
+    )
+
+
+def _require_smart_image_agent_v3_rollout(team_id: str) -> None:
+    if team_id and not _smart_image_agent_v3_rollout_allowed(team_id):
+        raise HTTPException(status_code=403, detail="Smart Image Agent v3 is not enabled for this team")
+
+
+@app.post("/api/smart-image-agent/v3/executions")
+async def create_smart_image_agent_v3_execution(
+    payload: ImageAgentV3ExecutionCreate,
+    user: CurrentUser = Depends(require_user),
+):
+    session = await maybe_await(SMART_IMAGE_AGENT_STORE.get_session(user, payload.session_id))
+    await _smart_image_agent_require_team_scope(user, str(session.get("team_id") or ""))
+    _require_smart_image_agent_v3_rollout(str(session.get("team_id") or ""))
+    return await maybe_await(SMART_IMAGE_AGENT_V3_STORE.create_execution(user, payload))
+
+
+@app.get("/api/smart-image-agent/v3/executions/{execution_id}")
+async def get_smart_image_agent_v3_execution(
+    execution_id: str,
+    user: CurrentUser = Depends(require_user),
+):
+    return await _smart_image_agent_v3_execution_for_user(user, execution_id)
+
+
+@app.get("/api/smart-image-agent/v3/executions/{execution_id}/events")
+async def stream_smart_image_agent_v3_events(
+    execution_id: str,
+    after_sequence: int = 0,
+    user: CurrentUser = Depends(require_user),
+):
+    await _smart_image_agent_v3_execution_for_user(user, execution_id)
+    events = await maybe_await(SMART_IMAGE_AGENT_V3_STORE.list_events(user, execution_id, max(0, after_sequence)))
+
+    async def event_stream():
+        for event in events:
+            payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+            yield f"id: {event['sequence']}\nevent: {event['type']}\ndata: {payload}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.patch("/api/smart-image-agent/v3/executions/{execution_id}/plan")
+async def update_smart_image_agent_v3_plan(
+    execution_id: str,
+    payload: ImageAgentV3PlanUpdate,
+    user: CurrentUser = Depends(require_user),
+):
+    await _smart_image_agent_v3_execution_for_user(user, execution_id)
+    return await maybe_await(SMART_IMAGE_AGENT_V3_STORE.update_plan(user, execution_id, payload))
+
+
+@app.post("/api/smart-image-agent/v3/executions/{execution_id}/approve")
+async def approve_smart_image_agent_v3_execution(
+    execution_id: str,
+    payload: ImageAgentV3Approval,
+    user: CurrentUser = Depends(require_user),
+):
+    execution = await _smart_image_agent_v3_execution_for_user(user, execution_id)
+    _require_smart_image_agent_v3_rollout(str(execution.get("team_id") or ""))
+    plan = execution["plan"]
+    if plan.get("provider_id") != "custom-api" or plan.get("model") not in SMART_IMAGE_AGENT_MODELS:
+        raise HTTPException(status_code=422, detail="Smart Image Agent only supports configured image models")
+    if execution.get("team_id"):
+        await assert_team_points_available(
+            user,
+            str(execution["team_id"]),
+            "image",
+            str(plan["provider_id"]),
+            str(plan["model"]),
+            int(plan.get("count") or 1),
+        )
+    return await maybe_await(SMART_IMAGE_AGENT_V3_STORE.approve(user, execution_id, payload))
+
+
+@app.post("/api/smart-image-agent/v3/executions/{execution_id}/cancel")
+async def cancel_smart_image_agent_v3_execution(
+    execution_id: str,
+    user: CurrentUser = Depends(require_user),
+):
+    await _smart_image_agent_v3_execution_for_user(user, execution_id)
+    return await maybe_await(SMART_IMAGE_AGENT_V3_STORE.cancel(user, execution_id))
+
+
+@app.post("/api/smart-image-agent/v3/executions/{execution_id}/feedback")
+async def create_smart_image_agent_v3_feedback(
+    execution_id: str,
+    payload: ImageAgentV3FeedbackCreate,
+    user: CurrentUser = Depends(require_user),
+):
+    await _smart_image_agent_v3_execution_for_user(user, execution_id)
+    return await maybe_await(SMART_IMAGE_AGENT_V3_STORE.add_feedback(user, execution_id, payload))
+
+
+@app.get("/api/smart-image-agent/v3/admin/metrics")
+async def get_smart_image_agent_v3_admin_metrics(
+    team_id: str = "",
+    user: CurrentUser = Depends(require_user),
+):
+    selected_team_id, teams = await resolve_admin_team(user, team_id)
+    metrics = await maybe_await(SMART_IMAGE_AGENT_V3_STORE.metrics(selected_team_id))
+    return {"team_id": selected_team_id, "teams": teams, "metrics": metrics}
 
 
 def _safe_agent_text(value, max_len=3000):
