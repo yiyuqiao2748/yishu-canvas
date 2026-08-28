@@ -11823,27 +11823,43 @@ def grsai_task_id(data):
     value = data.get("id") or data.get("task_id") or data.get("taskId") or extract_task_id(data)
     return str(value or "").strip()
 
+async def grsai_reference_data_url(client, ref):
+    value = reference_to_data_url(ref, max_size=1536)
+    if value.startswith("data:image/"):
+        return value
+    ref_url = str((ref or {}).get("url") or "").strip()
+    if not ref_url.startswith(("http://", "https://")):
+        return value
+    ref_file = await yuli_fetch_reference_bytes(client, ref_url)
+    if not ref_file:
+        raise HTTPException(status_code=422, detail="grsai 无法读取参考图，请重新选择或上传该图片后再试。")
+    _name, raw, mime = ref_file
+    if not str(mime or "").startswith("image/"):
+        raise HTTPException(status_code=422, detail="grsai 参考图不是有效图片，请重新选择或上传该图片后再试。")
+    encoded = base64.b64encode(raw).decode("ascii")
+    return compress_data_url_image(f"data:{mime};base64,{encoded}", max_size=1536)
+
 async def generate_grsai_provider_image(prompt, size, model, reference_images=None, provider=None, aspect_ratio="", resolution=""):
     provider = provider or {}
     endpoint = grsai_endpoint_url(provider, "/api/generate")
     refs = [ref for ref in (reference_images or []) if ref.get("url")]
-    images = [reference_to_data_url(ref, max_size=1536) for ref in refs[:ONLINE_IMAGE_REFERENCE_MAX]]
-    images = [item for item in images if item]
     model_id = selected_model(model, "gpt-image-2")
-    body = {
-        "model": model_id,
-        "prompt": prompt,
-        "images": images,
-        "aspectRatio": grsai_aspect_ratio(size, aspect_ratio, model_id),
-        "replyType": "json",
-    }
-    if str(model_id).lower().startswith("nano-banana"):
-        image_size = grsai_image_size(size, resolution)
-        body["imageSize"] = image_size
-        if image_size in {"2K", "4K"}:
-            body["replyType"] = "async"
     timeout = httpx.Timeout(connect=20.0, read=1800.0, write=120.0, pool=20.0)
-    async with upstream_async_client(timeout=timeout) as client:
+    async with upstream_async_client(timeout=timeout, follow_redirects=True) as client:
+        images = [await grsai_reference_data_url(client, ref) for ref in refs[:ONLINE_IMAGE_REFERENCE_MAX]]
+        images = [item for item in images if item]
+        body = {
+            "model": model_id,
+            "prompt": prompt,
+            "images": images,
+            "aspectRatio": grsai_aspect_ratio(size, aspect_ratio, model_id),
+            "replyType": "json",
+        }
+        if str(model_id).lower().startswith("nano-banana"):
+            image_size = grsai_image_size(size, resolution)
+            body["imageSize"] = image_size
+            if image_size in {"2K", "4K"}:
+                body["replyType"] = "async"
         response = await client.post(endpoint, headers=api_headers(provider=provider, model=model_id), json=body)
         try:
             response.raise_for_status()

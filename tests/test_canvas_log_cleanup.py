@@ -790,6 +790,64 @@ class CanvasLogCleanupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0]["type"], "url")
         route.assert_awaited_once_with("一只狗", "4096x4096", "nano-banana-2", [], provider, "1:1", "4k")
 
+    async def test_grsai_downloads_remote_reference_before_submit(self):
+        class FakeResponse:
+            status_code = 200
+            text = '{"data":[{"url":"https://example.test/out.png"}]}'
+            content = (
+                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+                b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+                b"\x00\x00\x00\rIDATx\x9cc\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff"
+                b"\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`\x82"
+            )
+            headers = {"content-type": "image/png"}
+
+            def json(self):
+                return {"data": [{"url": "https://example.test/out.png"}]}
+
+            def raise_for_status(self):
+                return None
+
+        class FakeClient:
+            def __init__(self):
+                self.post_body = None
+                self.reference_url = None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return False
+
+            async def get(self, url):
+                self.reference_url = url
+                return FakeResponse()
+
+            async def post(self, _url, headers=None, json=None):
+                self.post_body = json
+                return FakeResponse()
+
+        provider = {
+            "id": "custom-api",
+            "name": "grsai",
+            "base_url": "https://grsai.dakka.com.cn/v1",
+            "protocol": "openai",
+            "api_key": "test-key",
+        }
+        fake_client = FakeClient()
+
+        with patch.object(main, "upstream_async_client", return_value=fake_client):
+            await main.generate_grsai_provider_image(
+                "保留画面，改成雨夜霓虹",
+                "1024x1024",
+                "gpt-image-2",
+                [{"url": "https://cdn.example.test/reference.png"}],
+                provider,
+            )
+
+        self.assertEqual(fake_client.reference_url, "https://cdn.example.test/reference.png")
+        self.assertTrue(fake_client.post_body["images"][0].startswith("data:image/png;base64,"))
+
     def test_provider_image_edit_mode_defaults_to_multipart(self):
         provider = main.normalize_provider({
             "id": "custom-api-2",
