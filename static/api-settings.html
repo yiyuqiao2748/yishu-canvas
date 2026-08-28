@@ -409,6 +409,28 @@
                             <div id="msLoraList" class="lora-list"></div>
                         </section>
                 </div>
+                    <section id="agentChatRouteBlock" class="block" hidden>
+                        <div class="block-head">
+                            <div>
+                                <div class="block-title">图片 Agent 助手</div>
+                                <div class="block-desc">仅管理员可改。先拉取模型、在选择器勾选 LLM 并保存平台，再在这里选择默认助手。</div>
+                            </div>
+                        </div>
+                        <div class="form">
+                            <label class="field">
+                                <span class="label">聊天平台</span>
+                                <div class="field-frame"><select id="agentChatProviderInput" aria-label="图片 Agent 助手平台"></select></div>
+                            </label>
+                            <label class="field">
+                                <span class="label">助手模型</span>
+                                <div class="field-frame"><select id="agentChatModelInput" aria-label="图片 Agent 助手模型"></select></div>
+                            </label>
+                        </div>
+                        <div class="content-actions">
+                            <button id="saveAgentChatRouteBtn" class="action-btn save-btn" type="button">保存图片 Agent 助手</button>
+                        </div>
+                        <div id="agentChatRouteHint" class="hint"></div>
+                    </section>
             </main>
                 <main id="recommendContent" class="content recommend-content" hidden>
                     <div class="content-head">

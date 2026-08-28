@@ -67,6 +67,11 @@ let rhWorkflowEditorZoom = document.getElementById('rhWorkflowEditorZoom');
 const imageModelList = document.getElementById('imageModelList');
 const chatModelList = document.getElementById('chatModelList');
 const videoModelList = document.getElementById('videoModelList');
+const agentChatRouteBlock = document.getElementById('agentChatRouteBlock');
+const agentChatProviderInput = document.getElementById('agentChatProviderInput');
+const agentChatModelInput = document.getElementById('agentChatModelInput');
+const saveAgentChatRouteBtn = document.getElementById('saveAgentChatRouteBtn');
+const agentChatRouteHint = document.getElementById('agentChatRouteHint');
 const msLoraBlock = document.getElementById('msLoraBlock');
 const msLoraList = document.getElementById('msLoraList');
 const recommendApiOverlay = document.getElementById('recommendApiOverlay');
@@ -202,6 +207,7 @@ let rhWorkflowEditorState = { open:false, index:-1, entry:null, config:null, exp
 let rhEditorMode = 'workflow';
 let recommendInlineOpen = false;
 let providerDragId = '';
+let agentChatRouteState = null;
 // category: 'allround'（全能）| 'value'（性价比）| 'free'（免费），推荐面板按分组分节展示
 const RECOMMENDED_APIS = [
     {
@@ -3794,6 +3800,88 @@ function removeModel(kind, index){
     renderModels(kind);
     if(kind === 'image') renderMsLoras();
 }
+function setAgentChatRouteHint(message, isError=false){
+    if(!agentChatRouteHint) return;
+    agentChatRouteHint.textContent = message || '';
+    agentChatRouteHint.style.color = isError ? 'var(--danger, #d85b5b)' : '';
+}
+function selectedAgentChatProvider(){
+    const providerId = String(agentChatProviderInput?.value || '').trim();
+    return (agentChatRouteState?.providers || []).find(item => item.id === providerId) || null;
+}
+function renderAgentChatRouteModels(){
+    if(!agentChatModelInput) return;
+    const provider = selectedAgentChatProvider();
+    const models = provider?.chat_models || [];
+    const selected = models.includes(agentChatRouteState?.model) ? agentChatRouteState.model : models[0] || '';
+    agentChatModelInput.innerHTML = models.map(model => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join('');
+    agentChatModelInput.value = selected;
+    agentChatModelInput.disabled = !models.length;
+    if(!models.length) setAgentChatRouteHint('该平台没有已保存的聊天模型，请先拉取模型并保存平台。', true);
+}
+function renderAgentChatRoute(){
+    if(!agentChatRouteBlock || !agentChatProviderInput || !saveAgentChatRouteBtn) return;
+    const selectable = agentChatRouteState?.providers || [];
+    agentChatRouteBlock.hidden = !selectable.length;
+    if(!selectable.length){
+        setAgentChatRouteHint('没有可用的聊天平台。请先配置服务端 Key，并拉取后保存聊天模型。', true);
+        return;
+    }
+    const current = selectable.some(item => item.id === agentChatRouteState.provider_id)
+        ? agentChatRouteState.provider_id
+        : selectable[0].id;
+    agentChatProviderInput.innerHTML = selectable.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name || item.id)}</option>`).join('');
+    agentChatProviderInput.value = current;
+    renderAgentChatRouteModels();
+    saveAgentChatRouteBtn.disabled = !agentChatModelInput?.value;
+    const fallback = agentChatRouteState.fallback_provider_id && agentChatRouteState.fallback_model
+        ? `；备用：${agentChatRouteState.fallback_provider_id} / ${agentChatRouteState.fallback_model}`
+        : '';
+    setAgentChatRouteHint(`当前默认：${agentChatRouteState.provider_id || '未配置'} / ${agentChatRouteState.model || '未配置'}${fallback}`);
+}
+async function loadAgentChatRoute(){
+    if(!apiSettingsAuthorized || !agentChatRouteBlock) return;
+    const response = await fetch('/api/smart-image-agent/v3/admin/chat-route', {
+        credentials:'same-origin',
+        headers:teamAuthHeaders()
+    });
+    if(response.status === 403){
+        agentChatRouteBlock.hidden = true;
+        return;
+    }
+    let data = {};
+    try { data = await response.json(); } catch(_error) {}
+    if(!response.ok) throw new Error(data.detail || '读取图片 Agent 助手配置失败');
+    agentChatRouteState = data;
+    renderAgentChatRoute();
+}
+async function saveAgentChatRoute(){
+    const providerId = String(agentChatProviderInput?.value || '').trim();
+    const model = String(agentChatModelInput?.value || '').trim();
+    if(!providerId || !model){
+        setAgentChatRouteHint('请先选择聊天平台和助手模型。', true);
+        return;
+    }
+    saveAgentChatRouteBtn.disabled = true;
+    try {
+        const response = await fetch('/api/smart-image-agent/v3/admin/chat-route', {
+            method:'PUT',
+            credentials:'same-origin',
+            headers:teamAuthHeaders({'Content-Type':'application/json'}),
+            body:JSON.stringify({provider_id:providerId, model})
+        });
+        let data = {};
+        try { data = await response.json(); } catch(_error) {}
+        if(!response.ok) throw new Error(data.detail || '保存图片 Agent 助手失败');
+        agentChatRouteState = data;
+        renderAgentChatRoute();
+        setAgentChatRouteHint(`已保存图片 Agent 助手：${providerId} / ${model}`);
+    } catch(error) {
+        setAgentChatRouteHint(error.message || '保存图片 Agent 助手失败', true);
+    } finally {
+        saveAgentChatRouteBtn.disabled = !agentChatModelInput?.value;
+    }
+}
 async function loadProviders(){
     if(!apiSettingsAuthorized && !(await ensureApiSettingsAccess())) return;
     setStatus(tr('api.loading'));
@@ -3802,6 +3890,7 @@ async function loadProviders(){
         providers = data.providers || [];
         selectedId = sortedProviders()[0]?.id || '';
         renderEditor();
+        await loadAgentChatRoute();
         openRecommendApi();
         setStatus('');
     } catch(err) {
@@ -3972,7 +4061,7 @@ window.onload = async () => {
         return;
     }
     syncRecommendView();
-    loadProviders();
+    await loadProviders();
     // 平台名输入时实时预览生成的 ID
     if(nameInput) nameInput.addEventListener('input', updateIdPreview);
     if(protocolInput) protocolInput.addEventListener('change', updateProtocolFromInput);
@@ -3996,6 +4085,11 @@ window.onload = async () => {
         if(!item) return;
         item.image_edit_route = normalizeImageEditRoute(imageEditRouteInput.value);
     });
+    if(agentChatProviderInput) agentChatProviderInput.addEventListener('change', () => {
+        renderAgentChatRouteModels();
+        if(saveAgentChatRouteBtn) saveAgentChatRouteBtn.disabled = !agentChatModelInput?.value;
+    });
+    if(saveAgentChatRouteBtn) saveAgentChatRouteBtn.addEventListener('click', saveAgentChatRoute);
     [keyInput, rhFreeKeyInput, rhWalletKeyInput].forEach(input => {
         if(input) input.addEventListener('input', () => {
             refreshProviderOnboarding();
