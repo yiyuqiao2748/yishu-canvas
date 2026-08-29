@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import subprocess
 import tempfile
@@ -18,6 +19,16 @@ from smart_image_agent import (
     LocalSmartImageAgentStore,
     SMART_IMAGE_AGENT_MODELS,
     resolve_smart_image_agent_model,
+)
+from smart_image_agent_v3 import (
+    CapabilityRegistry,
+    ImageAgentV3Approval,
+    ImageAgentV3ExecutionCreate,
+    ImageAgentV3FeedbackCreate,
+    ImageAgentV3PlanUpdate,
+    LocalSmartImageAgentV3Store,
+    Planner,
+    is_smart_image_agent_v3_rollout_enabled,
 )
 from team_cloud import CurrentUser, DEFAULT_MODEL_BILLING_PRICES
 
@@ -319,6 +330,141 @@ class SmartImageAgentStoreTests(unittest.TestCase):
         self.assertEqual(update_error.exception.status_code, 404)
 
 
+class SmartImageAgentV3StoreTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        root = Path(self.temp.name)
+        self.user = CurrentUser(id="v3-user", email="v3@example.com", provider="test")
+        self.other_user = CurrentUser(id="v3-other", email="other@example.com", provider="test")
+        self.agent_store = LocalSmartImageAgentStore(str(root / "agent.json"))
+        self.store = LocalSmartImageAgentV3Store(str(root / "agent-v3.json"), self.agent_store)
+        self.session = self.agent_store.create_session(
+            self.user,
+            ImageAgentSessionCreate(canvas_id="canvas-v3", project_id="project-v3", team_id="team-v3"),
+        )
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def create_execution(self, **overrides):
+        values = {
+            "session_id": self.session["id"],
+            "message": "生成一张东方茶饮海报",
+            "context": {"canvas_id": "canvas-v3", "selected_images": []},
+        }
+        values.update(overrides)
+        return self.store.create_execution(self.user, ImageAgentV3ExecutionCreate(**values))
+
+    def test_execution_proposes_a_server_policy_plan_before_any_paid_run(self):
+        execution = self.create_execution(model="gpt-image-2-vip", count=2)
+
+        self.assertEqual(execution["status"], "awaiting_confirmation")
+        self.assertEqual(execution["protocol_version"], "1")
+        self.assertEqual(execution["policy_version"], "v3-initial")
+        self.assertEqual(execution["plan"]["model"], "gpt-image-2-vip")
+        self.assertEqual(execution["plan"]["estimated_points"], 40)
+        self.assertTrue(execution["approval_key"])
+        self.assertEqual(self.agent_store.list_runs(self.user, canvas_id="canvas-v3"), [])
+        self.assertEqual(
+            [event["type"] for event in self.store.list_events(self.user, execution["id"])],
+            ["context.ready", "plan.proposed", "approval.requested"],
+        )
+
+    def test_plan_edit_and_approval_key_are_auditable_and_idempotent(self):
+        execution = self.create_execution(count=2)
+        updated = self.store.update_plan(
+            self.user,
+            execution["id"],
+            ImageAgentV3PlanUpdate(model="nano-banana-pro", count=3, prompt="更暖的茶饮产品海报"),
+        )
+        self.assertEqual((updated["plan"]["model"], updated["plan"]["estimated_points"]), ("nano-banana-pro", 54))
+
+        with self.assertRaises(HTTPException) as error:
+            self.store.approve(self.user, execution["id"], ImageAgentV3Approval(idempotency_key="wrong-key-000000"))
+        self.assertEqual(error.exception.status_code, 409)
+
+        confirmed = self.store.approve(
+            self.user,
+            execution["id"],
+            ImageAgentV3Approval(idempotency_key=updated["approval_key"]),
+        )
+        repeated = self.store.approve(
+            self.user,
+            execution["id"],
+            ImageAgentV3Approval(idempotency_key=updated["approval_key"]),
+        )
+        self.assertEqual(confirmed["status"], "queued")
+        self.assertEqual(len(confirmed["runs"]), 3)
+        self.assertEqual([run["id"] for run in repeated["runs"]], [run["id"] for run in confirmed["runs"]])
+        self.assertEqual(confirmed["billing_intent"]["estimated_points"], 54)
+        self.assertEqual(
+            [event["sequence"] for event in self.store.list_events(self.user, execution["id"])],
+            list(range(1, 7)),
+        )
+
+    def test_execution_feedback_and_access_are_scoped_to_the_owner(self):
+        execution = self.create_execution()
+        with self.assertRaises(HTTPException) as error:
+            self.store.get_execution(self.other_user, execution["id"])
+        self.assertEqual(error.exception.status_code, 404)
+
+        feedback = self.store.add_feedback(
+            self.user,
+            execution["id"],
+            ImageAgentV3FeedbackCreate(kind="plan_edited", rating=4, reason="改了提示词"),
+        )
+        self.assertEqual((feedback["kind"], feedback["rating"]), ("plan_edited", 4))
+        cancelled = self.store.cancel(self.user, execution["id"])
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(self.store.list_events(self.user, execution["id"])[-1]["type"], "execution.completed")
+
+    def test_metrics_are_read_only_and_group_confirmed_cost_by_model(self):
+        cancelled = self.create_execution()
+        self.store.cancel(self.user, cancelled["id"])
+        approved = self.create_execution(model="nano-banana-pro", count=2)
+        self.store.approve(
+            self.user,
+            approved["id"],
+            ImageAgentV3Approval(idempotency_key=approved["approval_key"]),
+        )
+        self.store.add_feedback(
+            self.user,
+            approved["id"],
+            ImageAgentV3FeedbackCreate(kind="continued"),
+        )
+
+        metrics = self.store.metrics("team-v3")
+        self.assertEqual(metrics["total_executions"], 2)
+        self.assertEqual(metrics["confirmation_rate"], 0.5)
+        self.assertEqual(metrics["cancellation_rate"], 0.5)
+        self.assertEqual(metrics["duplicate_charge_count"], 0)
+        self.assertEqual(metrics["model_costs"], [{"model": "nano-banana-pro", "estimated_points": 36, "executions": 1}])
+
+    def test_offline_evaluation_cases_cover_all_v3_image_creation_modes(self):
+        fixture = Path(__file__).resolve().parent / "fixtures" / "smart_image_agent_v3_eval_cases.json"
+        cases = json.loads(fixture.read_text(encoding="utf-8"))
+        planner = Planner(CapabilityRegistry())
+        actions = set()
+        for case in cases:
+            with self.subTest(case=case["id"]):
+                payload = ImageAgentV3ExecutionCreate(
+                    session_id="eval-session",
+                    message=case["message"],
+                    context=case["context"],
+                    count=case.get("count", 1),
+                )
+                plan = planner.build_plan(payload, case["context"])
+                self.assertEqual(plan.action, case["expected_action"])
+                actions.add(plan.action)
+        self.assertEqual(actions, {"generate_image", "edit_image", "compose_images", "create_variants", "expand_image", "generate_image_set"})
+
+    def test_rollout_gate_defaults_to_off_and_supports_explicit_team_or_global_enablement(self):
+        self.assertFalse(is_smart_image_agent_v3_rollout_enabled("team-a", "", False))
+        self.assertTrue(is_smart_image_agent_v3_rollout_enabled("team-a", "team-a,team-b", False))
+        self.assertFalse(is_smart_image_agent_v3_rollout_enabled("team-c", "team-a,team-b", False))
+        self.assertTrue(is_smart_image_agent_v3_rollout_enabled("team-c", "", True))
+
+
 class SmartImageAgentApiTests(unittest.TestCase):
     def setUp(self):
         import main
@@ -544,6 +690,91 @@ class SmartImageAgentApiTests(unittest.TestCase):
         self.assertEqual(wrong_results.status_code, 404)
 
 
+class SmartImageAgentV3ApiTests(unittest.TestCase):
+    def setUp(self):
+        import main
+
+        self.main = main
+        self.temp = tempfile.TemporaryDirectory()
+        root = Path(self.temp.name)
+        self.agent_store = LocalSmartImageAgentStore(str(root / "agent.json"))
+        self.v3_store = LocalSmartImageAgentV3Store(str(root / "agent-v3.json"), self.agent_store)
+        self.user = CurrentUser(id="v3-api-user", email="v3-api@example.com", provider="test")
+        self.original_store = main.SMART_IMAGE_AGENT_STORE
+        self.original_v3_store = main.SMART_IMAGE_AGENT_V3_STORE
+        main.SMART_IMAGE_AGENT_STORE = self.agent_store
+        main.SMART_IMAGE_AGENT_V3_STORE = self.v3_store
+        main.app.dependency_overrides[main.require_user] = lambda: self.user
+        self.client = TestClient(main.app, raise_server_exceptions=False)
+
+    def tearDown(self):
+        self.client.close()
+        self.main.app.dependency_overrides.clear()
+        self.main.SMART_IMAGE_AGENT_STORE = self.original_store
+        self.main.SMART_IMAGE_AGENT_V3_STORE = self.original_v3_store
+        self.temp.cleanup()
+
+    def test_v3_api_requires_server_approval_key_and_exposes_ordered_sse_events(self):
+        session = self.client.post("/api/smart-image-agent/sessions", json={"canvas_id": "canvas-v3-api"}).json()
+        proposed = self.client.post(
+            "/api/smart-image-agent/v3/executions",
+            json={
+                "session_id": session["id"],
+                "message": "生成两张茶饮产品海报",
+                "count": 2,
+                "context": {"canvas_id": "canvas-v3-api"},
+            },
+        )
+        self.assertEqual(proposed.status_code, 200)
+        execution = proposed.json()
+        self.assertEqual((execution["status"], execution["plan"]["estimated_points"]), ("awaiting_confirmation", 24))
+        self.assertEqual(execution["runs"], [])
+
+        events = self.client.get(f"/api/smart-image-agent/v3/executions/{execution['id']}/events")
+        self.assertEqual(events.status_code, 200)
+        self.assertIn("text/event-stream", events.headers["content-type"])
+        self.assertIn("event: plan.proposed", events.text)
+        self.assertIn('"sequence":3', events.text)
+
+        rejected = self.client.post(
+            f"/api/smart-image-agent/v3/executions/{execution['id']}/approve",
+            json={"idempotency_key": "not-the-server-key"},
+        )
+        self.assertEqual(rejected.status_code, 409)
+        approved = self.client.post(
+            f"/api/smart-image-agent/v3/executions/{execution['id']}/approve",
+            json={"idempotency_key": execution["approval_key"]},
+        )
+        self.assertEqual(approved.status_code, 200)
+        repeated = self.client.post(
+            f"/api/smart-image-agent/v3/executions/{execution['id']}/approve",
+            json={"idempotency_key": execution["approval_key"]},
+        )
+        self.assertEqual(
+            [item["id"] for item in approved.json()["runs"]],
+            [item["id"] for item in repeated.json()["runs"]],
+        )
+
+    def test_v3_api_edits_cancels_and_records_feedback_without_cross_user_access(self):
+        session = self.client.post("/api/smart-image-agent/sessions", json={"canvas_id": "canvas-v3-api"}).json()
+        execution = self.client.post(
+            "/api/smart-image-agent/v3/executions",
+            json={"session_id": session["id"], "message": "生成产品图", "context": {"canvas_id": "canvas-v3-api"}},
+        ).json()
+        updated = self.client.patch(
+            f"/api/smart-image-agent/v3/executions/{execution['id']}/plan",
+            json={"model": "nano-banana-pro", "count": 2},
+        )
+        self.assertEqual((updated.status_code, updated.json()["plan"]["estimated_points"]), (200, 36))
+        feedback = self.client.post(
+            f"/api/smart-image-agent/v3/executions/{execution['id']}/feedback",
+            json={"kind": "plan_edited", "rating": 5},
+        )
+        self.assertEqual((feedback.status_code, feedback.json()["rating"]), (200, 5))
+        cancelled = self.client.post(f"/api/smart-image-agent/v3/executions/{execution['id']}/cancel")
+        self.assertEqual((cancelled.status_code, cancelled.json()["status"]), (200, "cancelled"))
+
+
 class SmartImageAgentStaticIsolationTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(__file__).resolve().parents[1]
@@ -587,6 +818,60 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
         self.assertNotIn("generate_video", app)
         self.assertNotIn("agnes-video", app.lower())
 
+    def test_default_agent_bundle_uses_a_dedicated_current_cache_version(self):
+        loader = (self.root / "static" / "js" / "smart-image-agent" / "loader.js").read_text(encoding="utf-8")
+
+        self.assertIn("const defaultBundleVersion", loader)
+        self.assertIn("smart-image-agent.min.js?v=${defaultBundleVersion}", loader)
+        self.assertNotIn("smart-image-agent.min.js?v=2026.08.25.1", loader)
+
+    def test_release_version_matches_the_current_image_agent_bundle(self):
+        version = (self.root / "VERSION").read_text(encoding="utf-8").strip()
+
+        self.assertEqual(version, "2026.08.30.1")
+
+    def test_v3_is_feature_gated_and_uses_isolated_modules(self):
+        loader = (self.root / "static" / "js" / "smart-image-agent" / "loader.js").read_text(encoding="utf-8")
+        modules = self.root / "static" / "js" / "smart-image-agent" / "v3"
+        bundle = self.root / "static" / "dist" / "js" / "smart-image-agent-v3.min.js"
+
+        self.assertIn("params.get('image_agent') === 'v3'", loader)
+        self.assertIn("smart-image-agent-v3.min.js", loader)
+        self.assertIn("SmartImageAgentV3App", loader)
+        for name in ("shell.js", "context.js", "composer.js", "plan-card.js", "activity.js", "results.js", "bridge-adapter.js", "capability-runner.js"):
+            self.assertTrue((modules / name).exists(), name)
+        self.assertTrue(bundle.exists())
+        self.assertNotIn("runImageTask(", (modules / "app.js").read_text(encoding="utf-8"))
+        self.assertIn("runImageTask(", (modules / "capability-runner.js").read_text(encoding="utf-8"))
+        self.assertNotIn("smart-image-agent-v3", (self.root / "static" / "canvas.html").read_text(encoding="utf-8"))
+
+    def test_v3_results_can_continue_create_variants_expand_and_save_with_feedback(self):
+        modules = self.root / "static" / "js" / "smart-image-agent" / "v3"
+        results = (modules / "results.js").read_text(encoding="utf-8")
+        bridge = (modules / "bridge-adapter.js").read_text(encoding="utf-8")
+        app = (modules / "app.js").read_text(encoding="utf-8")
+
+        for action in ("continue-edit", "create-variants", "expand-image", "save-result"):
+            self.assertIn(action, results)
+        self.assertIn("saveToAssetLibrary", bridge)
+        self.assertIn("/feedback", app)
+        self.assertIn("kind:'continued'", app)
+
+    def test_v3_migration_has_persistent_events_feedback_policy_and_atomic_approval(self):
+        migration = (self.root / "docs" / "supabase" / "smart_image_agent_v3.sql").read_text(encoding="utf-8")
+
+        for name in (
+            "smart_image_agent_executions",
+            "smart_image_agent_events",
+            "smart_image_agent_feedback",
+            "smart_image_agent_policy_versions",
+            "smart_image_agent_v3_approve_execution",
+        ):
+            self.assertIn(name, migration)
+        self.assertIn("unique (execution_id, sequence)", migration)
+        self.assertIn("approved_idempotency_key", migration)
+        self.assertIn("on conflict (plan_id, sequence) do nothing", migration)
+
     def test_create_plan_waits_for_session_initialization(self):
         app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
 
@@ -609,15 +894,8 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
         self.assertIn('class="sia-composer"', app)
         self.assertIn('model:els.model.value', app)
         self.assertIn('model:field === \'model\' ? value : state.currentPlan.model', app)
-        self.assertEqual(
-            re.findall(r"\{id:'([^']+)', label:'([^']+)', cost:(\d+), quality:'([^']+)'\}", app),
-            [
-                ("gpt-image-2", "GPT Image 2", "6", "standard"),
-                ("nano-banana-2", "Nano Banana 2", "12", "standard"),
-                ("nano-banana-pro", "Nano Banana Pro", "18", "pro"),
-                ("gpt-image-2-vip", "GPT Image 2 VIP", "20", "vip"),
-            ],
-        )
+        self.assertIn("state.capabilities?.models", app)
+        self.assertIn("unit_points", app)
         self.assertIn('.sia-activity { flex:1; min-height:0; overflow:auto;', styles)
         self.assertIn('.sia-composer { flex:0 0 auto;', styles)
         self.assertIn('.sia-notice { position:absolute; left:12px; right:12px; bottom:calc(100% + 12px);', styles)
@@ -670,14 +948,82 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
             set(re.findall(r"^\s*(\w+)\s*:", bridge.group("body"), re.MULTILINE)),
             expected,
         )
-        self.assertEqual(
-            re.findall(r'data-canvas-control="([^"]+)"', app),
-            ["fitAll", "zoomIn", "zoomOut", "resetZoom", "arrangeSelection"],
-        )
-        self.assertEqual(set(re.findall(r"canvasControls\.(\w+)", app)), expected)
+        self.assertNotIn('data-canvas-control="fitAll"', app)
+        self.assertNotIn("runCanvasControl", app)
 
         classic = (self.root / "static" / "canvas.html").read_text(encoding="utf-8")
         self.assertNotIn("canvasControls", classic)
+
+    def test_lib_style_workspace_has_four_safe_image_skills_and_a_settings_popover(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn('class="sia-welcome"', app)
+        self.assertIn('data-settings-toggle', app)
+        self.assertIn('data-settings-summary', app)
+        self.assertEqual(
+            re.findall(r'data-skill="([^"]+)"', app),
+            ["product", "portrait", "style", "compose"],
+        )
+        for label in ("电商产品图", "人物一致性", "风格迁移", "多图合成"):
+            self.assertIn(label, app)
+        self.assertIn("function selectSkill(skill)", app)
+        self.assertNotIn("createPlan()", app[app.index("function selectSkill(skill)"):app.index("function buildUi()")])
+
+    def test_composer_matches_lib_style_source_menu_reference_chips_and_arrow_submit(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+        styles = (self.root / "static" / "css" / "smart-image-agent.css").read_text(encoding="utf-8")
+
+        for marker in ("data-source-menu-toggle", "data-source-menu", "本地上传", "素材库添加", "data-composer-refs", "function renderComposerReferences()"):
+            self.assertIn(marker, app)
+        self.assertIn('class="sia-send-button', app)
+        self.assertIn('aria-label="生成方案"', app)
+        self.assertIn(".sia-source-menu", styles)
+        self.assertIn(".sia-composer-refs", styles)
+        self.assertIn(".sia-send-button", styles)
+
+    def test_model_picker_is_split_by_media_kind_without_provider_labels(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+
+        for marker in ("data-model-trigger", "data-model-popover", "data-model-list", "data-model-kind=\"image\"", "data-model-kind=\"video\"", "function renderModelPicker("):
+            self.assertIn(marker, app)
+        picker = app[app.index("function renderModelPicker("):app.index("function updateComposerSummary()")]
+        self.assertNotIn("provider_id", picker)
+        self.assertNotIn("source", picker)
+
+    def test_initial_session_restore_does_not_auto_show_an_old_pending_plan(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("const restorePendingPlan = Boolean(requestedId);", app)
+        self.assertIn("state.currentPlan = restorePendingPlan ?", app)
+        self.assertIn("switchSession(sessionId)", app)
+
+    def test_plain_chat_stays_non_generating_until_a_model_is_selected(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("generationMode:false", app)
+        self.assertIn("async function sendChatMessage()", app)
+        self.assertIn("/api/chat", app)
+        self.assertIn("if(!state.generationMode) return sendChatMessage();", app)
+        self.assertIn("state.generationMode = true", app)
+        self.assertIn("els.model.value = ''", app)
+
+    def test_image_results_honor_requested_count_and_auto_ratio_uses_reference_dimensions(self):
+        canvas = (self.root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
+        smart = (self.root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("resultImageItems(result).slice(0, 1)", canvas)
+        self.assertIn("const generatedUrls = generated.urls.slice(0, 1);", smart)
+        self.assertIn("function smartImageAgentRatioSettings(ratio='auto', refs=[])", smart)
+        self.assertIn("customRatio:`${reduced.w}:${reduced.h}`", smart)
+
+    def test_workspace_uses_capabilities_for_model_options_and_keeps_confirmation_manual(self):
+        app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("function availableModels()", app)
+        self.assertIn("state.capabilities?.models", app)
+        self.assertIn("data-confirm-plan", app)
+        self.assertIn("confirmCurrentPlan", app)
+        self.assertLess(app.index("function createPlan()"), app.index("async function confirmCurrentPlan()"))
 
     def test_canvas_controls_preserve_viewport_center_when_zooming(self):
         script = r'''
@@ -969,6 +1315,30 @@ vm.runInContext(extractFunction('processRun'), context);
         self.assertIn('SMART_IMAGE_AGENT_STANDARD_MODEL = "nano-banana-2"', service_source)
         self.assertIn('SMART_IMAGE_AGENT_PRO_MODEL = "nano-banana-pro"', service_source)
         self.assertNotIn("AGENT_FALLBACK_PROVIDER", service_source)
+
+    def test_v3_bootstrap_schema_contains_the_additive_runtime_contract(self):
+        schema = (self.root / "docs" / "supabase" / "team_cloud_schema.sql").read_text(encoding="utf-8")
+
+        for table in (
+            "smart_image_agent_policy_versions",
+            "smart_image_agent_executions",
+            "smart_image_agent_events",
+            "smart_image_agent_feedback",
+        ):
+            self.assertIn(f"create table if not exists public.{table}", schema)
+            self.assertIn(f"grant all on table public.{table} to service_role", schema)
+        self.assertIn("smart_image_agent_v3_approve_execution", schema)
+        self.assertIn("unique (execution_id, sequence)", schema)
+
+    def test_versioned_supabase_migrations_bootstrap_v2_before_v3_runtime(self):
+        migrations = self.root / "supabase" / "migrations"
+        baseline = migrations / "20260827000000_team_cloud_baseline.sql"
+        v3_runtime = migrations / "20260827000100_smart_image_agent_v3.sql"
+
+        self.assertTrue(baseline.is_file())
+        self.assertTrue(v3_runtime.is_file())
+        self.assertIn("smart_image_agent_sessions", baseline.read_text(encoding="utf-8"))
+        self.assertIn("smart_image_agent_v3_approve_execution", v3_runtime.read_text(encoding="utf-8"))
 
     def test_v2_creation_path_includes_sessions_roles_and_single_plan_focus(self):
         main_source = (self.root / "main.py").read_text(encoding="utf-8")

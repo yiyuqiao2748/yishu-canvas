@@ -18038,10 +18038,14 @@ function smartImageAgentSourceNode(plan={}){
     promptNode.imageAgentPlanId = plan.id || '';
     return promptNode;
 }
-function smartImageAgentRatioSettings(ratio='auto'){
+function smartImageAgentRatioSettings(ratio='auto', refs=[]){
     const key = String(ratio || 'auto');
+    if(key === 'auto' || key === 'source'){
+        const source = (refs || []).find(item => Number(item?.width || item?.natural_width || 0) > 0 && Number(item?.height || item?.natural_height || 0) > 0);
+        const reduced = reducedRatioForImage(source);
+        return reduced ? {ratio:'source', customRatio:`${reduced.w}:${reduced.h}`} : {ratio:'square'};
+    }
     const map = {
-        'auto':{ratio:'square'},
         '1:1':{ratio:'square'},
         '16:9':{ratio:'wide'},
         '9:16':{ratio:'story'},
@@ -18062,7 +18066,7 @@ function smartImageAgentRunMeta(plan, sourceNode, refs){
         sourceNodeId:sourceNode?.id || '',
         settings:{
             engine:'api', apiKind:'image', provider_id:plan.provider_id, model:plan.model,
-            ...smartImageAgentRatioSettings(plan.ratio), resolution:plan.resolution || '1k', quality:plan.quality || 'standard', count:1
+            ...smartImageAgentRatioSettings(plan.ratio, refs), resolution:plan.resolution || '1k', quality:plan.quality || 'standard', count:1
         },
         createdAt:Date.now(),
         imageAgentPlanId:plan.id || ''
@@ -18071,7 +18075,8 @@ function smartImageAgentRunMeta(plan, sourceNode, refs){
 function smartImageAgentPlaceResults(outputNode, urls, plan, meta){
     const live = typeof outputNode === 'string' ? nodes.find(node => node.id === outputNode) : outputNode;
     if(!live) throw new Error('Agent result node no longer exists');
-    finalizePendingNode(live, urls, meta, 'image');
+    const outputUrls = Array.isArray(urls) ? urls.slice(0, 1) : [];
+    finalizePendingNode(live, outputUrls, meta, 'image');
     live.imageAgentPlanId = plan.id || '';
     live.imageAgentRunId = plan.run_id || '';
     render();
@@ -18105,7 +18110,7 @@ async function smartImageAgentRunImageTask(run, plan, options={}){
         apiKind:'image',
         provider_id:plan.provider_id,
         model:plan.model,
-        ...smartImageAgentRatioSettings(plan.ratio),
+        ...smartImageAgentRatioSettings(plan.ratio, refs),
         resolution:plan.resolution || '1k',
         quality:plan.quality || 'standard',
         count:1
@@ -18119,6 +18124,7 @@ async function smartImageAgentRunImageTask(run, plan, options={}){
     try {
         const generated = await generateUrlsForCurrentSettings(outputNode, plan.prompt || plan.message || '', generationRefs, runSettings);
         if(!generated?.urls?.length) throw new Error('图片模型没有返回结果');
+        const generatedUrls = generated.urls.slice(0, 1);
         if(options.isCancelled?.()){
             nodes = nodes.filter(node => node.id !== outputNode.id);
             if(canvas) canvas.connections = (canvas.connections || []).filter(conn => conn.from !== outputNode.id && conn.to !== outputNode.id);
@@ -18126,7 +18132,7 @@ async function smartImageAgentRunImageTask(run, plan, options={}){
             scheduleSave();
             return {cancelled:true};
         }
-        return smartImageAgentPlaceResults(outputNode, generated.urls.slice(0, 1), {...plan, run_id:run?.id || ''}, meta);
+        return smartImageAgentPlaceResults(outputNode, generatedUrls, {...plan, run_id:run?.id || ''}, meta);
     } catch(error){
         nodes = nodes.filter(node => node.id !== outputNode.id);
         if(canvas) canvas.connections = (canvas.connections || []).filter(conn => conn.from !== outputNode.id && conn.to !== outputNode.id);

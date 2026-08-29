@@ -10,6 +10,7 @@
         session:null,
         plans:new Map(),
         currentPlan:null,
+        pendingPlan:null,
         runs:[],
         results:[],
         sessions:[],
@@ -19,6 +20,10 @@
         referenceRoles:new Map(),
         selectedResultGroup:[],
         pendingAction:'',
+        modelPickerKind:'image',
+        generationMode:false,
+        chatConversationId:'',
+        chatMessages:[],
         assetCache:[],
         activeRuns:0,
         cancelled:new Set(),
@@ -104,11 +109,32 @@
         renderReferences();
         return true;
     }
+    function removeManualReference(target){
+        if(!target) return;
+        state.referenceRoles.delete(referenceKey(target));
+        state.manualRefs = state.manualRefs.filter(item => referenceKey(item) !== referenceKey(target));
+        renderReferences();
+    }
     function referenceLabel(item, index){
         return item.name || item.prompt || `参考图 ${index + 1}`;
     }
     function referenceRoleLabel(role){
         return {primary:'主图', reference:'参考', edit_target:'待修改'}[role] || '自动';
+    }
+    function renderComposerReferences(){
+        if(!els.composerRefs) return;
+        const refs = combinedRefs();
+        els.composerRefs.hidden = !refs.length;
+        els.composerRefs.innerHTML = refs.map((item, index) => `
+            <span class="sia-composer-ref" title="${escapeHtml(referenceLabel(item, index))}">
+                <img src="${escapeHtml(item.preview_url || item.url)}" alt="${escapeHtml(referenceLabel(item, index))}">
+                <button type="button" data-composer-remove-ref="${index}" title="移除引用"><i data-lucide="x"></i></button>
+            </span>
+        `).join('');
+        els.composerRefs.querySelectorAll('[data-composer-remove-ref]').forEach(button => {
+            button.addEventListener('click', () => removeManualReference(refs[Number(button.dataset.composerRemoveRef)]));
+        });
+        refreshIcons();
     }
     function renderReferences(){
         const refs = combinedRefs();
@@ -133,9 +159,7 @@
         els.refs.querySelectorAll('[data-remove-ref]').forEach(button => {
             button.addEventListener('click', () => {
                 const target = refs[Number(button.dataset.removeRef)];
-                state.referenceRoles.delete(referenceKey(target));
-                state.manualRefs = state.manualRefs.filter(item => referenceKey(item) !== referenceKey(target));
-                renderReferences();
+                removeManualReference(target);
             });
         });
         els.refs.querySelectorAll('[data-reference-role]').forEach(select => select.addEventListener('change', () => {
@@ -144,6 +168,8 @@
             state.referenceRoles.set(referenceKey(item), select.value);
             notify(`${referenceLabel(item, Number(select.dataset.referenceRole))} 将作为${referenceRoleLabel(select.value)}`);
         }));
+        renderComposerReferences();
+        renderWorkspaceState();
         refreshIcons();
     }
     function actionLabel(action){
@@ -153,21 +179,117 @@
             organize_results:'整理结果'
         }[action] || '图片创作';
     }
+    function availableModels(){
+        const configured = Array.isArray(state.capabilities?.models) && state.capabilities.models.length
+            ? state.capabilities.models : IMAGE_MODELS;
+        return configured.map(item => {
+            const fallback = IMAGE_MODELS.find(candidate => candidate.id === item.id) || {};
+            return {
+                ...fallback,
+                ...item,
+                label:item.label || fallback.label || item.id,
+                cost:Number(item.unit_points ?? item.cost ?? fallback.cost ?? 0),
+                quality:item.quality || fallback.quality || 'standard',
+                resolutions:item.resolutions || fallback.resolutions || ['1k','2k','4k']
+            };
+        });
+    }
     function modelPolicy(model){
-        return state.capabilities?.models?.find(item => item.id === model)
-            || IMAGE_MODELS.find(item => item.id === model)
+        return availableModels().find(item => item.id === model)
+            || availableModels()[0]
             || IMAGE_MODELS[1];
     }
     function modelOptions(selected){
-        return IMAGE_MODELS.map(item => `<option value="${item.id}" ${item.id === selected ? 'selected' : ''}>${item.label} · ${item.cost} 灵感点</option>`).join('');
+        return availableModels().map(item => `<option value="${item.id}" ${item.id === selected ? 'selected' : ''}>${escapeHtml(item.label)} · ${item.cost} 灵感点</option>`).join('');
+    }
+    function modelDescription(item){
+        return item.description || item.capability || item.summary || ({
+            standard:'适合日常创作，响应稳定',
+            pro:'更高画质与细节表现',
+            vip:'高质量精细创作'
+        }[item.quality] || '图片生成模型');
+    }
+    function modelKind(item){
+        const value = String(item.kind || item.type || item.media_type || '').toLowerCase();
+        return value.includes('video') || value.includes('视频') ? 'video' : 'image';
+    }
+    function renderModelPicker(kind=state.modelPickerKind){
+        if(!els.modelList || !els.modelPopover) return;
+        state.modelPickerKind = kind === 'video' ? 'video' : 'image';
+        els.modelList.innerHTML = state.modelPickerKind === 'video'
+            ? '<div class="sia-model-empty"><i data-lucide="film"></i><span>视频模型请在视频工作区使用</span></div>'
+            : availableModels().filter(item => modelKind(item) === 'image').map(item => `
+                <button type="button" class="sia-model-option${item.id === els.model.value ? ' is-selected' : ''}" data-model-option="${escapeHtml(item.id)}">
+                    <span class="sia-model-option-copy"><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(modelDescription(item))}</small></span>
+                    <span class="sia-model-option-cost">${item.cost} 灵感点</span>
+                </button>
+            `).join('') || '<div class="sia-model-empty">暂无可用图片模型</div>';
+        els.modelPopover.querySelectorAll('[data-model-kind]').forEach(tab => tab.classList.toggle('is-active', tab.dataset.modelKind === state.modelPickerKind));
+        els.modelList.querySelectorAll('[data-model-option]').forEach(button => button.addEventListener('click', () => {
+            els.model.value = button.dataset.modelOption;
+            state.generationMode = true;
+            syncComposerResolutions();
+            updateComposerSummary();
+            els.modelPopover.hidden = true;
+            els.modelTrigger?.setAttribute('aria-expanded', 'false');
+        }));
+        refreshIcons();
     }
     function modelLabel(plan){
         return modelPolicy(plan?.model).label;
+    }
+    function updateComposerSummary(){
+        if(!els.settingsSummary || !els.model || !els.count) return;
+        const count = Math.max(1, Number(els.count.value) || 1);
+        if(!els.model.value){
+            els.settingsSummary.textContent = '普通对话 · 选择模型后可生图';
+            if(els.modelTriggerLabel) els.modelTriggerLabel.textContent = '选择模型';
+            if(els.composerModeHint) els.composerModeHint.textContent = '普通对话 · 选择模型后可生图';
+            if(els.input) els.input.placeholder = '和 Agent 对话；选择模型后可切换为生图方案';
+            els.create?.setAttribute('aria-label', '发送消息');
+            els.create?.setAttribute('title', '发送消息');
+            return;
+        }
+        const model = modelPolicy(els.model.value);
+        els.settingsSummary.textContent = `${model.label} · 预计 ${model.cost * count} 灵感点`;
+        if(els.modelTriggerLabel) els.modelTriggerLabel.textContent = model.label;
+        if(els.composerModeHint) els.composerModeHint.textContent = `${model.label} · 先生成方案，确认后扣费`;
+        if(els.input) els.input.placeholder = '描述要生成或修改的图片，输入 @ 引用画布或素材图片';
+        els.create?.setAttribute('aria-label', '生成方案');
+        els.create?.setAttribute('title', '生成方案');
+    }
+    function syncComposerResolutions(){
+        if(!els.resolution || !els.model) return;
+        const previous = els.resolution.value;
+        const resolutions = modelPolicy(els.model.value).resolutions || ['1k','2k','4k'];
+        els.resolution.innerHTML = resolutions.map(value => `<option value="${value}">${String(value).toUpperCase()}</option>`).join('');
+        els.resolution.value = resolutions.includes(previous) ? previous : resolutions[0];
+    }
+    function setSettingsOpen(open){
+        if(!els.settings || !els.settingsToggle) return;
+        els.settings.hidden = !open;
+        els.settingsToggle.setAttribute('aria-expanded', String(open));
+    }
+    function setSourceMenuOpen(open){
+        if(!els.sourceMenu) return;
+        els.sourceMenu.hidden = !open;
+        els.sourceMenuToggle?.setAttribute('aria-expanded', String(open));
+    }
+    function renderWorkspaceState(){
+        if(!els.welcome || !els.context) return;
+        const hasActivity = Boolean(state.currentPlan) || state.runs.length > 0 || state.results.length > 0 || state.chatMessages.length > 0;
+        els.welcome.hidden = hasActivity;
+        els.context.hidden = !hasActivity && !combinedRefs().length;
+        if(els.chatSection) els.chatSection.hidden = !state.chatMessages.length;
+        if(els.planSection) els.planSection.hidden = !state.currentPlan;
+        if(els.tasksSection) els.tasksSection.hidden = !state.runs.length;
+        if(els.resultsSection) els.resultsSection.hidden = !state.results.length;
     }
     function renderPlan(){
         const plan = state.currentPlan;
         if(!plan){
             els.plan.hidden = true;
+            renderWorkspaceState();
             return;
         }
         els.plan.hidden = false;
@@ -176,7 +298,7 @@
                 <span>${escapeHtml(actionLabel(plan.action))}</span>
                 <strong>${escapeHtml(modelLabel(plan))}</strong>
             </div>
-            <p>${escapeHtml(plan.prompt || plan.message)}</p>
+            <textarea class="sia-plan-prompt" data-plan-field="prompt" aria-label="方案提示词">${escapeHtml(plan.prompt || plan.message)}</textarea>
             <div class="sia-plan-references">${(plan.references || []).map((item, index) => `
                 <span title="${escapeHtml(referenceLabel(item, index))}">${escapeHtml(referenceRoleLabel(item.role))}</span>
             `).join('') || '<span>纯文字创作</span>'}</div>
@@ -200,6 +322,7 @@
         });
         els.plan.querySelector('[data-confirm-plan]')?.addEventListener('click', confirmCurrentPlan);
         els.plan.querySelector('[data-dismiss-plan]')?.addEventListener('click', dismissCurrentPlan);
+        renderWorkspaceState();
         refreshIcons();
     }
     function statusLabel(status, stage=''){
@@ -233,6 +356,7 @@
             row.querySelector('[data-cancel-run]')?.addEventListener('click', () => cancelRun(id));
             row.querySelector('[data-retry-run]')?.addEventListener('click', () => retryRun(id));
         });
+        renderWorkspaceState();
         refreshIcons();
     }
     function renderResults(){
@@ -264,6 +388,7 @@
                 } catch(error) { notify(error.message, 'error'); }
             });
         });
+        renderWorkspaceState();
         refreshIcons();
     }
     function continueFromResult(result, prefix, action='', count=1){
@@ -338,6 +463,17 @@
         state.referenceRoles.clear();
         state.selectedResultGroup = [];
         state.pendingAction = '';
+        state.pendingPlan = null;
+        state.generationMode = false;
+        state.chatConversationId = '';
+        state.chatMessages = [];
+        writeSetting('chat-conversation', '');
+        if(els.model){
+            els.model.value = '';
+            syncComposerResolutions();
+            updateComposerSummary();
+            renderModelPicker();
+        }
     }
     async function switchSession(sessionId){
         if(!sessionId || sessionId === state.session?.id) return;
@@ -354,6 +490,7 @@
         state.session = null;
         state.plans.clear();
         state.currentPlan = null;
+        state.pendingPlan = null;
         state.runs = [];
         state.results = [];
         writeSetting('session', '');
@@ -376,6 +513,8 @@
     async function loadSession(requestedId=''){
         const context = global.SmartImageAgentBridge.getCanvasContext();
         const stored = requestedId || readSetting('session', '');
+        const restorePendingPlan = Boolean(requestedId);
+        state.chatConversationId = readSetting('chat-conversation', '');
         if(stored){
             try {
                 state.session = await api(`/api/smart-image-agent/sessions/${encodeURIComponent(stored)}?canvas_id=${encodeURIComponent(context.canvas_id)}`);
@@ -389,7 +528,8 @@
         }
         state.plans.clear();
         (state.session.plans || []).forEach(plan => state.plans.set(plan.id, plan));
-        state.currentPlan = [...state.plans.values()].reverse().find(plan => plan.status === 'awaiting_confirmation') || null;
+        state.pendingPlan = [...state.plans.values()].reverse().find(plan => plan.status === 'awaiting_confirmation') || null;
+        state.currentPlan = restorePendingPlan ? state.pendingPlan : null;
         const runData = await api(`/api/smart-image-agent/runs?session_id=${encodeURIComponent(state.session.id)}&canvas_id=${encodeURIComponent(context.canvas_id)}`);
         state.runs = runData.runs || [];
         const resultData = await api(`/api/smart-image-agent/sessions/${encodeURIComponent(state.session.id)}/results?canvas_id=${encodeURIComponent(context.canvas_id)}`);
@@ -416,11 +556,63 @@
         try { return await state.sessionPromise; }
         finally { state.sessionPromise = null; }
     }
+    function renderChatMessages(){
+        if(!els.chatMessages) return;
+        els.chatMessages.innerHTML = state.chatMessages.map(message => `
+            <div class="sia-chat-message sia-chat-message-${message.role === 'assistant' ? 'assistant' : 'user'}">
+                <div>${escapeHtml(message.content || '')}</div>
+            </div>
+        `).join('');
+        els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
+        renderWorkspaceState();
+    }
+    async function sendChatMessage(){
+        const message = els.input.value.trim();
+        if(!message) return;
+        const context = global.SmartImageAgentBridge.getCanvasContext();
+        const previous = state.chatMessages.slice();
+        state.chatMessages.push({role:'user', content:message});
+        renderChatMessages();
+        els.input.value = '';
+        els.create.disabled = true;
+        notify('正在回复...');
+        try {
+            const response = await api('/api/chat', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({
+                    conversation_id:state.chatConversationId || readSetting('chat-conversation', ''),
+                    message,
+                    canvas_id:context.canvas_id || '',
+                    team_id:context.team_id || '',
+                    project_id:context.project_id || '',
+                    mode:'chat',
+                    system_prompt:'你是图片 Agent 的普通对话助手。当前未选择生图模型，只进行咨询和规划，不生成图片、不创建生图方案。'
+                })
+            });
+            state.chatConversationId = response.conversation?.id || state.chatConversationId;
+            writeSetting('chat-conversation', state.chatConversationId);
+            state.chatMessages = response.conversation?.messages || [...state.chatMessages, response.message].filter(Boolean);
+            renderChatMessages();
+            notify('已回复');
+        } catch(error) {
+            state.chatMessages = previous;
+            renderChatMessages();
+            els.input.value = message;
+            notify(error.message, 'error');
+        } finally { els.create.disabled = false; }
+    }
     async function createPlan(){
+        if(!state.generationMode) return sendChatMessage();
         const message = els.input.value.trim();
         if(!message) return;
         if(state.currentPlan?.status === 'awaiting_confirmation'){
             notify('请先确认、编辑或放弃当前方案', 'error');
+            return;
+        }
+        if(state.pendingPlan?.status === 'awaiting_confirmation'){
+            state.currentPlan = state.pendingPlan;
+            renderPlan();
+            notify('已有待确认方案，请先确认、编辑或放弃它', 'error');
             return;
         }
         const resultMatch = message.match(/第\s*(\d+)\s*张/);
@@ -459,6 +651,7 @@
                 })
             });
             state.currentPlan = plan;
+            state.pendingPlan = plan;
             state.plans.set(plan.id, plan);
             state.pendingAction = '';
             renderPlan();
@@ -488,6 +681,7 @@
             });
             state.plans.set(dismissed.id, dismissed);
             state.currentPlan = null;
+            state.pendingPlan = null;
             renderPlan();
             notify('已放弃该方案');
         } catch(error) { notify(error.message, 'error'); }
@@ -498,6 +692,7 @@
         try {
             const confirmed = await api(`/api/smart-image-agent/plans/${encodeURIComponent(plan.id)}/confirm`, {method:'POST'});
             state.currentPlan = confirmed.plan;
+            state.pendingPlan = null;
             state.plans.set(confirmed.plan.id, confirmed.plan);
             confirmed.runs.forEach(run => {
                 const index = state.runs.findIndex(item => item.id === run.id);
@@ -658,11 +853,9 @@
     }
     function selectSkill(skill){
         const presets = {
-            poster:{message:'生成一张高级视觉海报：', action:'generate_image', count:1, ratio:'4:5'},
-            product:{message:'为产品制作电商商品主图：', action:'generate_image', count:1, ratio:'1:1'},
-            social:{message:'生成四张统一视觉方向的社媒套图：', action:'generate_image_set', count:4, ratio:'4:5'},
-            variants:{message:'基于引用图片生成四个视觉变体：', action:'create_variants', count:4, ratio:'auto'},
-            expand:{message:'扩展画面并自然补全背景：', action:'expand_image', count:1, ratio:'auto'},
+            product:{message:'制作一张干净、可信、有购买欲的电商产品主图：', action:'generate_image', count:1, ratio:'1:1'},
+            portrait:{message:'以引用人物为主角，保持五官、发型和服装一致，生成新的场景画面：', action:'edit_image', count:1, ratio:'4:5'},
+            style:{message:'保留主体和构图，将画面迁移为参考图的视觉风格：', action:'edit_image', count:1, ratio:'4:5'},
             compose:{message:'融合引用图片并保持主体一致：', action:'compose_images', count:1, ratio:'auto'}
         };
         const preset = presets[skill];
@@ -671,19 +864,9 @@
         els.input.value = preset.message;
         els.count.value = String(preset.count);
         els.ratio.value = preset.ratio;
+        updateComposerSummary();
+        setSettingsOpen(false);
         els.input.focus();
-    }
-    function runCanvasControl(control){
-        const canvasControls = global.SmartImageAgentBridge?.canvasControls;
-        if(!canvasControls) return;
-        const actions = {
-            fitAll:() => canvasControls.fitAll(),
-            zoomIn:() => canvasControls.zoomIn(),
-            zoomOut:() => canvasControls.zoomOut(),
-            resetZoom:() => canvasControls.resetZoom(),
-            arrangeSelection:() => canvasControls.arrangeSelection()
-        };
-        actions[control]?.();
     }
     function buildUi(){
         const oldPanel = document.getElementById('agentPanel');
@@ -699,51 +882,73 @@
                 <div class="sia-header-actions">
                     <button class="sia-icon" type="button" data-new-session title="新建创作"><i data-lucide="plus"></i></button>
                     <button class="sia-icon" type="button" data-session-history title="创作历史"><i data-lucide="history"></i></button>
+                    <button class="sia-icon" type="button" data-settings-toggle title="创作设置" aria-expanded="false"><i data-lucide="sliders-horizontal"></i></button>
                     <button class="sia-icon" type="button" data-collapse title="收起图片 Agent"><i data-lucide="chevrons-right"></i></button>
                 </div>
             </header>
-            <div class="sia-canvas-controls" aria-label="画布控制">
-                <button type="button" data-canvas-control="fitAll" title="适应全部节点"><i data-lucide="scan"></i></button>
-                <button type="button" data-canvas-control="zoomIn" title="放大"><i data-lucide="zoom-in"></i></button>
-                <button type="button" data-canvas-control="zoomOut" title="缩小"><i data-lucide="zoom-out"></i></button>
-                <button type="button" data-canvas-control="resetZoom" title="重置缩放"><i data-lucide="rotate-ccw"></i></button>
-                <button type="button" data-canvas-control="arrangeSelection" title="整理选中节点"><i data-lucide="layout-grid"></i></button>
-            </div>
             <div class="sia-collapsed-entry"><button type="button" data-expand title="展开图片 Agent"><i data-lucide="wand-sparkles"></i><b data-collapsed-count>0</b></button></div>
             <main class="sia-activity" data-activity>
-            <section class="sia-context">
+            <section class="sia-welcome" data-welcome>
+                <p class="sia-welcome-kicker">图片创作工作区</p>
+                <h2>从一句想法开始</h2>
+                <p>新图生成、选图修改、多图合成、扩图与素材引用。先生成方案，确认后才会开始扣费创作。</p>
+                <div class="sia-skill-grid" aria-label="图片创作快捷方式">
+                    <button type="button" class="sia-skill-card" data-skill="product"><i data-lucide="shopping-bag"></i><span><strong>电商产品图</strong><small>主图与商品展示</small></span></button>
+                    <button type="button" class="sia-skill-card" data-skill="portrait"><i data-lucide="user-round"></i><span><strong>人物一致性</strong><small>选图后换场景创作</small></span></button>
+                    <button type="button" class="sia-skill-card" data-skill="style"><i data-lucide="palette"></i><span><strong>风格迁移</strong><small>保留主体，转换风格</small></span></button>
+                    <button type="button" class="sia-skill-card" data-skill="compose"><i data-lucide="layers-3"></i><span><strong>多图合成</strong><small>融合多个图片元素</small></span></button>
+                </div>
+            </section>
+            <section class="sia-chat-section" data-chat-section hidden><div class="sia-chat-messages" data-chat-messages></div></section>
+            <section class="sia-context" data-context hidden>
                 <div class="sia-ref-head"><span>图片引用</span><b data-ref-count>0/10</b></div>
                 <div class="sia-refs" data-refs></div>
                 <div class="sia-source-actions">
                     <button type="button" data-add-selection><i data-lucide="plus"></i><span>添加选中图片</span></button>
-                    <button type="button" data-upload><i data-lucide="upload"></i><span>上传图片</span></button>
-                    <button type="button" data-assets><i data-lucide="library"></i><span>素材库</span></button>
                     <button type="button" data-clear-refs><i data-lucide="trash-2"></i><span>清空</span></button>
                     <input type="file" accept="image/*" multiple hidden data-file-input>
                 </div>
-                <div class="sia-quick">
-                    <button type="button" data-skill="poster">海报</button>
-                    <button type="button" data-skill="product">商品主图</button>
-                    <button type="button" data-skill="social">社媒套图</button>
-                    <button type="button" data-skill="variants">风格变体</button>
-                    <button type="button" data-skill="expand">扩图补景</button>
-                    <button type="button" data-skill="compose">多图合成</button>
-                </div>
             </section>
-            <section class="sia-activity-section"><div class="sia-plan" data-plan hidden></div></section>
-            <section class="sia-activity-section"><div class="sia-section-title"><span>任务</span></div><div class="sia-list" data-tasks></div></section>
-            <section class="sia-activity-section"><div class="sia-section-title"><span>结果</span></div><div class="sia-results" data-results></div></section>
+            <section class="sia-activity-section" data-plan-section><div class="sia-plan" data-plan hidden></div></section>
+            <section class="sia-activity-section" data-tasks-section><div class="sia-section-title"><span>任务</span></div><div class="sia-list" data-tasks></div></section>
+            <section class="sia-activity-section" data-results-section><div class="sia-section-title"><span>结果</span></div><div class="sia-results" data-results></div></section>
             </main>
             <div class="sia-composer">
+                <div class="sia-composer-refs" data-composer-refs hidden></div>
                 <textarea data-input rows="4" placeholder="描述要生成或修改的图片，输入 @ 引用画布或素材图片"></textarea>
                 <div class="sia-mentions" data-mentions hidden></div>
-                <div class="sia-settings">
-                    <label class="sia-model-control"><span>模型</span><select data-model>${modelOptions('nano-banana-2')}</select></label>
+                <div class="sia-composer-meta">
+                    <div class="sia-composer-sources">
+                        <button type="button" class="sia-source-menu-toggle" data-source-menu-toggle aria-expanded="false" title="添加图片"><i data-lucide="plus"></i></button>
+                        <button type="button" data-reference-toggle title="管理图片引用"><i data-lucide="image-plus"></i><span>引用</span></button>
+                        <div class="sia-source-menu" data-source-menu hidden>
+                            <button type="button" data-upload title="本地上传"><i data-lucide="upload"></i><span>本地上传</span></button>
+                            <button type="button" data-assets title="素材库添加"><i data-lucide="library"></i><span>素材库添加</span></button>
+                        </div>
+                    </div>
+                    <div class="sia-model-picker sia-composer-model-picker" data-model-picker>
+                        <button type="button" class="sia-model-trigger" data-model-trigger aria-expanded="false"><i data-lucide="box"></i><span data-model-trigger-label>选择模型</span></button>
+                        <div class="sia-model-popover" data-model-popover hidden>
+                            <div class="sia-model-picker-head"><strong>选择模型</strong><button type="button" data-close-model-picker title="关闭"><i data-lucide="x"></i></button></div>
+                            <div class="sia-model-tabs" role="tablist">
+                                <button type="button" class="sia-model-tab is-active" data-model-kind="image" role="tab">图片</button>
+                                <button type="button" class="sia-model-tab" data-model-kind="video" role="tab">视频</button>
+                            </div>
+                            <div class="sia-model-list" data-model-list></div>
+                        </div>
+                    </div>
+                    <button type="button" class="sia-settings-summary" data-settings-toggle><span data-settings-summary></span><i data-lucide="chevron-up"></i></button>
+                </div>
+                <div class="sia-settings" data-settings hidden>
                     <label><span>比例</span><select data-ratio><option value="auto">自动</option><option>1:1</option><option>4:5</option><option>16:9</option><option>9:16</option></select></label>
                     <label><span>分辨率</span><select data-resolution><option value="1k">1K</option><option value="2k">2K</option><option value="4k">4K</option></select></label>
                     <label><span>数量</span><input data-count type="number" min="1" max="8" value="1"></label>
                 </div>
-                <button class="sia-primary" type="button" data-create disabled><i data-lucide="arrow-up"></i><span>生成方案</span></button>
+                <select data-model hidden><option value="">选择模型</option>${modelOptions('')}</select>
+                <div class="sia-composer-submit">
+                    <span class="sia-composer-submit-hint" data-composer-mode-hint>普通对话 · 选择模型后可生图</span>
+                    <button class="sia-send-button sia-primary" type="button" data-create disabled aria-label="生成方案" title="发送"><i data-lucide="arrow-up"></i></button>
+                </div>
                 <div class="sia-notice" data-notice hidden></div>
             </div>
             <div class="sia-asset-picker" data-asset-picker hidden>
@@ -757,6 +962,10 @@
         els.resizer = root.querySelector('.sia-resizer');
         els.collapse = root.querySelector('[data-collapse]');
         els.activity = root.querySelector('[data-activity]');
+        els.welcome = root.querySelector('[data-welcome]');
+        els.chatSection = root.querySelector('[data-chat-section]');
+        els.chatMessages = root.querySelector('[data-chat-messages]');
+        els.context = root.querySelector('[data-context]');
         els.refs = root.querySelector('[data-refs]');
         els.refCount = root.querySelector('[data-ref-count]');
         els.collapsedCount = root.querySelector('[data-collapsed-count]');
@@ -766,10 +975,25 @@
         els.resolution = root.querySelector('[data-resolution]');
         els.count = root.querySelector('[data-count]');
         els.model = root.querySelector('[data-model]');
+        els.settings = root.querySelector('[data-settings]');
+        els.settingsSummary = root.querySelector('[data-settings-summary]');
+        els.modelTrigger = root.querySelector('[data-model-trigger]');
+        els.modelTriggerLabel = root.querySelector('[data-model-trigger-label]');
+        els.modelPopover = root.querySelector('[data-model-popover]');
+        els.modelList = root.querySelector('[data-model-list]');
+        els.sourceMenuToggle = root.querySelector('[data-source-menu-toggle]');
+        els.sourceMenu = root.querySelector('[data-source-menu]');
+        els.composerRefs = root.querySelector('[data-composer-refs]');
+        els.composerModeHint = root.querySelector('[data-composer-mode-hint]');
+        els.settingsToggles = root.querySelectorAll('[data-settings-toggle]');
+        els.settingsToggle = els.settingsToggles[0];
         els.create = root.querySelector('[data-create]');
         els.plan = root.querySelector('[data-plan]');
+        els.planSection = root.querySelector('[data-plan-section]');
         els.tasks = root.querySelector('[data-tasks]');
+        els.tasksSection = root.querySelector('[data-tasks-section]');
         els.results = root.querySelector('[data-results]');
+        els.resultsSection = root.querySelector('[data-results-section]');
         els.notice = root.querySelector('[data-notice]');
         els.fileInput = root.querySelector('[data-file-input]');
         els.assetPicker = root.querySelector('[data-asset-picker]');
@@ -780,7 +1004,12 @@
         els.clearRefs = root.querySelector('[data-clear-refs]');
         els.collapse.addEventListener('click', () => setCollapsed(!root.classList.contains('is-collapsed')));
         root.querySelector('[data-expand]').addEventListener('click', () => setCollapsed(false));
-        root.querySelector('[data-upload]').addEventListener('click', () => els.fileInput.click());
+        els.sourceMenuToggle.addEventListener('click', () => {
+            els.modelPopover.hidden = true;
+            els.modelTrigger.setAttribute('aria-expanded', 'false');
+            setSourceMenuOpen(els.sourceMenu.hidden);
+        });
+        root.querySelector('[data-upload]').addEventListener('click', () => { setSourceMenuOpen(false); els.fileInput.click(); });
         els.addSelection.addEventListener('click', () => {
             if(addManualReferences(state.selectionRefs)) notify(`已添加 ${state.selectionRefs.length} 张画布图片`, 'success');
         });
@@ -789,14 +1018,18 @@
             state.referenceRoles.clear();
             renderReferences();
         });
-        root.querySelector('[data-assets]').addEventListener('click', openAssetPicker);
+        root.querySelector('[data-assets]').addEventListener('click', () => { setSourceMenuOpen(false); openAssetPicker(); });
         root.querySelector('[data-close-assets]').addEventListener('click', () => { els.assetPicker.hidden = true; });
         root.querySelector('[data-new-session]').addEventListener('click', createNewSession);
         root.querySelector('[data-session-history]').addEventListener('click', () => {
             els.sessionHistory.hidden = !els.sessionHistory.hidden;
             if(!els.sessionHistory.hidden) refreshSessions().catch(error => notify(error.message, 'error'));
         });
-        root.querySelectorAll('[data-canvas-control]').forEach(button => button.addEventListener('click', () => runCanvasControl(button.dataset.canvasControl)));
+        els.settingsToggles.forEach(button => button.addEventListener('click', () => setSettingsOpen(els.settings.hidden)));
+        root.querySelector('[data-reference-toggle]').addEventListener('click', () => {
+            els.context.hidden = false;
+            els.context.scrollIntoView({block:'nearest', behavior:'smooth'});
+        });
         els.fileInput.addEventListener('change', () => { uploadFiles(els.fileInput.files); els.fileInput.value = ''; });
         els.create.addEventListener('click', createPlan);
         els.input.addEventListener('input', renderMentionSuggestions);
@@ -804,16 +1037,32 @@
             if((event.ctrlKey || event.metaKey) && event.key === 'Enter'){ event.preventDefault(); createPlan(); }
         });
         root.querySelectorAll('[data-skill]').forEach(button => button.addEventListener('click', () => selectSkill(button.dataset.skill)));
+        els.model.addEventListener('change', () => { syncComposerResolutions(); updateComposerSummary(); renderModelPicker(); });
+        els.modelTrigger.addEventListener('click', () => {
+            setSourceMenuOpen(false);
+            els.modelPopover.hidden = !els.modelPopover.hidden;
+            els.modelTrigger.setAttribute('aria-expanded', String(!els.modelPopover.hidden));
+            if(!els.modelPopover.hidden) renderModelPicker();
+        });
+        root.querySelector('[data-close-model-picker]').addEventListener('click', () => {
+            els.modelPopover.hidden = true;
+            els.modelTrigger.setAttribute('aria-expanded', 'false');
+        });
+        els.modelPopover.querySelectorAll('[data-model-kind]').forEach(tab => tab.addEventListener('click', () => renderModelPicker(tab.dataset.modelKind)));
+        [els.ratio, els.resolution, els.count].forEach(control => control.addEventListener('change', updateComposerSummary));
         els.assetSearch.addEventListener('input', () => renderAssetPicker(state.assetCache.filter(item => item.name.toLowerCase().includes(els.assetSearch.value.trim().toLowerCase()))));
-        ['dragenter','dragover'].forEach(type => root.querySelector('.sia-context').addEventListener(type, event => { event.preventDefault(); root.classList.add('is-dragging'); }));
-        root.querySelector('.sia-context').addEventListener('dragleave', () => root.classList.remove('is-dragging'));
-        root.querySelector('.sia-context').addEventListener('drop', event => {
+        ['dragenter','dragover'].forEach(type => els.context.addEventListener(type, event => { event.preventDefault(); root.classList.add('is-dragging'); }));
+        els.context.addEventListener('dragleave', () => root.classList.remove('is-dragging'));
+        els.context.addEventListener('drop', event => {
             event.preventDefault(); root.classList.remove('is-dragging'); uploadFiles(event.dataTransfer.files);
         });
         bindResize();
         applyWidth(readSetting('width', '400'));
         setCollapsed(readSetting('collapsed', '0') === '1');
-        renderReferences(); renderTasks(); renderResults();
+        setSettingsOpen(false);
+        renderModelPicker();
+        updateComposerSummary();
+        renderReferences(); renderTasks(); renderResults(); renderChatMessages(); renderWorkspaceState();
         refreshIcons();
         const toolbarToggle = document.getElementById('agentToggle');
         toolbarToggle?.addEventListener('click', () => setCollapsed(!root.classList.contains('is-collapsed')));
@@ -826,8 +1075,12 @@
         buildUi();
         api('/api/smart-image-agent/capabilities').then(capabilities => {
             state.capabilities = capabilities;
-            const selected = els.model.value;
-            els.model.innerHTML = modelOptions(selected);
+            const selected = availableModels().some(item => item.id === els.model.value) ? els.model.value : '';
+            els.model.innerHTML = `<option value="">选择模型</option>${modelOptions(selected)}`;
+            els.model.value = selected;
+            renderModelPicker();
+            syncComposerResolutions();
+            updateComposerSummary();
         }).catch(() => {});
         state.unsubscribe = global.SmartImageAgentBridge.subscribeSelection(selection => {
             state.selectionRefs = Array.isArray(selection) ? selection : [];
