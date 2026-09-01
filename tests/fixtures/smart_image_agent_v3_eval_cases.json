@@ -1,0 +1,38 @@
+[
+  {
+    "id": "text-to-image",
+    "message": "生成一张东方茶饮品牌海报",
+    "context": {"canvas_id": "eval-canvas", "selected_images": []},
+    "expected_action": "generate_image"
+  },
+  {
+    "id": "selected-image-edit",
+    "message": "把这张产品图改成雨夜霓虹环境",
+    "context": {"canvas_id": "eval-canvas", "selected_images": [{"node_id": "image-1", "url": "/assets/product.png"}]},
+    "expected_action": "edit_image"
+  },
+  {
+    "id": "multi-image-compose",
+    "message": "融合两张图成为同一张海报",
+    "context": {"canvas_id": "eval-canvas", "selected_images": [{"node_id": "image-1", "url": "/assets/one.png"}, {"node_id": "image-2", "url": "/assets/two.png"}]},
+    "expected_action": "compose_images"
+  },
+  {
+    "id": "outpaint",
+    "message": "向左右扩图并补全背景",
+    "context": {"canvas_id": "eval-canvas", "selected_images": [{"node_id": "image-1", "url": "/assets/product.png"}]},
+    "expected_action": "expand_image"
+  },
+  {
+    "id": "variants",
+    "message": "为这张图生成多个变体",
+    "context": {"canvas_id": "eval-canvas", "selected_images": [{"node_id": "image-1", "url": "/assets/product.png"}]},
+    "expected_action": "create_variants"
+  },
+  {
+    "id": "image-set",
+    "message": "做一组小红书茶饮套图",
+    "context": {"canvas_id": "eval-canvas", "selected_images": []},
+    "expected_action": "generate_image_set"
+  }
+]

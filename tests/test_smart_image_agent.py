@@ -828,7 +828,7 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
     def test_release_version_matches_the_current_image_agent_bundle(self):
         version = (self.root / "VERSION").read_text(encoding="utf-8").strip()
 
-        self.assertEqual(version, "2026.08.30.1")
+        self.assertEqual(version, "2026.09.01.1")
 
     def test_v3_is_feature_gated_and_uses_isolated_modules(self):
         loader = (self.root / "static" / "js" / "smart-image-agent" / "loader.js").read_text(encoding="utf-8")
@@ -975,10 +975,12 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
 
         for marker in ("data-source-menu-toggle", "data-source-menu", "本地上传", "素材库添加", "data-composer-refs", "function renderComposerReferences()"):
             self.assertIn(marker, app)
+        self.assertIn("sia-composer-ref-hover-preview", app)
         self.assertIn('class="sia-send-button', app)
         self.assertIn('aria-label="生成方案"', app)
         self.assertIn(".sia-source-menu", styles)
         self.assertIn(".sia-composer-refs", styles)
+        self.assertIn(".sia-composer-ref-hover-preview", styles)
         self.assertIn(".sia-send-button", styles)
 
     def test_model_picker_is_split_by_media_kind_without_provider_labels(self):
@@ -1003,9 +1005,19 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
         self.assertIn("generationMode:false", app)
         self.assertIn("async function sendChatMessage()", app)
         self.assertIn("/api/chat", app)
+        self.assertIn("mode:'smart-image-agent-chat'", app)
         self.assertIn("if(!state.generationMode) return sendChatMessage();", app)
         self.assertIn("state.generationMode = true", app)
         self.assertIn("els.model.value = ''", app)
+
+    def test_plain_agent_chat_uses_configured_agent_chat_route(self):
+        main_py = (self.root / "main.py").read_text(encoding="utf-8")
+
+        self.assertIn('if payload.mode == "smart-image-agent-chat":', main_py)
+        self.assertIn('resolve_agent_model_route("chat",', main_py)
+        self.assertIn("require_credentials=True", main_py)
+        self.assertIn("payload.provider = route[\"provider_id\"]", main_py)
+        self.assertIn("payload.model = route[\"model\"]", main_py)
 
     def test_image_results_honor_requested_count_and_auto_ratio_uses_reference_dimensions(self):
         canvas = (self.root / "static" / "js" / "canvas.js").read_text(encoding="utf-8")
@@ -1013,8 +1025,18 @@ class SmartImageAgentStaticIsolationTests(unittest.TestCase):
 
         self.assertIn("resultImageItems(result).slice(0, 1)", canvas)
         self.assertIn("const generatedUrls = generated.urls.slice(0, 1);", smart)
+        self.assertIn("resultLimit", smart)
+        self.assertIn("mediaItems.slice(0, resultLimit)", smart)
         self.assertIn("function smartImageAgentRatioSettings(ratio='auto', refs=[])", smart)
         self.assertIn("customRatio:`${reduced.w}:${reduced.h}`", smart)
+
+    def test_grid_crop_uses_original_media_source_not_thumbnail(self):
+        smart = (self.root / "static" / "js" / "smart-canvas.js").read_text(encoding="utf-8")
+
+        self.assertIn("original_url", smart)
+        self.assertIn("editorLoadedOriginal", smart)
+        self.assertIn("requireOriginalEditorImage", smart)
+        self.assertIn("if(!requireOriginalEditorImage(image, img)) return;", smart)
 
     def test_workspace_uses_capabilities_for_model_options_and_keeps_confirmation_manual(self):
         app = (self.root / "static" / "js" / "smart-image-agent" / "app.js").read_text(encoding="utf-8")

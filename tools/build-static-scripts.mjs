@@ -1,4 +1,4 @@
-import { transform } from 'esbuild';
+import { build, transform } from 'esbuild';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -24,3 +24,14 @@ for (const [sourcePath, outputName] of entries) {
   await writeFile(path.join(outputDir, outputName), result.code, 'utf8');
   console.log(`${sourcePath} -> static/dist/js/${outputName}`);
 }
+
+await build({
+  entryPoints: [path.join(root, 'static', 'js', 'smart-image-agent', 'v3', 'app.js')],
+  bundle: true,
+  format: 'iife',
+  minify: true,
+  target: 'es2020',
+  legalComments: 'none',
+  outfile: path.join(outputDir, 'smart-image-agent-v3.min.js')
+});
+console.log('static/js/smart-image-agent/v3/app.js -> static/dist/js/smart-image-agent-v3.min.js');

@@ -168,9 +168,12 @@ body.smart-image-agent-v2-open.smart-image-agent-v2-collapsed .shell { width:cal
 .sia-composer { flex:0 0 auto; position:relative; margin:0; padding:10px; background:#181b20; border-top:1px solid #2b3038; z-index:7; }
 .sia-composer-label { display:block; margin:0 0 7px; color:#eef1f6; font-size:13px; font-weight:800; }
 .sia-composer:focus-within { border-color:rgba(255,107,95,.65); box-shadow:0 0 0 2px rgba(255,107,95,.08); }
-.sia-composer-refs { display:flex; gap:5px; overflow:auto; margin:0 0 7px; padding:1px 0 2px; scrollbar-width:none; }
-.sia-composer-ref { position:relative; flex:0 0 auto; width:34px; height:34px; overflow:hidden; background:#252b34; border:1px solid #4a5360; border-radius:6px; }
-.sia-composer-ref img { width:100%; height:100%; object-fit:cover; display:block; }
+.sia-composer-refs { display:flex; flex-wrap:wrap; gap:5px; overflow:visible; margin:0 0 7px; padding:1px 0 2px; scrollbar-width:none; }
+.sia-composer-ref { position:relative; flex:0 0 auto; width:34px; height:34px; overflow:visible; background:#252b34; border:1px solid #4a5360; border-radius:6px; }
+.sia-composer-ref > img { width:100%; height:100%; object-fit:cover; display:block; border-radius:5px; }
+.sia-composer-ref-hover-preview { position:absolute; right:0; bottom:calc(100% + 8px); z-index:30; display:none; width:190px; height:190px; padding:4px; background:#111318; border:1px solid #596474; border-radius:9px; box-shadow:0 16px 38px rgba(0,0,0,.58); pointer-events:none; }
+.sia-composer-ref-hover-preview img { width:100%; height:100%; object-fit:contain; display:block; border-radius:5px; }
+.sia-composer-ref:hover .sia-composer-ref-hover-preview,.sia-composer-ref:focus-within .sia-composer-ref-hover-preview { display:block; }
 .sia-composer-ref button { position:absolute; top:1px; right:1px; width:14px; height:14px; display:grid; place-items:center; color:#fff; background:rgba(0,0,0,.72); border-radius:3px; opacity:0; }
 .sia-composer-ref:hover button,.sia-composer-ref button:focus-visible { opacity:1; }
 .sia-composer-ref button svg { width:9px; height:9px; }

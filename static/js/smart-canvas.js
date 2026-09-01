@@ -499,7 +499,11 @@ function uid(prefix){ return `${prefix}_${Math.random().toString(36).slice(2, 10
 function escapeHtml(str){ return String(str == null ? '' : str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
 const escapeAttr = escapeHtml;
 function smartOriginalMediaUrl(itemOrUrl){
-    const raw = typeof itemOrUrl === 'string' ? itemOrUrl : (itemOrUrl?.url || '');
+    const raw = typeof itemOrUrl === 'string' ? itemOrUrl : (
+        itemOrUrl?.original_url || itemOrUrl?.originalUrl || itemOrUrl?.originalLocalUrl ||
+        itemOrUrl?.source_url || itemOrUrl?.sourceUrl || itemOrUrl?.remote_url || itemOrUrl?.remoteUrl ||
+        itemOrUrl?.url || ''
+    );
     const text = String(raw || '');
     if(!text) return '';
     try {
@@ -6924,7 +6928,11 @@ function mediaKindForItem(img){
 function localDisplayUrlForMediaItem(img){
     if(!img) return '';
     const candidates = [
+        img.original_url,
+        img.originalUrl,
         img.originalLocalUrl,
+        img.remote_url,
+        img.remoteUrl,
         img.localUrl,
         img.sourceUrl,
         img.local_url,
@@ -9398,6 +9406,13 @@ function currentEditImage(){
     const index = Number(cropState?.imageIndex || 0);
     return {node, index, image:imageForDisplay(node?.images?.[index])};
 }
+function requireOriginalEditorImage(image, img){
+    if(!image?.url || !img?.naturalWidth || !img?.naturalHeight) return false;
+    if(img.dataset.editorLoadedOriginal === '1') return true;
+    requestSmartEditorOriginal();
+    toast('原图仍在加载，请稍后再试');
+    return false;
+}
 function cropImageDisplaySize(){
     const img = document.getElementById('cropImage');
     const clientW = Number(img?.clientWidth || 0);
@@ -11603,6 +11618,7 @@ function openImageEditor(nodeId, imageIndex=0){
         const targetImage = node.images?.[imageIndex];
         // 兜底用的是代理/缩放图，naturalWidth 不是原图真实尺寸，别污染节点的 natural_w/h。
         const loadedPrimary = img.dataset.editorQuick !== '1' && img.getAttribute('src') === primaryEditorSrc;
+        img.dataset.editorLoadedOriginal = loadedPrimary ? '1' : '0';
         if(loadedPrimary && editorFallbackIndex === 0 && targetImage && img.naturalWidth && img.naturalHeight && (!targetImage.natural_w || !targetImage.natural_h)){
             targetImage.natural_w = img.naturalWidth;
             targetImage.natural_h = img.naturalHeight;
@@ -11625,6 +11641,7 @@ function openImageEditor(nodeId, imageIndex=0){
     // 裁剪/涂抹等导出操作照常可用。而带 crossOrigin 会让浏览器对“缩略图已无 CORS 缓存的同源图”重新发起
     // CORS 请求并失败——表现就是预览先闪一下（命中缓存）随即变成破损图。
     img.removeAttribute('crossorigin');
+    img.dataset.editorLoadedOriginal = '';
     const cachedEditorImage = touchSmartEditorImage(primaryEditorSrc);
     if(cachedEditorImage && img.getAttribute('src') === primaryEditorSrc && img.complete && img.naturalWidth){
         queueMicrotask(() => img.onload?.());
@@ -11840,6 +11857,7 @@ async function applyImageCrop(){
     const {node, image} = currentEditImage();
     const img = document.getElementById('cropImage');
     if(!node || !image || !img.naturalWidth || !img.naturalHeight) return;
+    if(!requireOriginalEditorImage(image, img)) return;
     const scaleX = img.naturalWidth / (img.clientWidth || 1), scaleY = img.naturalHeight / (img.clientHeight || 1);
     const sx = Math.max(0, Math.round(cropState.x * scaleX)), sy = Math.max(0, Math.round(cropState.y * scaleY));
     const sw = Math.max(1, Math.round(cropState.w * scaleX)), sh = Math.max(1, Math.round(cropState.h * scaleY));
@@ -11856,6 +11874,7 @@ async function applyImageOutpaint(){
     const {node, image} = currentEditImage();
     const img = document.getElementById('cropImage');
     if(!node || !image || !img.naturalWidth || !img.naturalHeight) return;
+    if(!requireOriginalEditorImage(image, img)) return;
     clampOutpaint();
     const scaleX = img.naturalWidth / (img.clientWidth || 1), scaleY = img.naturalHeight / (img.clientHeight || 1);
     const outW = Math.max(img.naturalWidth, Math.round(cropState.w * scaleX));
@@ -11920,6 +11939,7 @@ async function applyImageBrush(){
     const {node, image} = currentEditImage();
     const img = document.getElementById('cropImage');
     if(!node || !image || !img.naturalWidth || !img.naturalHeight) return;
+    if(!requireOriginalEditorImage(image, img)) return;
     const canvasEl = document.createElement('canvas');
     canvasEl.width = img.naturalWidth; canvasEl.height = img.naturalHeight;
     const ctx = canvasEl.getContext('2d');
@@ -11935,6 +11955,7 @@ async function applyImageGridSplit(){
     const {node, image} = currentEditImage();
     const img = document.getElementById('cropImage');
     if(!node || !image || !img.naturalWidth || !img.naturalHeight) return;
+    if(!requireOriginalEditorImage(image, img)) return;
     const rects = gridSplitRects(img.naturalWidth, img.naturalHeight).sort((a, b) => (Number(a.row || 0) - Number(b.row || 0)) || (Number(a.col || 0) - Number(b.col || 0)));
     if(!rects.length) return;
     const base = safeExportFileName((downloadNameForMediaItem(image, 'image') || 'image').replace(/\.[^.]+$/, ''), 'image');
@@ -14964,7 +14985,9 @@ async function runLoopRoundIntoSlot(loopNode, rootNode, outputSlot, loopIndex, c
                 delete history.h;
                 outputSlot.images = [];
             }
-            outputSlot.pendingTasks = taskIds.map(taskId => ({taskId, kind:'image', providerId:taskResult.providerId, model:taskResult.model}));
+            // 每个画布任务向上游声明 n=1；部分渠道仍会返回多个相同结果，
+            // 收敛为每个任务最多落一张，数量由任务数控制。
+            outputSlot.pendingTasks = taskIds.map(taskId => ({taskId, kind:'image', resultLimit:1, providerId:taskResult.providerId, model:taskResult.model}));
             outputSlot.pending = Math.max(taskIds.length, Number(outputSlot.pending || 0) || taskIds.length);
             outputSlot.running = false;
             render();
@@ -15416,7 +15439,9 @@ async function runGeneration(){
         if(isApiLikeEngine(settings.engine) || rhModelMode){
             const taskIds = Array.isArray(outImages?.taskIds) ? outImages.taskIds : [];
             if(!taskIds.length) throw new Error(tr('smart.errRunFailed'));
-            pendingNode.pendingTasks = taskIds.map(taskId => ({taskId, kind:'image', providerId:outImages.providerId, model:outImages.model}));
+            // 每个画布任务向上游声明 n=1；部分渠道仍会返回多个相同结果，
+            // 收敛为每个任务最多落一张，数量由任务数控制。
+            pendingNode.pendingTasks = taskIds.map(taskId => ({taskId, kind:'image', resultLimit:1, providerId:outImages.providerId, model:outImages.model}));
             pendingNode.pending = Math.max(taskIds.length, Number(pendingNode.pending || 0) || taskIds.length);
             pendingNode.runStartedAt = nowMs();
             pendingNode.runTimerHidden = false;
@@ -16111,13 +16136,18 @@ async function pollSmartCanvasTask(taskId){
 }
 function finalizeSmartPendingTask(node, taskId, images, kind='image'){
     if(!node || !taskId) return;
+    const pendingTask = smartPendingTasks(node).find(task => task.taskId === taskId);
     node.pendingTasks = smartPendingTasks(node).filter(task => task.taskId !== taskId);
     node.pending = Math.max(0, Number(node.pending || 0) - 1);
     const ext = kind === 'video' ? 'mp4' : kind === 'audio' ? 'mp3' : kind === 'text' ? 'txt' : 'png';
+    const resultLimit = Number.isFinite(Number(pendingTask?.resultLimit)) && Number(pendingTask.resultLimit) > 0
+        ? Math.max(1, Math.min(8, Number(pendingTask.resultLimit)))
+        : null;
     const mediaItems = resultMediaUrls(images);
+    const limitedMediaItems = resultLimit ? mediaItems.slice(0, resultLimit) : mediaItems;
     const existing = cleanHistoryImages(node.images || []);
     const seen = new Set(existing.map(img => `${img.kind || ''}|${img.url || ''}`));
-    const additions = cleanHistoryImages((mediaItems || []).map((item, i) => {
+    const additions = cleanHistoryImages((limitedMediaItems || []).map((item, i) => {
         const url = typeof item === 'string' ? item : item?.url || '';
         const itemKind = (typeof item === 'object' && item.kind) || kind;
         return stripImageGenerationMeta(copyMediaSizeFields(item, {url, name:(typeof item === 'object' && item.name) || `output-${i + 1}.${ext}`, kind:itemKind, generatedResult:true}));

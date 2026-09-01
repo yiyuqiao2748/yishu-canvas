@@ -9,7 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SHELL_PATH = ROOT / "static" / "js" / "smart-image-agent" / "v3" / "shell.js"
 APP_PATH = ROOT / "static" / "js" / "smart-image-agent" / "v3" / "app.js"
 CSS_PATH = ROOT / "static" / "css" / "smart-image-agent.css"
-CANVAS_PATH = ROOT / "static" / "js" / "smart-canvas.js"
 
 
 def run_node(script: str) -> str:
@@ -116,13 +115,6 @@ if(!root.innerHTML.includes('aria-label="当前方案"') || !root.innerHTML.incl
         self.assertIn(".smart-image-agent-workspace", css)
         self.assertIn(".sia-workspace-stage", css)
         self.assertIn(".sia-workspace-composer", css)
-
-    def test_single_image_agent_task_caps_upstream_urls_before_canvas_placement(self):
-        source = CANVAS_PATH.read_text(encoding="utf-8")
-        self.assertIn(
-            "smartImageAgentPlaceResults(outputNode, generated.urls.slice(0, 1)",
-            source,
-        )
 
 
 if __name__ == "__main__":

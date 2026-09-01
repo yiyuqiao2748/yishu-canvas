@@ -128,6 +128,7 @@
         els.composerRefs.innerHTML = refs.map((item, index) => `
             <span class="sia-composer-ref" title="${escapeHtml(referenceLabel(item, index))}">
                 <img src="${escapeHtml(item.preview_url || item.url)}" alt="${escapeHtml(referenceLabel(item, index))}">
+                <span class="sia-composer-ref-hover-preview" aria-hidden="true"><img src="${escapeHtml(item.preview_url || item.url)}" alt=""></span>
                 <button type="button" data-composer-remove-ref="${index}" title="移除引用"><i data-lucide="x"></i></button>
             </span>
         `).join('');
@@ -585,7 +586,7 @@
                     canvas_id:context.canvas_id || '',
                     team_id:context.team_id || '',
                     project_id:context.project_id || '',
-                    mode:'chat',
+                    mode:'smart-image-agent-chat',
                     system_prompt:'你是图片 Agent 的普通对话助手。当前未选择生图模型，只进行咨询和规划，不生成图片、不创建生图方案。'
                 })
             });

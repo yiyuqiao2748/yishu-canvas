@@ -11779,12 +11779,16 @@ def grsai_endpoint_url(provider, path):
         return f"{base_url}{path}"
     return f"{base_url}/v1{path}"
 
-def grsai_aspect_ratio(size, aspect_ratio, model):
+def grsai_aspect_ratio(size, aspect_ratio, model, has_reference_images=False):
     model_id = str(model or "").lower()
     raw_size = str(size or "").strip().lower().replace("*", "x").replace("×", "x")
     raw_ratio = str(aspect_ratio or "").strip()
     if model_id.startswith("gpt-image-2"):
         return raw_size if re.match(r"^\d+\s*x\s*\d+$", raw_size) else "1024x1024"
+    # Nano Banana's documented `auto` mode follows the uploaded reference image.
+    # The canvas stores this choice as `source`; do not collapse it to a preset.
+    if model_id.startswith("nano-banana") and has_reference_images and raw_ratio.lower() in {"auto", "source"}:
+        return "auto"
     if raw_ratio in {"1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"}:
         return raw_ratio
     if re.match(r"^\d+\s*x\s*\d+$", raw_size):
@@ -11823,43 +11827,27 @@ def grsai_task_id(data):
     value = data.get("id") or data.get("task_id") or data.get("taskId") or extract_task_id(data)
     return str(value or "").strip()
 
-async def grsai_reference_data_url(client, ref):
-    value = reference_to_data_url(ref, max_size=1536)
-    if value.startswith("data:image/"):
-        return value
-    ref_url = str((ref or {}).get("url") or "").strip()
-    if not ref_url.startswith(("http://", "https://")):
-        return value
-    ref_file = await yuli_fetch_reference_bytes(client, ref_url)
-    if not ref_file:
-        raise HTTPException(status_code=422, detail="grsai 无法读取参考图，请重新选择或上传该图片后再试。")
-    _name, raw, mime = ref_file
-    if not str(mime or "").startswith("image/"):
-        raise HTTPException(status_code=422, detail="grsai 参考图不是有效图片，请重新选择或上传该图片后再试。")
-    encoded = base64.b64encode(raw).decode("ascii")
-    return compress_data_url_image(f"data:{mime};base64,{encoded}", max_size=1536)
-
 async def generate_grsai_provider_image(prompt, size, model, reference_images=None, provider=None, aspect_ratio="", resolution=""):
     provider = provider or {}
     endpoint = grsai_endpoint_url(provider, "/api/generate")
     refs = [ref for ref in (reference_images or []) if ref.get("url")]
+    images = [reference_to_data_url(ref, max_size=1536) for ref in refs[:ONLINE_IMAGE_REFERENCE_MAX]]
+    images = [item for item in images if item]
     model_id = selected_model(model, "gpt-image-2")
+    body = {
+        "model": model_id,
+        "prompt": prompt,
+        "images": images,
+        "aspectRatio": grsai_aspect_ratio(size, aspect_ratio, model_id, has_reference_images=bool(images)),
+        "replyType": "json",
+    }
+    if str(model_id).lower().startswith("nano-banana"):
+        image_size = grsai_image_size(size, resolution)
+        body["imageSize"] = image_size
+        if image_size in {"2K", "4K"}:
+            body["replyType"] = "async"
     timeout = httpx.Timeout(connect=20.0, read=1800.0, write=120.0, pool=20.0)
-    async with upstream_async_client(timeout=timeout, follow_redirects=True) as client:
-        images = [await grsai_reference_data_url(client, ref) for ref in refs[:ONLINE_IMAGE_REFERENCE_MAX]]
-        images = [item for item in images if item]
-        body = {
-            "model": model_id,
-            "prompt": prompt,
-            "images": images,
-            "aspectRatio": grsai_aspect_ratio(size, aspect_ratio, model_id),
-            "replyType": "json",
-        }
-        if str(model_id).lower().startswith("nano-banana"):
-            image_size = grsai_image_size(size, resolution)
-            body["imageSize"] = image_size
-            if image_size in {"2K", "4K"}:
-                body["replyType"] = "async"
+    async with upstream_async_client(timeout=timeout) as client:
         response = await client.post(endpoint, headers=api_headers(provider=provider, model=model_id), json=body)
         try:
             response.raise_for_status()
@@ -19198,6 +19186,22 @@ async def chat(payload: ChatRequest, request: Request, x_user_id: str = Header(d
             "raw_usage": raw.get("usage") if isinstance(raw, dict) else None,
         }
     else:
+        # Smart Image Agent 的普通对话必须走管理员配置的聊天路由。
+        # 旧的默认 provider=comfly 会把请求落到第一个可用平台，当前可能是
+        # RunningHub，最终表现为“未配置 RunningHub API Key”。
+        if payload.mode == "smart-image-agent-chat":
+            route = resolve_agent_model_route(
+                "chat",
+                {
+                    "canvas_id": payload.canvas_id,
+                    "team_id": payload.team_id,
+                    "project_id": payload.project_id,
+                },
+                require_credentials=True,
+            )
+            payload.provider = route["provider_id"]
+            payload.model = route["model"]
+            payload.ms_model = route["model"] if payload.provider == "modelscope" else ""
         _codex_provider = get_api_provider(payload.provider)
         if is_codex_provider(_codex_provider):
             model = selected_model(payload.model, (_codex_provider.get("chat_models") or CODEX_DEFAULT_CHAT_MODELS)[0])

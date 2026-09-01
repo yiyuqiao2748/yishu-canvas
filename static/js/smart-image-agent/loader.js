@@ -2,7 +2,7 @@
     const params = new URLSearchParams(location.search);
     const legacy = params.get('image_agent') === 'legacy';
     const v3 = params.get('image_agent') === 'v3';
-    const defaultBundleVersion = '2026.08.30.1';
+    const defaultBundleVersion = '2026.09.01.1';
     const source = legacy
         ? '/static/js/canvas-agent-loader.js?v=2026.08.25.1'
         : v3
